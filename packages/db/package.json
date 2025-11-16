@@ -1,0 +1,13 @@
+{
+  "name": "@ll-scheduler/db",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "generate": "node scripts/generate-migration.js",
+    "migrate": "wrangler d1 migrations apply ll-scheduler-db --local",
+    "migrate:prod": "wrangler d1 migrations apply ll-scheduler-db"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

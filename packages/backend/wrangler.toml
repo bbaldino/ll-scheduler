@@ -1,0 +1,9 @@
+name = "ll-scheduler-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "ll-scheduler-db"
+database_id = "local-db"

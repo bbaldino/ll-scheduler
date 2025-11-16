@@ -1,0 +1,239 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.form {
+  background-color: #f5f5f5;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+}
+
+.form h3 {
+  margin-top: 0;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.formGroup label {
+  font-weight: 500;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.formActions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.seasonList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.seasonCard {
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.seasonHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.seasonHeader h3 {
+  margin: 0;
+}
+
+.seasonActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.seasonDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.seasonDetails p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.inlineSelect {
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+}
+
+.empty {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+/* Phases section */
+.phasesSection {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.phasesSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.phasesSectionHeader h4 {
+  margin: 0;
+}
+
+.phaseForm {
+  background-color: #f9f9f9;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.phasesList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.phaseItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.phaseInfo {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.phaseType {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.phaseDates {
+  color: #888;
+  font-size: 0.9em;
+}
+
+.emptyPhases {
+  color: #888;
+  font-style: italic;
+  margin: 1rem 0;
+}
+
+/* Division configs section */
+.divisionsSection {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.divisionsSectionDescription {
+  color: #666;
+  font-size: 0.9em;
+  margin: -0.5rem 0 1rem 0;
+}
+
+.divisionConfigsList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.divisionConfigCard {
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.divisionConfigHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.divisionConfigHeader h5 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.divisionConfigActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.configForm {
+  margin-top: 1rem;
+}
+
+.configDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.9em;
+  color: #555;
+}
+
+.configDetailRow {
+  display: flex;
+  gap: 1rem;
+}
+
+.configDetailRow span {
+  background-color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+}
+
+.noConfig {
+  color: #888;
+  font-style: italic;
+  margin: 0;
+}
