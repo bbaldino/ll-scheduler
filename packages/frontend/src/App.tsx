@@ -5,6 +5,7 @@ import DivisionsPage from './pages/DivisionsPage';
 import FieldsPage from './pages/FieldsPage';
 import TeamsPage from './pages/TeamsPage';
 import BattingCagesPage from './pages/BattingCagesPage';
+import ScheduledEventsPage from './pages/ScheduledEventsPage';
 import { SeasonProvider } from './contexts/SeasonContext';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="fields" element={<FieldsPage />} />
           <Route path="batting-cages" element={<BattingCagesPage />} />
           <Route path="teams" element={<TeamsPage />} />
+          <Route path="events" element={<ScheduledEventsPage />} />
         </Route>
       </Routes>
     </SeasonProvider>

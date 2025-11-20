@@ -26,6 +26,9 @@ export default function Layout() {
             <Link to="/teams" className={styles.navLink}>
               Teams
             </Link>
+            <Link to="/events" className={styles.navLink}>
+              Scheduled Events
+            </Link>
           </nav>          <div className={styles.seasonSelector}>
             <label htmlFor="season-select">Current Season:</label>
             <select
