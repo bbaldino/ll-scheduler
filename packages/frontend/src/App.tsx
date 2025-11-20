@@ -6,6 +6,7 @@ import FieldsPage from './pages/FieldsPage';
 import TeamsPage from './pages/TeamsPage';
 import BattingCagesPage from './pages/BattingCagesPage';
 import ScheduledEventsPage from './pages/ScheduledEventsPage';
+import ScheduleGeneratorPage from './pages/ScheduleGeneratorPage';
 import { SeasonProvider } from './contexts/SeasonContext';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
           <Route path="batting-cages" element={<BattingCagesPage />} />
           <Route path="teams" element={<TeamsPage />} />
           <Route path="events" element={<ScheduledEventsPage />} />
+          <Route path="generate" element={<ScheduleGeneratorPage />} />
         </Route>
       </Routes>
     </SeasonProvider>
