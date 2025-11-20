@@ -30,7 +30,7 @@ export interface UpdateSeasonInput {
 
 /**
  * SeasonPhase represents a distinct period within a season with its own scheduling rules
- * Examples: Regular Season, Makeup Games, Playoffs, Championship
+ * Examples: Pre-Season (practices only), Regular Season, Playoffs
  */
 export interface SeasonPhase {
   id: string;
@@ -41,11 +41,14 @@ export interface SeasonPhase {
   endDate: string; // ISO date string
   description?: string;
   sortOrder: number; // For ordering phases chronologically
+  allowedEventTypes: EventType[]; // Which event types can be scheduled in this phase
   createdAt: string;
   updatedAt: string;
 }
 
 export type SeasonPhaseType = 'regular' | 'makeup' | 'playoffs' | 'championship' | 'other';
+
+export type EventType = 'game' | 'practice' | 'cage';
 
 export interface CreateSeasonPhaseInput {
   seasonId: string;
@@ -55,6 +58,7 @@ export interface CreateSeasonPhaseInput {
   endDate: string;
   description?: string;
   sortOrder?: number;
+  allowedEventTypes: EventType[];
 }
 
 export interface UpdateSeasonPhaseInput {
@@ -64,4 +68,5 @@ export interface UpdateSeasonPhaseInput {
   endDate?: string;
   description?: string;
   sortOrder?: number;
+  allowedEventTypes?: EventType[];
 }

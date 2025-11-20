@@ -32,34 +32,26 @@
   font-weight: 500;
 }
 
-.section {
-  margin: 1.5rem 0;
-  padding: 1rem;
+.checkboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
   background-color: white;
+  border: 1px solid #ddd;
   border-radius: 4px;
 }
 
-.sectionHeader {
+.checkboxLabel {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-}
-
-.sectionHeader h4 {
-  margin: 0;
-}
-
-.scheduleRow,
-.blackoutRow {
-  display: flex;
   gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.5rem;
+  cursor: pointer;
+  font-weight: normal;
 }
 
-.scheduleRow span {
-  color: #666;
+.checkboxLabel input[type='checkbox'] {
+  cursor: pointer;
 }
 
 .formActions {
@@ -69,13 +61,13 @@
   margin-top: 1rem;
 }
 
-.fieldList {
+.cageList {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 1rem;
 }
 
-.fieldCard {
+.cageCard {
   background-color: white;
   border: 1px solid #ddd;
   border-radius: 8px;
@@ -83,35 +75,34 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.fieldHeader {
+.cageHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
 }
 
-.fieldHeader h3 {
+.cageHeader h3 {
   margin: 0;
 }
 
-.fieldActions {
+.cageActions {
   display: flex;
   gap: 0.5rem;
 }
 
-.fieldDetails {
+.cageDetails {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.fieldDetails p {
+.cageDetails p {
   margin: 0;
 }
 
-.fieldDetails ul {
-  margin: 0.5rem 0 0 1.5rem;
-  padding: 0;
+.editForm {
+  width: 100%;
 }
 
 .empty {
@@ -120,38 +111,9 @@
   color: #666;
 }
 
-.sectionDescription {
-  color: #666;
-  font-size: 0.9em;
-  margin: 0 0 1rem 0;
-}
-
-.noDivisions {
-  color: #888;
-  font-style: italic;
-  margin: 0;
-}
-
-.divisionCheckboxes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.checkboxLabel {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.checkboxLabel input[type="checkbox"] {
-  cursor: pointer;
-}
-
-.checkboxLabel span {
-  font-size: 0.95em;
+.cageDetails ul {
+  margin: 0.5rem 0 0 1.5rem;
+  padding: 0;
 }
 
 .availabilityManagement {

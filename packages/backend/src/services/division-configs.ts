@@ -14,6 +14,7 @@ interface DivisionConfigRow {
   games_per_week: number | null;
   game_duration_hours: number | null;
   min_consecutive_day_gap: number | null;
+  cage_sessions_per_week: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +29,7 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     gamesPerWeek: row.games_per_week || undefined,
     gameDurationHours: row.game_duration_hours || undefined,
     minConsecutiveDayGap: row.min_consecutive_day_gap || undefined,
+    cageSessionsPerWeek: row.cage_sessions_per_week || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -79,8 +81,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, min_consecutive_day_gap, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, min_consecutive_day_gap, cage_sessions_per_week, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -91,6 +93,7 @@ export async function createDivisionConfig(
       input.gamesPerWeek || null,
       input.gameDurationHours || null,
       input.minConsecutiveDayGap || null,
+      input.cageSessionsPerWeek || null,
       now,
       now
     )
@@ -136,6 +139,10 @@ export async function updateDivisionConfig(
   if (input.minConsecutiveDayGap !== undefined) {
     updates.push('min_consecutive_day_gap = ?');
     values.push(input.minConsecutiveDayGap);
+  }
+  if (input.cageSessionsPerWeek !== undefined) {
+    updates.push('cage_sessions_per_week = ?');
+    values.push(input.cageSessionsPerWeek);
   }
 
   if (updates.length === 0) {

@@ -20,6 +20,7 @@ import type {
   SeasonPhase,
   CreateSeasonPhaseInput,
   SeasonPhaseType,
+  EventType,
   Division,
   DivisionConfig,
   CreateDivisionConfigInput,
@@ -48,6 +49,7 @@ export default function SeasonsPage() {
     startDate: '',
     endDate: '',
     sortOrder: 0,
+    allowedEventTypes: ['game', 'practice', 'cage'],
   });
 
   // Division configs state
@@ -120,8 +122,17 @@ export default function SeasonsPage() {
       startDate: season.startDate,
       endDate: nextDayStr,
       sortOrder: 0,
+      allowedEventTypes: ['game', 'practice', 'cage'],
     });
     setCreatingPhaseForSeason(season.id);
+  };
+
+  const toggleEventType = (eventType: EventType) => {
+    const current = phaseFormData.allowedEventTypes;
+    const updated = current.includes(eventType)
+      ? current.filter((t) => t !== eventType)
+      : [...current, eventType];
+    setPhaseFormData({ ...phaseFormData, allowedEventTypes: updated });
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -448,6 +459,35 @@ export default function SeasonsPage() {
                           />
                         </div>
                       </div>
+                      <div className={styles.formGroup}>
+                        <label>Allowed Event Types</label>
+                        <div className={styles.checkboxGroup}>
+                          <label className={styles.checkboxLabel}>
+                            <input
+                              type="checkbox"
+                              checked={phaseFormData.allowedEventTypes.includes('practice')}
+                              onChange={() => toggleEventType('practice')}
+                            />
+                            Practice
+                          </label>
+                          <label className={styles.checkboxLabel}>
+                            <input
+                              type="checkbox"
+                              checked={phaseFormData.allowedEventTypes.includes('game')}
+                              onChange={() => toggleEventType('game')}
+                            />
+                            Game
+                          </label>
+                          <label className={styles.checkboxLabel}>
+                            <input
+                              type="checkbox"
+                              checked={phaseFormData.allowedEventTypes.includes('cage')}
+                              onChange={() => toggleEventType('cage')}
+                            />
+                            Cage Time
+                          </label>
+                        </div>
+                      </div>
                       <div className={styles.formActions}>
                         <button type="submit">Add</button>
                         <button type="button" onClick={() => setCreatingPhaseForSeason(null)}>
@@ -466,6 +506,9 @@ export default function SeasonsPage() {
                             <span className={styles.phaseType}>({phase.phaseType})</span>
                             <span className={styles.phaseDates}>
                               {phase.startDate} to {phase.endDate}
+                            </span>
+                            <span className={styles.phaseEventTypes}>
+                              Events: {phase.allowedEventTypes.join(', ')}
                             </span>
                           </div>
                           <button onClick={() => handleDeletePhase(season.id, phase.id)}>
@@ -604,20 +647,37 @@ export default function SeasonsPage() {
                                     />
                                   </div>
                                 </div>
-                                <div className={styles.formGroup}>
-                                  <label>Min Gap Between Events (days, optional)</label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={configFormData.minConsecutiveDayGap || ''}
-                                    onChange={(e) =>
-                                      setConfigFormData({
-                                        ...configFormData,
-                                        minConsecutiveDayGap: e.target.value ? parseInt(e.target.value) : undefined,
-                                      })
-                                    }
-                                  />
+                                <div className={styles.formRow}>
+                                  <div className={styles.formGroup}>
+                                    <label>Min Gap Between Events (days, optional)</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={configFormData.minConsecutiveDayGap || ''}
+                                      onChange={(e) =>
+                                        setConfigFormData({
+                                          ...configFormData,
+                                          minConsecutiveDayGap: e.target.value ? parseInt(e.target.value) : undefined,
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                  <div className={styles.formGroup}>
+                                    <label>Cage Sessions/Week (optional)</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={configFormData.cageSessionsPerWeek || ''}
+                                      onChange={(e) =>
+                                        setConfigFormData({
+                                          ...configFormData,
+                                          cageSessionsPerWeek: e.target.value ? parseInt(e.target.value) : undefined,
+                                        })
+                                      }
+                                    />
+                                  </div>
                                 </div>
                                 <div className={styles.formActions}>
                                   <button type="submit">{existingConfig ? 'Save' : 'Create'}</button>
@@ -645,6 +705,11 @@ export default function SeasonsPage() {
                                 {existingConfig.minConsecutiveDayGap && (
                                   <div className={styles.configDetailRow}>
                                     <span>Min gap: {existingConfig.minConsecutiveDayGap} days</span>
+                                  </div>
+                                )}
+                                {existingConfig.cageSessionsPerWeek && (
+                                  <div className={styles.configDetailRow}>
+                                    <span>Cage sessions: {existingConfig.cageSessionsPerWeek}/week</span>
                                   </div>
                                 )}
                               </div>

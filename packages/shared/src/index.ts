@@ -5,3 +5,5 @@ export * from './types/division.js';
 export * from './types/team.js';
 export * from './types/practice.js';
 export * from './types/game.js';
+export * from './types/batting-cage.js';
+export * from './types/availability.js';

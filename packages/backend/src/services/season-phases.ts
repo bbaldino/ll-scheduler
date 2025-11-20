@@ -10,6 +10,7 @@ interface SeasonPhaseRow {
   end_date: string;
   description: string | null;
   sort_order: number;
+  allowed_event_types: string;
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +25,7 @@ function rowToSeasonPhase(row: SeasonPhaseRow): SeasonPhase {
     endDate: row.end_date,
     description: row.description || undefined,
     sortOrder: row.sort_order,
+    allowedEventTypes: JSON.parse(row.allowed_event_types),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -57,8 +59,8 @@ export async function createSeasonPhase(
 
   await db
     .prepare(
-      `INSERT INTO season_phases (id, season_id, name, phase_type, start_date, end_date, description, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO season_phases (id, season_id, name, phase_type, start_date, end_date, description, sort_order, allowed_event_types, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -69,6 +71,7 @@ export async function createSeasonPhase(
       input.endDate,
       input.description || null,
       sortOrder,
+      JSON.stringify(input.allowedEventTypes),
       now,
       now
     )
@@ -118,6 +121,10 @@ export async function updateSeasonPhase(
   if (input.sortOrder !== undefined) {
     updates.push('sort_order = ?');
     values.push(input.sortOrder);
+  }
+  if (input.allowedEventTypes !== undefined) {
+    updates.push('allowed_event_types = ?');
+    values.push(JSON.stringify(input.allowedEventTypes));
   }
 
   if (updates.length === 0) {

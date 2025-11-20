@@ -10,54 +10,6 @@ interface FieldRow {
   updated_at: string;
 }
 
-interface AvailabilityRow {
-  id: string;
-  field_id: string;
-  day_of_week: number;
-  start_time: string;
-  end_time: string;
-}
-
-interface BlackoutRow {
-  id: string;
-  field_id: string;
-  date: string;
-  reason: string | null;
-  all_day: number;
-  start_time: string | null;
-  end_time: string | null;
-}
-
-async function getFieldAvailability(db: D1Database, fieldId: string) {
-  const result = await db
-    .prepare('SELECT * FROM field_availability_schedules WHERE field_id = ?')
-    .bind(fieldId)
-    .all<AvailabilityRow>();
-
-  return (result.results || []).map((row) => ({
-    id: row.id,
-    dayOfWeek: row.day_of_week as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-    startTime: row.start_time,
-    endTime: row.end_time,
-  }));
-}
-
-async function getFieldBlackoutDates(db: D1Database, fieldId: string) {
-  const result = await db
-    .prepare('SELECT * FROM field_blackout_dates WHERE field_id = ?')
-    .bind(fieldId)
-    .all<BlackoutRow>();
-
-  return (result.results || []).map((row) => ({
-    id: row.id,
-    date: row.date,
-    reason: row.reason || undefined,
-    allDay: row.all_day === 1,
-    startTime: row.start_time || undefined,
-    endTime: row.end_time || undefined,
-  }));
-}
-
 async function getFieldDivisionCompatibility(db: D1Database, fieldId: string): Promise<string[]> {
   const result = await db
     .prepare('SELECT division_id FROM field_division_compatibility WHERE field_id = ?')
@@ -68,19 +20,13 @@ async function getFieldDivisionCompatibility(db: D1Database, fieldId: string): P
 }
 
 async function buildFieldObject(db: D1Database, row: FieldRow): Promise<Field> {
-  const [availability, blackouts, divisions] = await Promise.all([
-    getFieldAvailability(db, row.id),
-    getFieldBlackoutDates(db, row.id),
-    getFieldDivisionCompatibility(db, row.id),
-  ]);
+  const divisions = await getFieldDivisionCompatibility(db, row.id);
 
   return {
     id: row.id,
     seasonId: row.season_id,
     name: row.name,
     location: row.location || undefined,
-    availabilitySchedules: availability,
-    blackoutDates: blackouts,
     divisionCompatibility: divisions,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -121,38 +67,6 @@ export async function createField(db: D1Database, input: CreateFieldInput): Prom
     )
     .bind(id, input.seasonId, input.name, input.location || null, now, now)
     .run();
-
-  // Insert availability schedules if provided
-  if (input.availabilitySchedules && input.availabilitySchedules.length > 0) {
-    for (const schedule of input.availabilitySchedules) {
-      await db
-        .prepare(
-          'INSERT INTO field_availability_schedules (id, field_id, day_of_week, start_time, end_time) VALUES (?, ?, ?, ?, ?)'
-        )
-        .bind(schedule.id, id, schedule.dayOfWeek, schedule.startTime, schedule.endTime)
-        .run();
-    }
-  }
-
-  // Insert blackout dates if provided
-  if (input.blackoutDates && input.blackoutDates.length > 0) {
-    for (const blackout of input.blackoutDates) {
-      await db
-        .prepare(
-          'INSERT INTO field_blackout_dates (id, field_id, date, reason, all_day, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )
-        .bind(
-          blackout.id,
-          id,
-          blackout.date,
-          blackout.reason || null,
-          blackout.allDay ? 1 : 0,
-          blackout.startTime || null,
-          blackout.endTime || null
-        )
-        .run();
-    }
-  }
 
   // Insert division compatibility if provided
   if (input.divisionCompatibility && input.divisionCompatibility.length > 0) {
@@ -206,42 +120,6 @@ export async function updateField(
       .prepare(`UPDATE fields SET ${updates.join(', ')} WHERE id = ?`)
       .bind(...values)
       .run();
-  }
-
-  // Update availability schedules if provided
-  if (input.availabilitySchedules !== undefined) {
-    await db.prepare('DELETE FROM field_availability_schedules WHERE field_id = ?').bind(id).run();
-
-    for (const schedule of input.availabilitySchedules) {
-      await db
-        .prepare(
-          'INSERT INTO field_availability_schedules (id, field_id, day_of_week, start_time, end_time) VALUES (?, ?, ?, ?, ?)'
-        )
-        .bind(schedule.id, id, schedule.dayOfWeek, schedule.startTime, schedule.endTime)
-        .run();
-    }
-  }
-
-  // Update blackout dates if provided
-  if (input.blackoutDates !== undefined) {
-    await db.prepare('DELETE FROM field_blackout_dates WHERE field_id = ?').bind(id).run();
-
-    for (const blackout of input.blackoutDates) {
-      await db
-        .prepare(
-          'INSERT INTO field_blackout_dates (id, field_id, date, reason, all_day, start_time, end_time) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )
-        .bind(
-          blackout.id,
-          id,
-          blackout.date,
-          blackout.reason || null,
-          blackout.allDay ? 1 : 0,
-          blackout.startTime || null,
-          blackout.endTime || null
-        )
-        .run();
-    }
   }
 
   // Update division compatibility if provided

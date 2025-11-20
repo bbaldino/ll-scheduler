@@ -32,6 +32,28 @@
   font-weight: 500;
 }
 
+.checkboxGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.checkboxLabel input[type='checkbox'] {
+  cursor: pointer;
+}
+
 .formRow {
   display: grid;
   grid-template-columns: 1fr 1fr;

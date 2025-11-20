@@ -20,11 +20,13 @@ export default function Layout() {
             <Link to="/fields" className={styles.navLink}>
               Fields
             </Link>
+            <Link to="/batting-cages" className={styles.navLink}>
+              Batting Cages
+            </Link>
             <Link to="/teams" className={styles.navLink}>
               Teams
             </Link>
-          </nav>
-          <div className={styles.seasonSelector}>
+          </nav>          <div className={styles.seasonSelector}>
             <label htmlFor="season-select">Current Season:</label>
             <select
               id="season-select"
