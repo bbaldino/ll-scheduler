@@ -168,9 +168,10 @@ export function getDateRange(startDate: string, endDate: string): string[] {
 
 /**
  * Get day of week for a date (0 = Sunday, 6 = Saturday)
+ * Uses 'T00:00:00' suffix to interpret date in local timezone, not UTC
  */
 export function getDayOfWeek(date: string): number {
-  return new Date(date).getDay();
+  return new Date(date + 'T00:00:00').getDay();
 }
 
 /**

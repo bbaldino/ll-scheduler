@@ -20,6 +20,28 @@ export interface GenerateScheduleResult {
   errors?: ScheduleError[];
   warnings?: ScheduleWarning[];
   statistics?: ScheduleStatistics;
+  schedulingLog?: SchedulingLogEntry[];
+}
+
+/**
+ * Log entry for debugging scheduling decisions
+ */
+export interface SchedulingLogEntry {
+  timestamp: string;
+  level: 'info' | 'warning' | 'error' | 'debug';
+  category: 'game' | 'practice' | 'cage' | 'resource' | 'general';
+  message: string;
+  details?: {
+    teamId?: string;
+    teamName?: string;
+    divisionId?: string;
+    date?: string;
+    dayOfWeek?: number;
+    resourceId?: string;
+    resourceName?: string;
+    reason?: string;
+    [key: string]: any;
+  };
 }
 
 /**
@@ -144,4 +166,21 @@ export interface ScheduledEventDraft {
   homeTeamId?: string;
   awayTeamId?: string;
   teamId?: string;
+}
+
+/**
+ * Stored generation log record
+ */
+export interface ScheduleGenerationLog {
+  id: string;
+  seasonId: string;
+  periodIds: string[];
+  success: boolean;
+  eventsCreated: number;
+  message?: string;
+  statistics?: ScheduleStatistics;
+  log?: SchedulingLogEntry[];
+  errors?: ScheduleError[];
+  warnings?: ScheduleWarning[];
+  createdAt: string;
 }

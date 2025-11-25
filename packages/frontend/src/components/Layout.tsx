@@ -32,6 +32,9 @@ export default function Layout() {
             <Link to="/generate" className={styles.navLink}>
               Generate Schedule
             </Link>
+            <Link to="/generation-logs" className={styles.navLink}>
+              Generation Logs
+            </Link>
           </nav>          <div className={styles.seasonSelector}>
             <label htmlFor="season-select">Current Season:</label>
             <select

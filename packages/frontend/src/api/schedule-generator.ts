@@ -2,9 +2,39 @@ import type {
   GenerateScheduleRequest,
   GenerateScheduleResult,
   ScheduleEvaluationResult,
+  ScheduleGenerationLog,
 } from '@ll-scheduler/shared';
 
 const API_BASE = 'http://localhost:8787/api';
+
+export async function fetchLatestGenerationLog(
+  seasonId: string
+): Promise<ScheduleGenerationLog | null> {
+  const response = await fetch(`${API_BASE}/schedule-generator/logs/${seasonId}/latest`);
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch generation log');
+  }
+
+  return response.json();
+}
+
+export async function fetchGenerationLogs(
+  seasonId: string,
+  limit: number = 10
+): Promise<ScheduleGenerationLog[]> {
+  const response = await fetch(`${API_BASE}/schedule-generator/logs/${seasonId}?limit=${limit}`);
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch generation logs');
+  }
+
+  return response.json();
+}
 
 export async function generateSchedule(
   request: GenerateScheduleRequest

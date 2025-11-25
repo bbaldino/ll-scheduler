@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useSeason } from '../contexts/SeasonContext';
 import CalendarView from '../components/CalendarView';
 import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
@@ -273,6 +274,9 @@ export default function ScheduledEventsPage() {
               Calendar View
             </button>
           </div>
+          <Link to="/generation-logs" className={styles.linkButton}>
+            View Generation Logs
+          </Link>
           <button onClick={handleEvaluate} disabled={isEvaluating}>
             {isEvaluating ? 'Evaluating...' : 'Evaluate Schedule'}
           </button>

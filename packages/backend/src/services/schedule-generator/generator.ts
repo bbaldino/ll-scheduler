@@ -8,6 +8,7 @@ import type {
   GameMatchup,
   ScheduleError,
   ScheduleWarning,
+  SchedulingLogEntry,
   SeasonPeriod,
   Season,
   DivisionConfig,
@@ -70,6 +71,10 @@ export class ScheduleGenerator {
   private scheduledEvents: ScheduledEventDraft[] = [];
   private errors: ScheduleError[] = [];
   private warnings: ScheduleWarning[] = [];
+  private schedulingLog: SchedulingLogEntry[] = [];
+
+  // Day names for logging
+  private static readonly DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   constructor(
     periods: SeasonPeriod[],
@@ -127,6 +132,27 @@ export class ScheduleGenerator {
         });
       }
     }
+  }
+
+  /**
+   * Add an entry to the scheduling log
+   */
+  private log(
+    level: SchedulingLogEntry['level'],
+    category: SchedulingLogEntry['category'],
+    message: string,
+    details?: SchedulingLogEntry['details']
+  ): void {
+    this.schedulingLog.push({
+      timestamp: new Date().toISOString(),
+      level,
+      category,
+      message,
+      details,
+    });
+    // Also console.log for server-side debugging
+    const detailsStr = details ? ` ${JSON.stringify(details)}` : '';
+    console.log(`[${level.toUpperCase()}] [${category}] ${message}${detailsStr}`);
   }
 
   /**
@@ -279,28 +305,62 @@ export class ScheduleGenerator {
    * Resource slots are built for dates where the event type is allowed
    */
   private buildResourceSlots(): void {
-    console.log('\n--- Building Resource Slots ---');
+    this.log('info', 'general', 'Building resource slots');
 
     const dateRange = this.getMergedDateRange();
     const allDates = getDateRange(dateRange.startDate, dateRange.endDate);
-    console.log(`Merged date range: ${dateRange.startDate} to ${dateRange.endDate} (${allDates.length} days)`);
 
     // Build game field slots for dates where games are allowed
     const gameDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'game'));
-    console.log(`Dates allowing games: ${gameDates.length}`);
     this.buildFieldSlotsForDates(gameDates, this.gameFieldSlots);
 
     // Build practice field slots for dates where practices are allowed
     const practiceDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'practice'));
-    console.log(`Dates allowing practices: ${practiceDates.length}`);
     this.buildFieldSlotsForDates(practiceDates, this.practiceFieldSlots);
 
     // Build cage slots for dates where cages are allowed
     const cageDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'cage'));
-    console.log(`Dates allowing cages: ${cageDates.length}`);
     this.buildCageSlotsForDates(cageDates);
 
-    console.log(`✅ Built slots: ${this.gameFieldSlots.length} game fields, ${this.practiceFieldSlots.length} practice fields, ${this.cageSlots.length} cages`);
+    // Log summary of slots by day of week
+    const slotsByDay: Record<string, { games: number; practices: number; cages: number }> = {};
+    for (const slot of this.gameFieldSlots) {
+      const dayName = ScheduleGenerator.DAY_NAMES[slot.slot.dayOfWeek];
+      if (!slotsByDay[dayName]) slotsByDay[dayName] = { games: 0, practices: 0, cages: 0 };
+      slotsByDay[dayName].games++;
+    }
+    for (const slot of this.practiceFieldSlots) {
+      const dayName = ScheduleGenerator.DAY_NAMES[slot.slot.dayOfWeek];
+      if (!slotsByDay[dayName]) slotsByDay[dayName] = { games: 0, practices: 0, cages: 0 };
+      slotsByDay[dayName].practices++;
+    }
+    for (const slot of this.cageSlots) {
+      const dayName = ScheduleGenerator.DAY_NAMES[slot.slot.dayOfWeek];
+      if (!slotsByDay[dayName]) slotsByDay[dayName] = { games: 0, practices: 0, cages: 0 };
+      slotsByDay[dayName].cages++;
+    }
+
+    this.log('info', 'resource', `Built ${this.gameFieldSlots.length} game slots, ${this.practiceFieldSlots.length} practice slots, ${this.cageSlots.length} cage slots`, {
+      slotsByDayOfWeek: slotsByDay,
+    });
+
+    // Log detailed slot info per field
+    const fieldSlotDetails: Record<string, { dates: string[]; times: string[] }> = {};
+    for (const slot of this.gameFieldSlots) {
+      const key = slot.resourceName;
+      if (!fieldSlotDetails[key]) fieldSlotDetails[key] = { dates: [], times: [] };
+      const dayName = ScheduleGenerator.DAY_NAMES[slot.slot.dayOfWeek];
+      const info = `${slot.slot.date} (${dayName}) ${slot.slot.startTime}-${slot.slot.endTime}`;
+      if (!fieldSlotDetails[key].times.includes(`${dayName}: ${slot.slot.startTime}-${slot.slot.endTime}`)) {
+        fieldSlotDetails[key].times.push(`${dayName}: ${slot.slot.startTime}-${slot.slot.endTime}`);
+      }
+    }
+    for (const [fieldName, details] of Object.entries(fieldSlotDetails)) {
+      this.log('debug', 'resource', `Field "${fieldName}" availability`, {
+        resourceName: fieldName,
+        availabilityByDay: details.times,
+      });
+    }
   }
 
   /**
@@ -497,6 +557,7 @@ export class ScheduleGenerator {
    */
   private async scheduleGames(): Promise<void> {
     console.log('\n--- Scheduling Games ---');
+    this.log('info', 'game', 'Starting game scheduling phase');
 
     // Group teams by division
     const teamsByDivision = new Map<string, Team[]>();
@@ -508,6 +569,7 @@ export class ScheduleGenerator {
     }
 
     console.log(`Total divisions: ${teamsByDivision.size}`);
+    this.log('info', 'game', `Found ${teamsByDivision.size} divisions with teams to schedule games for`);
 
     // Generate matchups for each division
     for (const [divisionId, divisionTeams] of teamsByDivision) {
@@ -585,10 +647,36 @@ export class ScheduleGenerator {
     matchup: GameMatchup,
     durationHours: number
   ): boolean {
+    const homeTeam = this.teams.find(t => t.id === matchup.homeTeamId);
+    const awayTeam = this.teams.find(t => t.id === matchup.awayTeamId);
+    const homeTeamName = homeTeam?.name || matchup.homeTeamId;
+    const awayTeamName = awayTeam?.name || matchup.awayTeamId;
+
+    this.log('debug', 'game', `Attempting to schedule: ${homeTeamName} vs ${awayTeamName}`, {
+      homeTeamId: matchup.homeTeamId,
+      awayTeamId: matchup.awayTeamId,
+      divisionId: matchup.divisionId,
+      durationHours,
+    });
+
     // Filter game field slots to only those compatible with the division
-    const fieldSlots = this.gameFieldSlots.filter(rs =>
+    const allFieldSlots = this.gameFieldSlots;
+    const fieldSlots = allFieldSlots.filter(rs =>
       this.isFieldCompatibleWithDivision(rs.resourceId, matchup.divisionId)
     );
+
+    const incompatibleCount = allFieldSlots.length - fieldSlots.length;
+    if (incompatibleCount > 0) {
+      this.log('debug', 'game', `Filtered out ${incompatibleCount} field slots incompatible with division`, {
+        totalSlots: allFieldSlots.length,
+        compatibleSlots: fieldSlots.length,
+        divisionId: matchup.divisionId,
+      });
+    }
+
+    // Track reasons why slots were skipped (for debugging)
+    const skipReasons: Record<string, number> = {};
+    const skipDetails: Array<{ date: string; field: string; reason: string }> = [];
 
     // Find available windows that can accommodate the game duration
     for (const rs of fieldSlots) {
@@ -597,10 +685,12 @@ export class ScheduleGenerator {
       const awayConstraint = this.teamConstraints.get(matchup.awayTeamId);
 
       if (!homeConstraint || !awayConstraint) {
+        skipReasons['missing_constraint'] = (skipReasons['missing_constraint'] || 0) + 1;
+        skipDetails.push({ date: rs.slot.date, field: rs.resourceName, reason: 'Missing team constraint' });
         continue;
       }
 
-      const availableTime = this.findAvailableTimeInWindowForMatchup(
+      const result = this.findAvailableTimeInWindowForMatchupWithReason(
         rs.resourceId,
         rs.slot,
         durationHours,
@@ -610,7 +700,7 @@ export class ScheduleGenerator {
         awayConstraint
       );
 
-      if (availableTime) {
+      if (result.time) {
         const periodId = this.getEventTypeAllowedOnDate(rs.slot.date, 'game');
         if (!periodId) continue; // Should not happen, but safety check
 
@@ -619,19 +709,156 @@ export class ScheduleGenerator {
           divisionId: matchup.divisionId,
           eventType: 'game',
           date: rs.slot.date,
-          startTime: availableTime.startTime,
-          endTime: availableTime.endTime,
+          startTime: result.time.startTime,
+          endTime: result.time.endTime,
           fieldId: rs.resourceId,
           homeTeamId: matchup.homeTeamId,
           awayTeamId: matchup.awayTeamId,
         });
 
+        const dayName = ScheduleGenerator.DAY_NAMES[rs.slot.dayOfWeek];
+        this.log('info', 'game', `Scheduled game: ${homeTeamName} vs ${awayTeamName}`, {
+          date: rs.slot.date,
+          dayOfWeek: rs.slot.dayOfWeek,
+          dayName,
+          time: `${result.time.startTime}-${result.time.endTime}`,
+          resourceName: rs.resourceName,
+          reason: `Found available ${durationHours}hr slot on ${rs.resourceName}. Both teams available on this date.`,
+        });
+
         return true;
+      } else if (result.reason) {
+        skipReasons[result.reason] = (skipReasons[result.reason] || 0) + 1;
+        // Add detailed skip info for the first few of each reason type
+        if (skipDetails.length < 20) {
+          const dayName = ScheduleGenerator.DAY_NAMES[rs.slot.dayOfWeek];
+          skipDetails.push({
+            date: rs.slot.date,
+            field: rs.resourceName,
+            reason: this.formatSkipReason(result.reason, homeTeamName, awayTeamName, dayName),
+          });
+        }
       }
     }
 
-    console.log(`    ❌ No suitable time found for game (home: ${matchup.homeTeamId}, away: ${matchup.awayTeamId})`);
+    this.log('warning', 'game', `Could not schedule game: ${homeTeamName} vs ${awayTeamName}`, {
+      teamId: matchup.homeTeamId,
+      teamName: homeTeamName,
+      awayTeamName,
+      divisionId: matchup.divisionId,
+      slotsChecked: fieldSlots.length,
+      skipReasons,
+      sampleSkipDetails: skipDetails.slice(0, 10),
+    });
     return false;
+  }
+
+  /**
+   * Format skip reason into human-readable explanation
+   */
+  private formatSkipReason(reason: string, homeTeam: string, awayTeam: string, dayName: string): string {
+    switch (reason) {
+      case 'home_team_has_event_on_date':
+        return `${homeTeam} already has another event scheduled on this ${dayName}`;
+      case 'away_team_has_event_on_date':
+        return `${awayTeam} already has another event scheduled on this ${dayName}`;
+      case 'no_available_time_slot':
+        return `No ${dayName} time slot available (field already booked or duration doesn't fit)`;
+      case 'missing_constraint':
+        return 'Team scheduling constraint not found';
+      default:
+        return reason;
+    }
+  }
+
+  /**
+   * Find available time in window for matchup, returning reason if not found
+   */
+  private findAvailableTimeInWindowForMatchupWithReason(
+    fieldId: string,
+    availabilityWindow: TimeSlot,
+    durationHours: number,
+    homeTeamId: string,
+    awayTeamId: string,
+    homeConstraint: TeamConstraint,
+    awayConstraint: TeamConstraint
+  ): { time: { startTime: string; endTime: string } | null; reason?: string } {
+    // Check if either team already has an event on this date (same-day constraint)
+    const homeTeamHasEventToday = this.scheduledEvents.some(event =>
+      event.date === availabilityWindow.date &&
+      (event.teamId === homeTeamId || event.homeTeamId === homeTeamId || event.awayTeamId === homeTeamId)
+    );
+
+    if (homeTeamHasEventToday) {
+      return { time: null, reason: 'home_team_has_event_on_date' };
+    }
+
+    const awayTeamHasEventToday = this.scheduledEvents.some(event =>
+      event.date === availabilityWindow.date &&
+      (event.teamId === awayTeamId || event.homeTeamId === awayTeamId || event.awayTeamId === awayTeamId)
+    );
+
+    if (awayTeamHasEventToday) {
+      return { time: null, reason: 'away_team_has_event_on_date' };
+    }
+
+    // Parse window times
+    const [windowStartHour, windowStartMin] = availabilityWindow.startTime.split(':').map(Number);
+    const [windowEndHour, windowEndMin] = availabilityWindow.endTime.split(':').map(Number);
+
+    const windowStartMinutes = windowStartHour * 60 + windowStartMin;
+    const windowEndMinutes = windowEndHour * 60 + windowEndMin;
+    const durationMinutes = durationHours * 60;
+
+    // Try to find a slot starting from the beginning of the window
+    for (let startMinutes = windowStartMinutes; startMinutes + durationMinutes <= windowEndMinutes; startMinutes += 30) {
+      const endMinutes = startMinutes + durationMinutes;
+
+      const startHour = Math.floor(startMinutes / 60);
+      const startMin = startMinutes % 60;
+      const endHour = Math.floor(endMinutes / 60);
+      const endMin = endMinutes % 60;
+
+      const candidateStartTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
+      const candidateEndTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+
+      // Check if this time conflicts with existing events on this field
+      const hasConflict = this.scheduledEvents.some(event => {
+        if (event.date !== availabilityWindow.date) return false;
+        if (event.fieldId !== fieldId) return false;
+        return this.timesOverlap(event.startTime, event.endTime, candidateStartTime, candidateEndTime);
+      });
+
+      if (hasConflict) {
+        continue;
+      }
+
+      const candidateSlot: TimeSlot = {
+        date: availabilityWindow.date,
+        dayOfWeek: availabilityWindow.dayOfWeek,
+        startTime: candidateStartTime,
+        endTime: candidateEndTime,
+        duration: durationHours,
+      };
+
+      // Check if both teams are available at this time
+      if (!areTeamsAvailableForMatchup(
+        homeTeamId,
+        awayTeamId,
+        candidateSlot,
+        this.teamConstraints,
+        this.scheduledEvents
+      )) {
+        continue;
+      }
+
+      // Found a suitable time!
+      return {
+        time: { startTime: candidateStartTime, endTime: candidateEndTime },
+      };
+    }
+
+    return { time: null, reason: 'no_available_time_slot' };
   }
 
   /**
@@ -640,10 +867,15 @@ export class ScheduleGenerator {
   private async schedulePractices(): Promise<void> {
     console.log('\n--- Scheduling Practices ---');
     console.log(`Total teams: ${this.teams.length}`);
+    this.log('info', 'practice', 'Starting practice scheduling phase');
 
     // Schedule practices week by week to ensure proper distribution
     const weeks = this.getWeeksForEventType('practice');
     console.log(`Total weeks for practices: ${weeks.length}`);
+    this.log('info', 'practice', `Scheduling practices across ${weeks.length} weeks`, {
+      firstWeek: weeks[0]?.startDate,
+      lastWeek: weeks[weeks.length - 1]?.endDate,
+    });
 
     for (const team of this.teams) {
       const constraint = this.teamConstraints.get(team.id);
@@ -714,22 +946,50 @@ export class ScheduleGenerator {
     week: { startDate: string; endDate: string }
   ): boolean {
     const constraint = this.teamConstraints.get(teamId);
+    const team = this.teams.find(t => t.id === teamId);
+    const teamName = team?.name || teamId;
+
     if (!constraint) {
       console.log(`      ⚠️  No constraint found for team ${teamId}`);
+      this.log('warning', 'practice', `No constraint found for team ${teamName}`, { teamId });
       return false;
     }
 
     // Filter practice field slots to only those within this week and compatible with the division
-    const fieldSlots = this.practiceFieldSlots.filter(
-      rs => rs.slot.date >= week.startDate &&
-      rs.slot.date <= week.endDate &&
-      this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
+    const allSlotsInWeek = this.practiceFieldSlots.filter(
+      rs => rs.slot.date >= week.startDate && rs.slot.date <= week.endDate
+    );
+    const fieldSlots = allSlotsInWeek.filter(
+      rs => this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
     );
 
     console.log(`      Field availability windows in this week: ${fieldSlots.length}`);
 
+    const skipReasons: Record<string, number> = {};
+    const skipDetails: Array<{ date: string; field: string; reason: string }> = [];
+
     // Find available windows that can accommodate the practice duration
     for (const rs of fieldSlots) {
+      const dayName = ScheduleGenerator.DAY_NAMES[rs.slot.dayOfWeek];
+
+      // Check if team already has event on this date
+      const teamHasEventToday = this.scheduledEvents.some(event =>
+        event.date === rs.slot.date &&
+        (event.teamId === teamId || event.homeTeamId === teamId || event.awayTeamId === teamId)
+      );
+
+      if (teamHasEventToday) {
+        skipReasons['team_has_event_on_date'] = (skipReasons['team_has_event_on_date'] || 0) + 1;
+        if (skipDetails.length < 10) {
+          skipDetails.push({
+            date: rs.slot.date,
+            field: rs.resourceName,
+            reason: `${teamName} already has another event on this ${dayName}`,
+          });
+        }
+        continue;
+      }
+
       // Normal practice scheduling
       const availableTime = this.findAvailableTimeInWindow(
         rs.resourceId,
@@ -757,11 +1017,40 @@ export class ScheduleGenerator {
           teamId,
         });
 
+        this.log('info', 'practice', `Scheduled practice for ${teamName}`, {
+          teamId,
+          teamName,
+          date: rs.slot.date,
+          dayOfWeek: rs.slot.dayOfWeek,
+          dayName,
+          time: `${availableTime.startTime}-${availableTime.endTime}`,
+          resourceName: rs.resourceName,
+          reason: `Found ${durationHours}hr slot on ${rs.resourceName}. Team has no other events on ${dayName}.`,
+        });
+
         return true;
+      } else {
+        skipReasons['no_time_slot_available'] = (skipReasons['no_time_slot_available'] || 0) + 1;
+        if (skipDetails.length < 10) {
+          skipDetails.push({
+            date: rs.slot.date,
+            field: rs.resourceName,
+            reason: `Field already booked or ${durationHours}hr duration doesn't fit in ${rs.slot.startTime}-${rs.slot.endTime}`,
+          });
+        }
       }
     }
 
     console.log(`      ❌ No suitable time found in any availability window this week`);
+    this.log('warning', 'practice', `Could not schedule practice for ${teamName} in week ${week.startDate}`, {
+      teamId,
+      teamName,
+      weekStart: week.startDate,
+      weekEnd: week.endDate,
+      slotsChecked: fieldSlots.length,
+      skipReasons,
+      sampleSkipDetails: skipDetails,
+    });
     return false;
   }
 
@@ -925,10 +1214,15 @@ export class ScheduleGenerator {
   private async scheduleCageSessions(): Promise<void> {
     console.log('\n--- Scheduling Cage Sessions ---');
     console.log(`Total teams: ${this.teams.length}`);
+    this.log('info', 'cage', 'Starting cage session scheduling phase');
 
     // Schedule cage sessions week by week to ensure proper distribution
     const weeks = this.getWeeksForEventType('cage');
     console.log(`Total weeks for cages: ${weeks.length}`);
+    this.log('info', 'cage', `Scheduling cage sessions across ${weeks.length} weeks`, {
+      firstWeek: weeks[0]?.startDate,
+      lastWeek: weeks[weeks.length - 1]?.endDate,
+    });
 
     for (const team of this.teams) {
       const constraint = this.teamConstraints.get(team.id);
@@ -993,8 +1287,12 @@ export class ScheduleGenerator {
     week: { startDate: string; endDate: string }
   ): boolean {
     const constraint = this.teamConstraints.get(teamId);
+    const team = this.teams.find(t => t.id === teamId);
+    const teamName = team?.name || teamId;
+
     if (!constraint) {
       console.log(`      ⚠️  No constraint found for team ${teamId}`);
+      this.log('warning', 'cage', `No constraint found for team ${teamName}`, { teamId });
       return false;
     }
 
@@ -1011,8 +1309,13 @@ export class ScheduleGenerator {
     // Use division-configured cage session duration, default to 1 hour
     const cageSessionDuration = config?.cageSessionDurationHours ?? 1;
 
+    const skipReasons: Record<string, number> = {};
+    const skipDetails: Array<{ date: string; cage: string; reason: string }> = [];
+
     // Find available windows that can accommodate a cage session
     for (const rs of filteredCageSlots) {
+      const dayName = ScheduleGenerator.DAY_NAMES[rs.slot.dayOfWeek];
+
       // On weekdays, skip days where team already has a practice
       if (this.isWeekday(rs.slot.dayOfWeek)) {
         const teamHasPracticeToday = this.scheduledEvents.some(event =>
@@ -1021,12 +1324,20 @@ export class ScheduleGenerator {
           event.teamId === teamId
         );
         if (teamHasPracticeToday) {
-          continue; // Skip this day - team already has practice
+          skipReasons['weekday_has_practice'] = (skipReasons['weekday_has_practice'] || 0) + 1;
+          if (skipDetails.length < 10) {
+            skipDetails.push({
+              date: rs.slot.date,
+              cage: rs.resourceName,
+              reason: `${teamName} already has practice on this ${dayName} (weekday rule: no cage + practice on same weekday)`,
+            });
+          }
+          continue;
         }
       }
 
       // Try to find a time within this availability window
-      const availableTime = this.findAvailableTimeInWindowForCage(
+      const result = this.findAvailableTimeInWindowForCageWithReason(
         rs.resourceId,
         rs.slot,
         cageSessionDuration,
@@ -1034,29 +1345,78 @@ export class ScheduleGenerator {
         constraint
       );
 
-      if (availableTime) {
+      if (result.time) {
         const periodId = this.getEventTypeAllowedOnDate(rs.slot.date, 'cage');
         if (!periodId) continue;
 
-        console.log(`      ✅ Chose slot: ${rs.slot.date} ${availableTime.startTime}-${availableTime.endTime} at cage ${rs.resourceId}`);
+        console.log(`      ✅ Chose slot: ${rs.slot.date} ${result.time.startTime}-${result.time.endTime} at cage ${rs.resourceId}`);
 
         this.scheduledEvents.push({
           seasonPeriodId: periodId,
           divisionId,
           eventType: 'cage',
           date: rs.slot.date,
-          startTime: availableTime.startTime,
-          endTime: availableTime.endTime,
+          startTime: result.time.startTime,
+          endTime: result.time.endTime,
           cageId: rs.resourceId,
           teamId,
         });
 
+        this.log('info', 'cage', `Scheduled cage session for ${teamName}`, {
+          teamId,
+          teamName,
+          date: rs.slot.date,
+          dayOfWeek: rs.slot.dayOfWeek,
+          dayName,
+          time: `${result.time.startTime}-${result.time.endTime}`,
+          resourceName: rs.resourceName,
+          reason: result.reason || `Found ${cageSessionDuration}hr slot on ${rs.resourceName}`,
+        });
+
         return true;
+      } else if (result.skipReason) {
+        skipReasons[result.skipReason] = (skipReasons[result.skipReason] || 0) + 1;
+        if (skipDetails.length < 10) {
+          skipDetails.push({
+            date: rs.slot.date,
+            cage: rs.resourceName,
+            reason: this.formatCageSkipReason(result.skipReason, teamName, dayName, rs.slot.startTime, rs.slot.endTime),
+          });
+        }
       }
     }
 
     console.log(`      ❌ No suitable time found in any availability window this week`);
+    this.log('warning', 'cage', `Could not schedule cage session for ${teamName} in week ${week.startDate}`, {
+      teamId,
+      teamName,
+      weekStart: week.startDate,
+      weekEnd: week.endDate,
+      slotsChecked: filteredCageSlots.length,
+      skipReasons,
+      sampleSkipDetails: skipDetails,
+    });
     return false;
+  }
+
+  /**
+   * Format cage skip reason into human-readable explanation
+   */
+  private formatCageSkipReason(reason: string, teamName: string, dayName: string, windowStart: string, windowEnd: string): string {
+    switch (reason) {
+      case 'team_has_non_game_event':
+        return `${teamName} already has practice or cage on this ${dayName}`;
+      case 'game_day_not_playing_before_cutoff':
+        return `Game day priority: ${teamName} not playing today, can only use cage after 4:45pm`;
+      case 'game_day_playing_after_cutoff':
+        return `Game day priority: ${teamName} is playing today, cage only available before 4:45pm`;
+      case 'no_time_slot_fits':
+        return `No available time slot fits in ${windowStart}-${windowEnd} window`;
+      case 'cage_already_booked':
+        return `Cage already booked during available times`;
+      default:
+        return reason;
+    }
   }
 
   /**
@@ -1117,14 +1477,15 @@ export class ScheduleGenerator {
   /**
    * Find available cage time for a team, respecting game day priority rules.
    * On game days, teams playing have cage priority until 4:45pm (16:45).
+   * Returns both time and reason for logging.
    */
-  private findAvailableTimeInWindowForCage(
+  private findAvailableTimeInWindowForCageWithReason(
     cageId: string,
     availabilityWindow: TimeSlot,
     durationHours: number,
     teamId: string,
     teamConstraint: TeamConstraint
-  ): { startTime: string; endTime: string } | null {
+  ): { time: { startTime: string; endTime: string } | null; reason?: string; skipReason?: string } {
     // Check if team already has an event on this date (same-day constraint)
     // But allow cage on game days for teams that are playing
     const teamEventsToday = this.scheduledEvents.filter(event =>
@@ -1137,7 +1498,7 @@ export class ScheduleGenerator {
 
     // If team has a non-game event today (practice or cage), skip
     if (teamHasNonGameEventToday) {
-      return null;
+      return { time: null, skipReason: 'team_has_non_game_event' };
     }
 
     // Get all teams that have games on this date
@@ -1168,11 +1529,16 @@ export class ScheduleGenerator {
 
       // Check if the window is still valid after applying priority rules
       if (windowStartMinutes + durationMinutes > windowEndMinutes) {
-        return null;
+        if (teamIsPlayingToday) {
+          return { time: null, skipReason: 'game_day_playing_after_cutoff' };
+        } else {
+          return { time: null, skipReason: 'game_day_not_playing_before_cutoff' };
+        }
       }
     }
 
     // Try to find a slot starting from the beginning of the window
+    let anyConflict = false;
     for (let startMinutes = windowStartMinutes; startMinutes + durationMinutes <= windowEndMinutes; startMinutes += 30) {
       const endMinutes = startMinutes + durationMinutes;
 
@@ -1183,14 +1549,6 @@ export class ScheduleGenerator {
 
       const candidateStartTime = `${String(startHour).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`;
       const candidateEndTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-
-      const candidateSlot: TimeSlot = {
-        date: availabilityWindow.date,
-        dayOfWeek: availabilityWindow.dayOfWeek,
-        startTime: candidateStartTime,
-        endTime: candidateEndTime,
-        duration: durationHours,
-      };
 
       // Check if this time conflicts with existing events on this cage
       const hasConflict = this.scheduledEvents.some(event => {
@@ -1206,17 +1564,41 @@ export class ScheduleGenerator {
       });
 
       if (hasConflict) {
+        anyConflict = true;
         continue;
       }
 
       // Found a suitable time!
+      let reason = `Found ${durationHours}hr slot`;
+      if (isGameDay && teamIsPlayingToday) {
+        reason += ' (game day priority: team playing, using pre-4:45pm slot)';
+      } else if (isGameDay) {
+        reason += ' (game day: team not playing, using post-4:45pm slot)';
+      }
       return {
-        startTime: candidateStartTime,
-        endTime: candidateEndTime,
+        time: { startTime: candidateStartTime, endTime: candidateEndTime },
+        reason,
       };
     }
 
-    return null;
+    return {
+      time: null,
+      skipReason: anyConflict ? 'cage_already_booked' : 'no_time_slot_fits',
+    };
+  }
+
+  /**
+   * Find available cage time for a team (legacy method, calls WithReason variant)
+   */
+  private findAvailableTimeInWindowForCage(
+    cageId: string,
+    availabilityWindow: TimeSlot,
+    durationHours: number,
+    teamId: string,
+    teamConstraint: TeamConstraint
+  ): { startTime: string; endTime: string } | null {
+    const result = this.findAvailableTimeInWindowForCageWithReason(cageId, availabilityWindow, durationHours, teamId, teamConstraint);
+    return result.time;
   }
 
   /**
@@ -1457,6 +1839,7 @@ export class ScheduleGenerator {
         eventsByDivision: this.calculateEventsByDivision(),
         averageEventsPerTeam: this.calculateAverageEventsPerTeam(),
       },
+      schedulingLog: this.schedulingLog.length > 0 ? this.schedulingLog : undefined,
     };
   }
 
