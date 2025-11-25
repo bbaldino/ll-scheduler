@@ -70,6 +70,13 @@
 }
 
 .fieldList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Grid layout for global fields only */
+.globalFieldList {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 1rem;
@@ -81,6 +88,20 @@
   border-radius: 8px;
   padding: 1.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Season field cards take full width */
+.seasonFieldCard {
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.seasonFieldCard.expanded {
+  border-color: #2196f3;
+  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.15);
 }
 
 .fieldHeader {
@@ -112,6 +133,32 @@
 .fieldDetails ul {
   margin: 0.5rem 0 0 1.5rem;
   padding: 0;
+}
+
+/* Horizontal layout for expanded season field */
+.seasonFieldContent {
+  display: flex;
+  gap: 2rem;
+}
+
+.seasonFieldSummary {
+  flex: 0 0 280px;
+  min-width: 220px;
+}
+
+.seasonFieldManagement {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-left: 2rem;
+  border-left: 1px solid #e0e0e0;
+}
+
+.seasonFieldManagementForms {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
 }
 
 .empty {
@@ -160,14 +207,23 @@
   border-top: 1px solid #ddd;
 }
 
+/* When in horizontal layout, remove top border */
+.seasonFieldManagement .availabilitySection {
+  margin-bottom: 0;
+}
+
 .availabilitySection {
   margin-bottom: 1.5rem;
+  flex: 1;
+  min-width: 280px;
 }
 
 .availabilitySection h4 {
   margin: 0 0 1rem 0;
   font-size: 1em;
   color: #333;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.5rem;
 }
 
 .availabilityForm,
@@ -216,4 +272,74 @@
 .availabilityItem button {
   padding: 0.3rem 0.6rem;
   font-size: 0.85em;
+}
+
+.globalFieldCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.addFieldsSection {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+}
+
+.addFieldsSection h4 {
+  margin: 0 0 0.75rem 0;
+}
+
+.availableFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.addFieldButton {
+  padding: 0.5rem 1rem;
+  background-color: #e8f4ea;
+  border: 1px solid #4caf50;
+  color: #2e7d32;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.addFieldButton:hover {
+  background-color: #c8e6c9;
+}
+
+.divisionSection {
+  margin-bottom: 0.75rem;
+}
+
+.copyFromSection {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
+.copyFromSection label {
+  font-weight: 500;
+  color: #1565c0;
+  white-space: nowrap;
+}
+
+.copyFromSection select {
+  padding: 0.4rem;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  font-size: 0.9em;
+  min-width: 200px;
 }

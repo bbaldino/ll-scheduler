@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSeason } from '../contexts/SeasonContext';
 import { fetchTeams, createTeam, updateTeam, deleteTeam } from '../api/teams';
 import { fetchDivisions } from '../api/divisions';
-import type { Team, CreateTeamInput, Division } from '@ll-scheduler/shared';
+import type { Team, Division } from '@ll-scheduler/shared';
 import styles from './TeamsPage.module.css';
 
 export default function TeamsPage() {

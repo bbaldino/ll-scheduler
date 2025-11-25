@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSeason } from '../contexts/SeasonContext';
-import { fetchSeasonPhases } from '../api/season-phases';
+import { fetchSeasonPeriods } from '../api/season-periods';
 import { fetchDivisions } from '../api/divisions';
 import { generateSchedule } from '../api/schedule-generator';
 import type {
-  SeasonPhase,
+  SeasonPeriod,
   Division,
   GenerateScheduleResult,
 } from '@ll-scheduler/shared';
@@ -12,9 +12,9 @@ import styles from './ScheduleGeneratorPage.module.css';
 
 export default function ScheduleGeneratorPage() {
   const { currentSeason } = useSeason();
-  const [phases, setPhases] = useState<SeasonPhase[]>([]);
+  const [seasonPeriods, setSeasonPeriods] = useState<SeasonPeriod[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
-  const [selectedPhaseId, setSelectedPhaseId] = useState<string>('');
+  const [selectedPeriodIds, setSelectedPeriodIds] = useState<string[]>([]);
   const [selectedDivisionIds, setSelectedDivisionIds] = useState<string[]>([]);
   const [clearExisting, setClearExisting] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -22,21 +22,21 @@ export default function ScheduleGeneratorPage() {
 
   useEffect(() => {
     if (currentSeason) {
-      loadPhases();
+      loadSeasonPeriods();
       loadDivisions();
     }
   }, [currentSeason]);
 
-  const loadPhases = async () => {
+  const loadSeasonPeriods = async () => {
     if (!currentSeason) return;
     try {
-      const data = await fetchSeasonPhases(currentSeason.id);
-      setPhases(data);
-      if (data.length > 0 && !selectedPhaseId) {
-        setSelectedPhaseId(data[0].id);
-      }
+      const data = await fetchSeasonPeriods(currentSeason.id);
+      setSeasonPeriods(data);
+      // Pre-select all auto-schedulable periods
+      const autoScheduleIds = data.filter((p) => p.autoSchedule).map((p) => p.id);
+      setSelectedPeriodIds(autoScheduleIds);
     } catch (error) {
-      console.error('Failed to load phases:', error);
+      console.error('Failed to load season periods:', error);
     }
   };
 
@@ -49,6 +49,14 @@ export default function ScheduleGeneratorPage() {
     }
   };
 
+  const handlePeriodToggle = (periodId: string) => {
+    setSelectedPeriodIds((prev) =>
+      prev.includes(periodId)
+        ? prev.filter((id) => id !== periodId)
+        : [...prev, periodId]
+    );
+  };
+
   const handleDivisionToggle = (divisionId: string) => {
     setSelectedDivisionIds((prev) =>
       prev.includes(divisionId)
@@ -58,8 +66,8 @@ export default function ScheduleGeneratorPage() {
   };
 
   const handleGenerate = async () => {
-    if (!selectedPhaseId) {
-      alert('Please select a season phase');
+    if (selectedPeriodIds.length === 0) {
+      alert('Please select at least one season period');
       return;
     }
 
@@ -68,7 +76,7 @@ export default function ScheduleGeneratorPage() {
 
     try {
       const generateResult = await generateSchedule({
-        seasonPhaseId: selectedPhaseId,
+        periodIds: selectedPeriodIds,
         divisionIds: selectedDivisionIds.length > 0 ? selectedDivisionIds : undefined,
         clearExisting,
       });
@@ -107,20 +115,40 @@ export default function ScheduleGeneratorPage() {
 
       <div className={styles.form}>
         <div className={styles.formGroup}>
-          <label htmlFor="phase-select">Season Phase *</label>
-          <select
-            id="phase-select"
-            value={selectedPhaseId}
-            onChange={(e) => setSelectedPhaseId(e.target.value)}
-            disabled={isGenerating}
-          >
-            <option value="">Select a phase</option>
-            {phases.map((phase) => (
-              <option key={phase.id} value={phase.id}>
-                {phase.name} ({phase.startDate} to {phase.endDate})
-              </option>
-            ))}
-          </select>
+          <label>Season Periods *</label>
+          <p className={styles.helperText}>
+            Select the periods to include in the schedule. Auto-schedulable periods are pre-selected.
+          </p>
+          <div className={styles.checkboxGroup}>
+            {seasonPeriods.length === 0 ? (
+              <p className={styles.emptyMessage}>
+                No season periods defined. Add periods on the Seasons page.
+              </p>
+            ) : (
+              seasonPeriods.map((period) => (
+                <label key={period.id} className={styles.checkbox}>
+                  <input
+                    type="checkbox"
+                    checked={selectedPeriodIds.includes(period.id)}
+                    onChange={() => handlePeriodToggle(period.id)}
+                    disabled={isGenerating}
+                  />
+                  <span className={styles.periodLabel}>
+                    <strong>{period.name}</strong>
+                    <span className={styles.periodDates}>
+                      {period.startDate} to {period.endDate}
+                    </span>
+                    <span className={styles.periodEventTypes}>
+                      ({period.eventTypes.join(', ')})
+                    </span>
+                    {!period.autoSchedule && (
+                      <span className={styles.manualBadge}>Manual</span>
+                    )}
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
         </div>
 
         <div className={styles.formGroup}>
@@ -148,13 +176,13 @@ export default function ScheduleGeneratorPage() {
               onChange={(e) => setClearExisting(e.target.checked)}
               disabled={isGenerating}
             />
-            Clear existing events in this phase before generating
+            Clear existing events in selected periods before generating
           </label>
         </div>
 
         <button
           onClick={handleGenerate}
-          disabled={isGenerating || !selectedPhaseId}
+          disabled={isGenerating || selectedPeriodIds.length === 0}
           className={styles.generateButton}
         >
           {isGenerating ? 'Generating...' : 'Generate Schedule'}

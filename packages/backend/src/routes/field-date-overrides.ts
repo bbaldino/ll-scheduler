@@ -11,14 +11,14 @@ import {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// GET /api/field-date-overrides?fieldId=xxx - List overrides for a field
+// GET /api/field-date-overrides?seasonFieldId=xxx - List overrides for a season field
 app.get('/', async (c) => {
-  const fieldId = c.req.query('fieldId');
-  if (!fieldId) {
-    return c.json({ error: 'fieldId query parameter is required' }, 400);
+  const seasonFieldId = c.req.query('seasonFieldId');
+  if (!seasonFieldId) {
+    return c.json({ error: 'seasonFieldId query parameter is required' }, 400);
   }
 
-  const overrides = await listFieldDateOverrides(c.env.DB, fieldId);
+  const overrides = await listFieldDateOverrides(c.env.DB, seasonFieldId);
   return c.json(overrides);
 });
 

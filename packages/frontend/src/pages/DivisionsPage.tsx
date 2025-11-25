@@ -11,6 +11,7 @@ import styles from './DivisionsPage.module.css';
 export default function DivisionsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CreateDivisionInput>({
@@ -39,6 +40,7 @@ export default function DivisionsPage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     try {
       await createDivision(formData);
       await loadDivisions();
@@ -47,6 +49,8 @@ export default function DivisionsPage() {
     } catch (error) {
       console.error('Failed to create division:', error);
       alert('Failed to create division');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -58,6 +62,7 @@ export default function DivisionsPage() {
   };
 
   const handleUpdate = async (id: string) => {
+    setIsSubmitting(true);
     try {
       await updateDivision(id, editFormData);
       await loadDivisions();
@@ -65,6 +70,8 @@ export default function DivisionsPage() {
     } catch (error) {
       console.error('Failed to update division:', error);
       alert('Failed to update division');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -76,12 +83,15 @@ export default function DivisionsPage() {
     ) {
       return;
     }
+    setIsSubmitting(true);
     try {
       await deleteDivision(id);
       await loadDivisions();
     } catch (error) {
       console.error('Failed to delete division:', error);
       alert('Failed to delete division');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -93,7 +103,9 @@ export default function DivisionsPage() {
     <div className={styles.container}>
       <div className={styles.header}>
         <h2>Divisions</h2>
-        <button onClick={() => setIsCreating(true)}>Create Division</button>
+        <button onClick={() => setIsCreating(true)} disabled={isSubmitting || isCreating}>
+          Create Division
+        </button>
       </div>
 
       <p className={styles.description}>
@@ -116,8 +128,10 @@ export default function DivisionsPage() {
             />
           </div>
           <div className={styles.formActions}>
-            <button type="submit">Create</button>
-            <button type="button" onClick={() => setIsCreating(false)}>
+            <button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Creating...' : 'Create'}
+            </button>
+            <button type="button" onClick={() => setIsCreating(false)} disabled={isSubmitting}>
               Cancel
             </button>
           </div>
@@ -136,8 +150,12 @@ export default function DivisionsPage() {
                   className={styles.editInput}
                 />
                 <div className={styles.editActions}>
-                  <button onClick={() => handleUpdate(division.id)}>Save</button>
-                  <button onClick={() => setEditingId(null)}>Cancel</button>
+                  <button onClick={() => handleUpdate(division.id)} disabled={isSubmitting}>
+                    {isSubmitting ? 'Saving...' : 'Save'}
+                  </button>
+                  <button onClick={() => setEditingId(null)} disabled={isSubmitting}>
+                    Cancel
+                  </button>
                 </div>
               </div>
             ) : (
@@ -146,8 +164,12 @@ export default function DivisionsPage() {
                   <h3>{division.name}</h3>
                 </div>
                 <div className={styles.divisionActions}>
-                  <button onClick={() => startEditing(division)}>Edit</button>
-                  <button onClick={() => handleDelete(division.id)}>Delete</button>
+                  <button onClick={() => startEditing(division)} disabled={isSubmitting}>
+                    Edit
+                  </button>
+                  <button onClick={() => handleDelete(division.id)} disabled={isSubmitting}>
+                    {isSubmitting ? 'Deleting...' : 'Delete'}
+                  </button>
                 </div>
               </>
             )}

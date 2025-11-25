@@ -11,14 +11,14 @@ import {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// GET /api/field-availabilities?fieldId=xxx - List availabilities for a field
+// GET /api/field-availabilities?seasonFieldId=xxx - List availabilities for a season field
 app.get('/', async (c) => {
-  const fieldId = c.req.query('fieldId');
-  if (!fieldId) {
-    return c.json({ error: 'fieldId query parameter is required' }, 400);
+  const seasonFieldId = c.req.query('seasonFieldId');
+  if (!seasonFieldId) {
+    return c.json({ error: 'seasonFieldId query parameter is required' }, 400);
   }
 
-  const availabilities = await listFieldAvailabilities(c.env.DB, fieldId);
+  const availabilities = await listFieldAvailabilities(c.env.DB, seasonFieldId);
   return c.json(availabilities);
 });
 

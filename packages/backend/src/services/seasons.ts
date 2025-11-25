@@ -51,7 +51,14 @@ export async function createSeason(db: D1Database, input: CreateSeasonInput): Pr
       `INSERT INTO seasons (id, name, start_date, end_date, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'draft', ?, ?)`
     )
-    .bind(id, input.name, input.startDate, input.endDate, now, now)
+    .bind(
+      id,
+      input.name,
+      input.startDate,
+      input.endDate,
+      now,
+      now
+    )
     .run();
 
   const season = await getSeasonById(db, id);

@@ -11,14 +11,14 @@ import {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// GET /api/cage-date-overrides?cageId=xxx - List overrides for a cage
+// GET /api/cage-date-overrides?seasonCageId=xxx - List overrides for a season cage
 app.get('/', async (c) => {
-  const cageId = c.req.query('cageId');
-  if (!cageId) {
-    return c.json({ error: 'cageId query parameter is required' }, 400);
+  const seasonCageId = c.req.query('seasonCageId');
+  if (!seasonCageId) {
+    return c.json({ error: 'seasonCageId query parameter is required' }, 400);
   }
 
-  const overrides = await listCageDateOverrides(c.env.DB, cageId);
+  const overrides = await listCageDateOverrides(c.env.DB, seasonCageId);
   return c.json(overrides);
 });
 

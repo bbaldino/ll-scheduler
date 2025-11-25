@@ -1,10 +1,10 @@
 import type { EventType } from './season.js';
 
 /**
- * Request to generate a schedule for a specific season phase
+ * Request to generate a schedule for selected season periods
  */
 export interface GenerateScheduleRequest {
-  seasonPhaseId: string;
+  periodIds: string[]; // Season periods to generate schedule for
   divisionIds?: string[]; // Optional: only generate for specific divisions
   clearExisting?: boolean; // If true, delete existing events before generating
   maxAttempts?: number; // Maximum number of generation attempts (default: 10)
@@ -53,7 +53,8 @@ export type ScheduleWarningType =
   | 'unbalanced_home_away'
   | 'back_to_back_games'
   | 'limited_time_slots'
-  | 'field_overutilization';
+  | 'field_overutilization'
+  | 'insufficient_resources';
 
 /**
  * Statistics about the generated schedule
@@ -132,7 +133,7 @@ export interface SchedulingState {
  * Draft of a scheduled event (before saving to database)
  */
 export interface ScheduledEventDraft {
-  seasonPhaseId: string;
+  seasonPeriodId: string;
   divisionId: string;
   eventType: EventType;
   date: string;

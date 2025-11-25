@@ -1,12 +1,14 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import seasonsRouter from './routes/seasons.js';
-import seasonPhasesRouter from './routes/season-phases.js';
+import seasonPeriodsRouter from './routes/season-periods.js';
 import divisionsRouter from './routes/divisions.js';
 import divisionConfigsRouter from './routes/division-configs.js';
 import fieldsRouter from './routes/fields.js';
+import seasonFieldsRouter from './routes/season-fields.js';
 import teamsRouter from './routes/teams.js';
 import battingCagesRouter from './routes/batting-cages.js';
+import seasonCagesRouter from './routes/season-cages.js';
 import fieldAvailabilitiesRouter from './routes/field-availabilities.js';
 import cageAvailabilitiesRouter from './routes/cage-availabilities.js';
 import fieldDateOverridesRouter from './routes/field-date-overrides.js';
@@ -33,12 +35,14 @@ app.get('/health', (c) => {
 
 // API routes
 app.route('/api/seasons', seasonsRouter);
-app.route('/api/season-phases', seasonPhasesRouter);
+app.route('/api/season-periods', seasonPeriodsRouter);
 app.route('/api/divisions', divisionsRouter);
 app.route('/api/division-configs', divisionConfigsRouter);
 app.route('/api/fields', fieldsRouter);
+app.route('/api/season-fields', seasonFieldsRouter);
 app.route('/api/teams', teamsRouter);
 app.route('/api/batting-cages', battingCagesRouter);
+app.route('/api/season-cages', seasonCagesRouter);
 app.route('/api/field-availabilities', fieldAvailabilitiesRouter);
 app.route('/api/cage-availabilities', cageAvailabilitiesRouter);
 app.route('/api/field-date-overrides', fieldDateOverridesRouter);

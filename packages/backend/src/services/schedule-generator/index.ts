@@ -5,15 +5,16 @@ import type {
   ScheduledEventDraft,
 } from '@ll-scheduler/shared';
 import { ScheduleGenerator } from './generator.js';
-import { getSeasonPhaseById } from '../season-phases.js';
-import { listDivisionConfigs } from '../division-configs.js';
+import { getSeasonPeriodsByIds } from '../season-periods.js';
+import { getSeasonById } from '../seasons.js';
+import { listDivisionConfigsBySeasonId } from '../division-configs.js';
 import { listTeams } from '../teams.js';
-import { listFields } from '../fields.js';
-import { listBattingCages } from '../batting-cages.js';
-import { listFieldAvailability } from '../field-availability.js';
-import { listCageAvailability } from '../cage-availability.js';
-import { listFieldDateOverrides } from '../field-date-overrides.js';
-import { listCageDateOverrides } from '../cage-date-overrides.js';
+import { listSeasonFields } from '../season-fields.js';
+import { listSeasonCages } from '../season-cages.js';
+import { listFieldAvailabilitiesForSeason } from '../field-availabilities.js';
+import { listCageAvailabilitiesForSeason } from '../cage-availabilities.js';
+import { listFieldDateOverridesForSeason } from '../field-date-overrides.js';
+import { listCageDateOverridesForSeason } from '../cage-date-overrides.js';
 import {
   listScheduledEvents,
   createScheduledEvent,
@@ -28,36 +29,77 @@ export async function generateSchedule(
   request: GenerateScheduleRequest
 ): Promise<GenerateScheduleResult> {
   try {
-    // Fetch the season phase
-    const phase = await getSeasonPhaseById(db, request.seasonPhaseId);
-    if (!phase) {
+    console.log('generateSchedule: Starting with request:', JSON.stringify(request, null, 2));
+
+    // Validate period IDs
+    if (!request.periodIds || request.periodIds.length === 0) {
       return {
         success: false,
         eventsCreated: 0,
-        message: 'Season phase not found',
-        errors: [{ type: 'invalid_config', message: 'Season phase not found' }],
+        message: 'No season periods specified',
+        errors: [{ type: 'invalid_config', message: 'At least one season period must be selected' }],
       };
     }
+
+    // Fetch the season periods
+    console.log('generateSchedule: Fetching season periods:', request.periodIds);
+    const periods = await getSeasonPeriodsByIds(db, request.periodIds);
+    if (periods.length === 0) {
+      console.log('generateSchedule: No season periods found');
+      return {
+        success: false,
+        eventsCreated: 0,
+        message: 'Season periods not found',
+        errors: [{ type: 'invalid_config', message: 'Season periods not found' }],
+      };
+    }
+    console.log('generateSchedule: Found', periods.length, 'season periods');
+
+    // All periods must belong to the same season
+    const seasonIds = new Set(periods.map(p => p.seasonId));
+    if (seasonIds.size > 1) {
+      return {
+        success: false,
+        eventsCreated: 0,
+        message: 'All periods must belong to the same season',
+        errors: [{ type: 'invalid_config', message: 'Cannot generate schedule across multiple seasons' }],
+      };
+    }
+
+    const seasonId = periods[0].seasonId;
+
+    // Fetch the season
+    const season = await getSeasonById(db, seasonId);
+    if (!season) {
+      console.log('generateSchedule: Season not found');
+      return {
+        success: false,
+        eventsCreated: 0,
+        message: 'Season not found',
+        errors: [{ type: 'invalid_config', message: 'Season not found' }],
+      };
+    }
+    console.log('generateSchedule: Found season:', JSON.stringify(season, null, 2));
 
     // Fetch all necessary data
     const [
       divisionConfigs,
       teams,
-      fields,
-      cages,
+      seasonFields,
+      seasonCages,
       fieldAvailability,
       cageAvailability,
       fieldOverrides,
       cageOverrides,
     ] = await Promise.all([
-      listDivisionConfigs(db, { seasonId: phase.seasonId }),
-      listTeams(db, { seasonId: phase.seasonId }),
-      listFields(db),
-      listBattingCages(db),
-      listFieldAvailability(db),
-      listCageAvailability(db),
-      listFieldDateOverrides(db),
-      listCageDateOverrides(db),
+      listDivisionConfigsBySeasonId(db, seasonId),
+      listTeams(db, seasonId),
+      listSeasonFields(db, seasonId),
+      listSeasonCages(db, seasonId),
+      listFieldAvailabilitiesForSeason(db, seasonId),
+      listCageAvailabilitiesForSeason(db, seasonId),
+      listFieldDateOverridesForSeason(db, seasonId),
+      listCageDateOverridesForSeason(db, seasonId),
     ]);
 
     // Filter teams by division if specified
@@ -74,7 +116,7 @@ export async function generateSchedule(
     // Clear existing events if requested
     if (request.clearExisting) {
       const existingEvents = await listScheduledEvents(db, {
-        seasonPhaseId: request.seasonPhaseId,
+        seasonPeriodIds: request.periodIds,
       });
 
       for (const event of existingEvents) {
@@ -82,13 +124,14 @@ export async function generateSchedule(
       }
     }
 
-    // Create the generator
+    // Create the generator with the selected periods
     const generator = new ScheduleGenerator(
-      phase,
+      periods,
+      season,
       filteredConfigs,
       filteredTeams,
-      fields,
-      cages,
+      seasonFields,
+      seasonCages,
       fieldAvailability,
       cageAvailability,
       fieldOverrides,
@@ -96,16 +139,24 @@ export async function generateSchedule(
     );
 
     // Generate the schedule
+    console.log('generateSchedule: Calling generator.generate()');
     const result = await generator.generate();
+    console.log('generateSchedule: Generator result:', JSON.stringify(result, null, 2));
 
     // Save the generated events to the database
     if (result.success) {
       const events = generator.getScheduledEvents();
+      console.log('generateSchedule: Saving', events.length, 'events to database');
       await saveScheduledEvents(db, events);
+      console.log('generateSchedule: Events saved successfully');
+    } else {
+      console.log('generateSchedule: Generation failed, not saving events');
     }
 
     return result;
   } catch (error) {
+    console.error('generateSchedule: Exception caught:', error);
+    console.error('generateSchedule: Stack trace:', error instanceof Error ? error.stack : 'N/A');
     return {
       success: false,
       eventsCreated: 0,
@@ -128,19 +179,20 @@ async function saveScheduledEvents(
   events: ScheduledEventDraft[]
 ): Promise<void> {
   for (const event of events) {
-    await createScheduledEvent(db, {
-      seasonPhaseId: event.seasonPhaseId,
+    const input = {
+      seasonPeriodId: event.seasonPeriodId,
       divisionId: event.divisionId,
       eventType: event.eventType,
       date: event.date,
       startTime: event.startTime,
       endTime: event.endTime,
-      status: 'scheduled',
+      status: 'scheduled' as const,
       fieldId: event.fieldId,
       cageId: event.cageId,
       homeTeamId: event.homeTeamId,
       awayTeamId: event.awayTeamId,
       teamId: event.teamId,
-    });
+    };
+    await createScheduledEvent(db, input);
   }
 }

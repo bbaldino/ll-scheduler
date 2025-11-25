@@ -7,7 +7,7 @@ import { generateId } from '../utils/id.js';
 
 interface CageDateOverrideRow {
   id: string;
-  cage_id: string;
+  season_cage_id: string;
   date: string;
   override_type: string;
   start_time: string | null;
@@ -20,24 +20,55 @@ interface CageDateOverrideRow {
 function rowToCageDateOverride(row: CageDateOverrideRow): CageDateOverride {
   return {
     id: row.id,
-    cageId: row.cage_id,
+    seasonCageId: row.season_cage_id,
     date: row.date,
-    overrideType: row.override_type as any,
-    startTime: row.start_time,
-    endTime: row.end_time,
+    overrideType: row.override_type as 'blackout' | 'added',
+    startTime: row.start_time || undefined,
+    endTime: row.end_time || undefined,
     reason: row.reason || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
+/**
+ * List cage date overrides, optionally filtered by season cage
+ */
 export async function listCageDateOverrides(
   db: D1Database,
-  cageId: string
+  seasonCageId?: string
+): Promise<CageDateOverride[]> {
+  let result;
+  if (seasonCageId) {
+    result = await db
+      .prepare('SELECT * FROM cage_date_overrides WHERE season_cage_id = ? ORDER BY date')
+      .bind(seasonCageId)
+      .all<CageDateOverrideRow>();
+  } else {
+    result = await db
+      .prepare('SELECT * FROM cage_date_overrides ORDER BY date')
+      .all<CageDateOverrideRow>();
+  }
+
+  return (result.results || []).map(rowToCageDateOverride);
+}
+
+/**
+ * List all cage date overrides for a season (joins through season_cages)
+ */
+export async function listCageDateOverridesForSeason(
+  db: D1Database,
+  seasonId: string
 ): Promise<CageDateOverride[]> {
   const result = await db
-    .prepare('SELECT * FROM cage_date_overrides WHERE cage_id = ? ORDER BY date')
-    .bind(cageId)
+    .prepare(`
+      SELECT cdo.*
+      FROM cage_date_overrides cdo
+      JOIN season_cages sc ON cdo.season_cage_id = sc.id
+      WHERE sc.season_id = ?
+      ORDER BY cdo.date
+    `)
+    .bind(seasonId)
     .all<CageDateOverrideRow>();
 
   return (result.results || []).map(rowToCageDateOverride);
@@ -64,12 +95,12 @@ export async function createCageDateOverride(
 
   await db
     .prepare(
-      `INSERT INTO cage_date_overrides (id, cage_id, date, override_type, start_time, end_time, reason, created_at, updated_at)
+      `INSERT INTO cage_date_overrides (id, season_cage_id, date, override_type, start_time, end_time, reason, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
-      input.cageId,
+      input.seasonCageId,
       input.date,
       input.overrideType,
       input.startTime || null,

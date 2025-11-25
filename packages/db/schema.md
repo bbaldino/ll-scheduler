@@ -19,7 +19,6 @@ Physical locations for practices/games (scoped to season)
 - `id`: Primary key (UUID)
 - `season_id`: Foreign key to seasons
 - `name`: Field name
-- `location`: Optional address/description
 
 Related tables:
 - `field_availability_schedules`: Weekly recurring availability

@@ -5,15 +5,9 @@ import type { CreateFieldInput, UpdateFieldInput } from '@ll-scheduler/shared';
 
 const router = new Hono<{ Bindings: Env }>();
 
-// GET /api/fields?seasonId=xyz - List fields for a season
+// GET /api/fields - List all global fields
 router.get('/', async (c) => {
-  const seasonId = c.req.query('seasonId');
-
-  if (!seasonId) {
-    return c.json({ error: 'seasonId query parameter is required' }, 400);
-  }
-
-  const fields = await fieldsService.listFields(c.env.DB, seasonId);
+  const fields = await fieldsService.listFields(c.env.DB);
   return c.json(fields);
 });
 
@@ -29,13 +23,13 @@ router.get('/:id', async (c) => {
   return c.json(field);
 });
 
-// POST /api/fields - Create a new field
+// POST /api/fields - Create a new global field
 router.post('/', async (c) => {
   const input: CreateFieldInput = await c.req.json();
 
   // Validation
-  if (!input.seasonId || !input.name) {
-    return c.json({ error: 'Missing required fields: seasonId, name' }, 400);
+  if (!input.name) {
+    return c.json({ error: 'Missing required field: name' }, 400);
   }
 
   const field = await fieldsService.createField(c.env.DB, input);

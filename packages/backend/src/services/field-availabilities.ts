@@ -7,7 +7,7 @@ import { generateId } from '../utils/id.js';
 
 interface FieldAvailabilityRow {
   id: string;
-  field_id: string;
+  season_field_id: string;
   day_of_week: number;
   start_time: string;
   end_time: string;
@@ -18,7 +18,7 @@ interface FieldAvailabilityRow {
 function rowToFieldAvailability(row: FieldAvailabilityRow): FieldAvailability {
   return {
     id: row.id,
-    fieldId: row.field_id,
+    seasonFieldId: row.season_field_id,
     dayOfWeek: row.day_of_week,
     startTime: row.start_time,
     endTime: row.end_time,
@@ -27,13 +27,44 @@ function rowToFieldAvailability(row: FieldAvailabilityRow): FieldAvailability {
   };
 }
 
+/**
+ * List field availabilities, optionally filtered by season field
+ */
 export async function listFieldAvailabilities(
   db: D1Database,
-  fieldId: string
+  seasonFieldId?: string
+): Promise<FieldAvailability[]> {
+  let result;
+  if (seasonFieldId) {
+    result = await db
+      .prepare('SELECT * FROM field_availabilities WHERE season_field_id = ? ORDER BY day_of_week, start_time')
+      .bind(seasonFieldId)
+      .all<FieldAvailabilityRow>();
+  } else {
+    result = await db
+      .prepare('SELECT * FROM field_availabilities ORDER BY day_of_week, start_time')
+      .all<FieldAvailabilityRow>();
+  }
+
+  return (result.results || []).map(rowToFieldAvailability);
+}
+
+/**
+ * List all field availabilities for a season (joins through season_fields)
+ */
+export async function listFieldAvailabilitiesForSeason(
+  db: D1Database,
+  seasonId: string
 ): Promise<FieldAvailability[]> {
   const result = await db
-    .prepare('SELECT * FROM field_availabilities WHERE field_id = ? ORDER BY day_of_week, start_time')
-    .bind(fieldId)
+    .prepare(`
+      SELECT fa.*
+      FROM field_availabilities fa
+      JOIN season_fields sf ON fa.season_field_id = sf.id
+      WHERE sf.season_id = ?
+      ORDER BY fa.day_of_week, fa.start_time
+    `)
+    .bind(seasonId)
     .all<FieldAvailabilityRow>();
 
   return (result.results || []).map(rowToFieldAvailability);
@@ -60,10 +91,10 @@ export async function createFieldAvailability(
 
   await db
     .prepare(
-      `INSERT INTO field_availabilities (id, field_id, day_of_week, start_time, end_time, created_at, updated_at)
+      `INSERT INTO field_availabilities (id, season_field_id, day_of_week, start_time, end_time, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, input.fieldId, input.dayOfWeek, input.startTime, input.endTime, now, now)
+    .bind(id, input.seasonFieldId, input.dayOfWeek, input.startTime, input.endTime, now, now)
     .run();
 
   const availability = await getFieldAvailabilityById(db, id);

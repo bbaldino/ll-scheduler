@@ -8,7 +8,6 @@ import { generateId } from '../utils/id.js';
 interface BattingCageRow {
   id: string;
   name: string;
-  location: string;
   division_compatibility: string;
   created_at: string;
   updated_at: string;
@@ -18,13 +17,15 @@ function rowToBattingCage(row: BattingCageRow): BattingCage {
   return {
     id: row.id,
     name: row.name,
-    location: row.location,
-    divisionCompatibility: JSON.parse(row.division_compatibility),
+    divisionCompatibility: JSON.parse(row.division_compatibility || '[]'),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
+/**
+ * List all global batting cages
+ */
 export async function listBattingCages(db: D1Database): Promise<BattingCage[]> {
   const result = await db
     .prepare('SELECT * FROM batting_cages ORDER BY name')
@@ -33,6 +34,9 @@ export async function listBattingCages(db: D1Database): Promise<BattingCage[]> {
   return (result.results || []).map(rowToBattingCage);
 }
 
+/**
+ * Get a batting cage by ID
+ */
 export async function getBattingCageById(db: D1Database, id: string): Promise<BattingCage | null> {
   const result = await db
     .prepare('SELECT * FROM batting_cages WHERE id = ?')
@@ -42,20 +46,22 @@ export async function getBattingCageById(db: D1Database, id: string): Promise<Ba
   return result ? rowToBattingCage(result) : null;
 }
 
+/**
+ * Create a new global batting cage
+ */
 export async function createBattingCage(
   db: D1Database,
   input: CreateBattingCageInput
 ): Promise<BattingCage> {
   const id = generateId();
   const now = new Date().toISOString();
-  const divisionCompatibility = JSON.stringify(input.divisionCompatibility || []);
 
   await db
     .prepare(
-      `INSERT INTO batting_cages (id, name, location, division_compatibility, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO batting_cages (id, name, division_compatibility, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`
     )
-    .bind(id, input.name, input.location, divisionCompatibility, now, now)
+    .bind(id, input.name, JSON.stringify(input.divisionCompatibility || []), now, now)
     .run();
 
   const cage = await getBattingCageById(db, id);
@@ -66,6 +72,9 @@ export async function createBattingCage(
   return cage;
 }
 
+/**
+ * Update a batting cage
+ */
 export async function updateBattingCage(
   db: D1Database,
   id: string,
@@ -83,10 +92,7 @@ export async function updateBattingCage(
     updates.push('name = ?');
     values.push(input.name);
   }
-  if (input.location !== undefined) {
-    updates.push('location = ?');
-    values.push(input.location);
-  }
+
   if (input.divisionCompatibility !== undefined) {
     updates.push('division_compatibility = ?');
     values.push(JSON.stringify(input.divisionCompatibility));
@@ -108,8 +114,10 @@ export async function updateBattingCage(
   return await getBattingCageById(db, id);
 }
 
+/**
+ * Delete a batting cage
+ */
 export async function deleteBattingCage(db: D1Database, id: string): Promise<boolean> {
   const result = await db.prepare('DELETE FROM batting_cages WHERE id = ?').bind(id).run();
-
   return (result.meta.changes ?? 0) > 0;
 }

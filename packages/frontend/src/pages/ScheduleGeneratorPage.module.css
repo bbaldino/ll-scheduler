@@ -192,3 +192,42 @@
 .nextSteps a:hover {
   text-decoration: underline;
 }
+
+.helperText {
+  color: #666;
+  font-size: 0.85em;
+  font-weight: normal;
+  margin: 0;
+}
+
+.emptyMessage {
+  color: #888;
+  font-style: italic;
+  margin: 0;
+}
+
+.periodLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.periodDates {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.periodEventTypes {
+  color: #888;
+  font-size: 0.85em;
+}
+
+.manualBadge {
+  background-color: #ff9800;
+  color: white;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.75em;
+  font-weight: 600;
+}

@@ -259,3 +259,69 @@
   font-style: italic;
   margin: 0;
 }
+
+/* Game day preferences */
+.preferencesList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.preferenceItem {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem;
+  background-color: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.preferenceItem select,
+.preferenceItem input {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.preferenceItem button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.helperText {
+  color: #666;
+  font-size: 0.85em;
+  margin: 0.25rem 0 0.5rem 0;
+}
+
+.phaseActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.phaseEventTypes {
+  color: #666;
+  font-size: 0.85em;
+}
+
+.inlineEditForm {
+  width: 100%;
+}
+
+.eventTypeCheckboxes {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}

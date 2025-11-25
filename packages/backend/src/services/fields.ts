@@ -3,82 +3,58 @@ import { generateId } from '../utils/id.js';
 
 interface FieldRow {
   id: string;
-  season_id: string;
   name: string;
-  location: string | null;
+  division_compatibility: string;
   created_at: string;
   updated_at: string;
 }
 
-async function getFieldDivisionCompatibility(db: D1Database, fieldId: string): Promise<string[]> {
-  const result = await db
-    .prepare('SELECT division_id FROM field_division_compatibility WHERE field_id = ?')
-    .bind(fieldId)
-    .all<{ division_id: string }>();
-
-  return (result.results || []).map((row) => row.division_id);
-}
-
-async function buildFieldObject(db: D1Database, row: FieldRow): Promise<Field> {
-  const divisions = await getFieldDivisionCompatibility(db, row.id);
-
+function rowToField(row: FieldRow): Field {
   return {
     id: row.id,
-    seasonId: row.season_id,
     name: row.name,
-    location: row.location || undefined,
-    divisionCompatibility: divisions,
+    divisionCompatibility: JSON.parse(row.division_compatibility || '[]'),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-export async function listFields(db: D1Database, seasonId: string): Promise<Field[]> {
+/**
+ * List all global fields
+ */
+export async function listFields(db: D1Database): Promise<Field[]> {
   const result = await db
-    .prepare('SELECT * FROM fields WHERE season_id = ? ORDER BY name')
-    .bind(seasonId)
+    .prepare('SELECT * FROM fields ORDER BY name')
     .all<FieldRow>();
 
-  const rows = result.results || [];
-  return Promise.all(rows.map((row) => buildFieldObject(db, row)));
+  return (result.results || []).map(rowToField);
 }
 
+/**
+ * Get a field by ID
+ */
 export async function getFieldById(db: D1Database, id: string): Promise<Field | null> {
   const result = await db
     .prepare('SELECT * FROM fields WHERE id = ?')
     .bind(id)
     .first<FieldRow>();
 
-  if (!result) {
-    return null;
-  }
-
-  return buildFieldObject(db, result);
+  return result ? rowToField(result) : null;
 }
 
+/**
+ * Create a new global field
+ */
 export async function createField(db: D1Database, input: CreateFieldInput): Promise<Field> {
   const id = generateId();
   const now = new Date().toISOString();
 
-  // Insert field
   await db
     .prepare(
-      'INSERT INTO fields (id, season_id, name, location, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO fields (id, name, division_compatibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
     )
-    .bind(id, input.seasonId, input.name, input.location || null, now, now)
+    .bind(id, input.name, JSON.stringify(input.divisionCompatibility || []), now, now)
     .run();
-
-  // Insert division compatibility if provided
-  if (input.divisionCompatibility && input.divisionCompatibility.length > 0) {
-    for (const divisionId of input.divisionCompatibility) {
-      await db
-        .prepare(
-          'INSERT INTO field_division_compatibility (field_id, division_id) VALUES (?, ?)'
-        )
-        .bind(id, divisionId)
-        .run();
-    }
-  }
 
   const field = await getFieldById(db, id);
   if (!field) {
@@ -88,6 +64,9 @@ export async function createField(db: D1Database, input: CreateFieldInput): Prom
   return field;
 }
 
+/**
+ * Update a field
+ */
 export async function updateField(
   db: D1Database,
   id: string,
@@ -98,7 +77,6 @@ export async function updateField(
     return null;
   }
 
-  // Update basic field properties
   const updates: string[] = [];
   const values: any[] = [];
 
@@ -106,9 +84,10 @@ export async function updateField(
     updates.push('name = ?');
     values.push(input.name);
   }
-  if (input.location !== undefined) {
-    updates.push('location = ?');
-    values.push(input.location);
+
+  if (input.divisionCompatibility !== undefined) {
+    updates.push('division_compatibility = ?');
+    values.push(JSON.stringify(input.divisionCompatibility));
   }
 
   if (updates.length > 0) {
@@ -122,23 +101,13 @@ export async function updateField(
       .run();
   }
 
-  // Update division compatibility if provided
-  if (input.divisionCompatibility !== undefined) {
-    await db.prepare('DELETE FROM field_division_compatibility WHERE field_id = ?').bind(id).run();
-
-    for (const divisionId of input.divisionCompatibility) {
-      await db
-        .prepare('INSERT INTO field_division_compatibility (field_id, division_id) VALUES (?, ?)')
-        .bind(id, divisionId)
-        .run();
-    }
-  }
-
   return await getFieldById(db, id);
 }
 
+/**
+ * Delete a field
+ */
 export async function deleteField(db: D1Database, id: string): Promise<boolean> {
   const result = await db.prepare('DELETE FROM fields WHERE id = ?').bind(id).run();
-
   return (result.meta.changes ?? 0) > 0;
 }

@@ -7,7 +7,7 @@ import { generateId } from '../utils/id.js';
 
 interface FieldDateOverrideRow {
   id: string;
-  field_id: string;
+  season_field_id: string;
   date: string;
   override_type: string;
   start_time: string | null;
@@ -20,24 +20,55 @@ interface FieldDateOverrideRow {
 function rowToFieldDateOverride(row: FieldDateOverrideRow): FieldDateOverride {
   return {
     id: row.id,
-    fieldId: row.field_id,
+    seasonFieldId: row.season_field_id,
     date: row.date,
-    overrideType: row.override_type as any,
-    startTime: row.start_time,
-    endTime: row.end_time,
+    overrideType: row.override_type as 'blackout' | 'added',
+    startTime: row.start_time || undefined,
+    endTime: row.end_time || undefined,
     reason: row.reason || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
+/**
+ * List field date overrides, optionally filtered by season field
+ */
 export async function listFieldDateOverrides(
   db: D1Database,
-  fieldId: string
+  seasonFieldId?: string
+): Promise<FieldDateOverride[]> {
+  let result;
+  if (seasonFieldId) {
+    result = await db
+      .prepare('SELECT * FROM field_date_overrides WHERE season_field_id = ? ORDER BY date')
+      .bind(seasonFieldId)
+      .all<FieldDateOverrideRow>();
+  } else {
+    result = await db
+      .prepare('SELECT * FROM field_date_overrides ORDER BY date')
+      .all<FieldDateOverrideRow>();
+  }
+
+  return (result.results || []).map(rowToFieldDateOverride);
+}
+
+/**
+ * List all field date overrides for a season (joins through season_fields)
+ */
+export async function listFieldDateOverridesForSeason(
+  db: D1Database,
+  seasonId: string
 ): Promise<FieldDateOverride[]> {
   const result = await db
-    .prepare('SELECT * FROM field_date_overrides WHERE field_id = ? ORDER BY date')
-    .bind(fieldId)
+    .prepare(`
+      SELECT fdo.*
+      FROM field_date_overrides fdo
+      JOIN season_fields sf ON fdo.season_field_id = sf.id
+      WHERE sf.season_id = ?
+      ORDER BY fdo.date
+    `)
+    .bind(seasonId)
     .all<FieldDateOverrideRow>();
 
   return (result.results || []).map(rowToFieldDateOverride);
@@ -64,12 +95,12 @@ export async function createFieldDateOverride(
 
   await db
     .prepare(
-      `INSERT INTO field_date_overrides (id, field_id, date, override_type, start_time, end_time, reason, created_at, updated_at)
+      `INSERT INTO field_date_overrides (id, season_field_id, date, override_type, start_time, end_time, reason, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
-      input.fieldId,
+      input.seasonFieldId,
       input.date,
       input.overrideType,
       input.startTime || null,

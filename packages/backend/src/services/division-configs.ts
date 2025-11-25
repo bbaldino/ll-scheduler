@@ -11,10 +11,12 @@ interface DivisionConfigRow {
   season_id: string;
   practices_per_week: number;
   practice_duration_hours: number;
-  games_per_week: number | null;
-  game_duration_hours: number | null;
+  games_per_week: number;
+  game_duration_hours: number;
+  game_day_preferences: string | null; // JSON string
   min_consecutive_day_gap: number | null;
   cage_sessions_per_week: number | null;
+  cage_session_duration_hours: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,10 +28,12 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     seasonId: row.season_id,
     practicesPerWeek: row.practices_per_week,
     practiceDurationHours: row.practice_duration_hours,
-    gamesPerWeek: row.games_per_week || undefined,
-    gameDurationHours: row.game_duration_hours || undefined,
+    gamesPerWeek: row.games_per_week,
+    gameDurationHours: row.game_duration_hours,
+    gameDayPreferences: row.game_day_preferences ? JSON.parse(row.game_day_preferences) : undefined,
     minConsecutiveDayGap: row.min_consecutive_day_gap || undefined,
     cageSessionsPerWeek: row.cage_sessions_per_week || undefined,
+    cageSessionDurationHours: row.cage_session_duration_hours || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -81,8 +85,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, min_consecutive_day_gap, cage_sessions_per_week, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -90,10 +94,12 @@ export async function createDivisionConfig(
       input.seasonId,
       input.practicesPerWeek,
       input.practiceDurationHours,
-      input.gamesPerWeek || null,
-      input.gameDurationHours || null,
+      input.gamesPerWeek,
+      input.gameDurationHours,
+      input.gameDayPreferences ? JSON.stringify(input.gameDayPreferences) : null,
       input.minConsecutiveDayGap || null,
       input.cageSessionsPerWeek || null,
+      input.cageSessionDurationHours || null,
       now,
       now
     )
@@ -136,6 +142,10 @@ export async function updateDivisionConfig(
     updates.push('game_duration_hours = ?');
     values.push(input.gameDurationHours);
   }
+  if (input.gameDayPreferences !== undefined) {
+    updates.push('game_day_preferences = ?');
+    values.push(input.gameDayPreferences ? JSON.stringify(input.gameDayPreferences) : null);
+  }
   if (input.minConsecutiveDayGap !== undefined) {
     updates.push('min_consecutive_day_gap = ?');
     values.push(input.minConsecutiveDayGap);
@@ -143,6 +153,10 @@ export async function updateDivisionConfig(
   if (input.cageSessionsPerWeek !== undefined) {
     updates.push('cage_sessions_per_week = ?');
     values.push(input.cageSessionsPerWeek);
+  }
+  if (input.cageSessionDurationHours !== undefined) {
+    updates.push('cage_session_duration_hours = ?');
+    values.push(input.cageSessionDurationHours);
   }
 
   if (updates.length === 0) {

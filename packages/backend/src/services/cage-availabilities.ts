@@ -7,7 +7,7 @@ import { generateId } from '../utils/id.js';
 
 interface CageAvailabilityRow {
   id: string;
-  cage_id: string;
+  season_cage_id: string;
   day_of_week: number;
   start_time: string;
   end_time: string;
@@ -18,7 +18,7 @@ interface CageAvailabilityRow {
 function rowToCageAvailability(row: CageAvailabilityRow): CageAvailability {
   return {
     id: row.id,
-    cageId: row.cage_id,
+    seasonCageId: row.season_cage_id,
     dayOfWeek: row.day_of_week,
     startTime: row.start_time,
     endTime: row.end_time,
@@ -27,13 +27,44 @@ function rowToCageAvailability(row: CageAvailabilityRow): CageAvailability {
   };
 }
 
+/**
+ * List cage availabilities, optionally filtered by season cage
+ */
 export async function listCageAvailabilities(
   db: D1Database,
-  cageId: string
+  seasonCageId?: string
+): Promise<CageAvailability[]> {
+  let result;
+  if (seasonCageId) {
+    result = await db
+      .prepare('SELECT * FROM cage_availabilities WHERE season_cage_id = ? ORDER BY day_of_week, start_time')
+      .bind(seasonCageId)
+      .all<CageAvailabilityRow>();
+  } else {
+    result = await db
+      .prepare('SELECT * FROM cage_availabilities ORDER BY day_of_week, start_time')
+      .all<CageAvailabilityRow>();
+  }
+
+  return (result.results || []).map(rowToCageAvailability);
+}
+
+/**
+ * List all cage availabilities for a season (joins through season_cages)
+ */
+export async function listCageAvailabilitiesForSeason(
+  db: D1Database,
+  seasonId: string
 ): Promise<CageAvailability[]> {
   const result = await db
-    .prepare('SELECT * FROM cage_availabilities WHERE cage_id = ? ORDER BY day_of_week, start_time')
-    .bind(cageId)
+    .prepare(`
+      SELECT ca.*
+      FROM cage_availabilities ca
+      JOIN season_cages sc ON ca.season_cage_id = sc.id
+      WHERE sc.season_id = ?
+      ORDER BY ca.day_of_week, ca.start_time
+    `)
+    .bind(seasonId)
     .all<CageAvailabilityRow>();
 
   return (result.results || []).map(rowToCageAvailability);
@@ -60,10 +91,10 @@ export async function createCageAvailability(
 
   await db
     .prepare(
-      `INSERT INTO cage_availabilities (id, cage_id, day_of_week, start_time, end_time, created_at, updated_at)
+      `INSERT INTO cage_availabilities (id, season_cage_id, day_of_week, start_time, end_time, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, input.cageId, input.dayOfWeek, input.startTime, input.endTime, now, now)
+    .bind(id, input.seasonCageId, input.dayOfWeek, input.startTime, input.endTime, now, now)
     .run();
 
   const availability = await getCageAvailabilityById(db, id);

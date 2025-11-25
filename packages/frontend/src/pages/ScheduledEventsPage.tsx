@@ -1,25 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useSeason } from '../contexts/SeasonContext';
+import CalendarView from '../components/CalendarView';
 import {
   fetchScheduledEvents,
   createScheduledEvent,
   updateScheduledEvent,
   deleteScheduledEvent,
 } from '../api/scheduled-events';
-import { fetchSeasonPhases } from '../api/season-phases';
+import { fetchSeasonPeriods } from '../api/season-periods';
 import { fetchDivisions } from '../api/divisions';
 import { fetchTeams } from '../api/teams';
-import { fetchFields } from '../api/fields';
-import { fetchBattingCages } from '../api/batting-cages';
+import { fetchSeasonFields } from '../api/fields';
+import { fetchSeasonCages } from '../api/batting-cages';
 import type {
   ScheduledEvent,
   CreateScheduledEventInput,
   UpdateScheduledEventInput,
-  SeasonPhase,
+  SeasonPeriod,
   Division,
   Team,
-  Field,
-  BattingCage,
+  SeasonField,
+  SeasonCage,
   EventType,
   EventStatus,
 } from '@ll-scheduler/shared';
@@ -41,22 +42,25 @@ const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
 export default function ScheduledEventsPage() {
   const { currentSeason } = useSeason();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
-  const [seasonPhases, setSeasonPhases] = useState<SeasonPhase[]>([]);
+  const [seasonPeriods, setSeasonPeriods] = useState<SeasonPeriod[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [cages, setCages] = useState<BattingCage[]>([]);
+  const [seasonFields, setSeasonFields] = useState<SeasonField[]>([]);
+  const [seasonCages, setSeasonCages] = useState<SeasonCage[]>([]);
 
   const [isCreating, setIsCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Filter state
-  const [filterPhase, setFilterPhase] = useState<string>('');
+  const [filterPeriod, setFilterPeriod] = useState<string>('');
   const [filterDivision, setFilterDivision] = useState<string>('');
   const [filterType, setFilterType] = useState<EventType | ''>('');
 
+  // View state
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
+
   const [formData, setFormData] = useState<CreateScheduledEventInput>({
-    seasonPhaseId: '',
+    seasonPeriodId: '',
     divisionId: '',
     eventType: 'practice',
     date: '',
@@ -77,23 +81,23 @@ export default function ScheduledEventsPage() {
     if (currentSeason) {
       loadEvents();
     }
-  }, [currentSeason, filterPhase, filterDivision, filterType]);
+  }, [currentSeason, filterPeriod, filterDivision, filterType]);
 
   const loadData = async () => {
     if (!currentSeason) return;
     try {
-      const [phasesData, divisionsData, teamsData, fieldsData, cagesData] = await Promise.all([
-        fetchSeasonPhases(currentSeason.id),
+      const [periodsData, divisionsData, teamsData, fieldsData, cagesData] = await Promise.all([
+        fetchSeasonPeriods(currentSeason.id),
         fetchDivisions(),
         fetchTeams(currentSeason.id),
-        fetchFields(currentSeason.id),
-        fetchBattingCages(),
+        fetchSeasonFields(currentSeason.id),
+        fetchSeasonCages(currentSeason.id),
       ]);
-      setSeasonPhases(phasesData);
+      setSeasonPeriods(periodsData);
       setDivisions(divisionsData);
       setTeams(teamsData);
-      setFields(fieldsData);
-      setCages(cagesData);
+      setSeasonFields(fieldsData);
+      setSeasonCages(cagesData);
     } catch (error) {
       console.error('Failed to load data:', error);
     }
@@ -103,7 +107,7 @@ export default function ScheduledEventsPage() {
     if (!currentSeason) return;
     try {
       const data = await fetchScheduledEvents({
-        seasonPhaseId: filterPhase || undefined,
+        seasonPeriodId: filterPeriod || undefined,
         divisionId: filterDivision || undefined,
         eventType: filterType || undefined,
       });
@@ -170,7 +174,7 @@ export default function ScheduledEventsPage() {
 
   const resetForm = () => {
     setFormData({
-      seasonPhaseId: '',
+      seasonPeriodId: '',
       divisionId: '',
       eventType: 'practice',
       date: '',
@@ -187,20 +191,22 @@ export default function ScheduledEventsPage() {
 
   const getFieldName = (fieldId?: string) => {
     if (!fieldId) return 'Unassigned';
-    return fields.find((f) => f.id === fieldId)?.name || 'Unknown';
+    const sf = seasonFields.find((f) => f.fieldId === fieldId);
+    return sf?.fieldName || sf?.field?.name || 'Unknown';
   };
 
   const getCageName = (cageId?: string) => {
     if (!cageId) return 'Unassigned';
-    return cages.find((c) => c.id === cageId)?.name || 'Unknown';
+    const sc = seasonCages.find((c) => c.cageId === cageId);
+    return sc?.cageName || sc?.cage?.name || 'Unknown';
   };
 
   const getDivisionName = (divisionId: string) => {
     return divisions.find((d) => d.id === divisionId)?.name || 'Unknown';
   };
 
-  const getPhaseName = (phaseId: string) => {
-    return seasonPhases.find((p) => p.id === phaseId)?.name || 'Unknown';
+  const getPeriodName = (periodId: string) => {
+    return seasonPeriods.find((p) => p.id === periodId)?.name || 'Unknown';
   };
 
   if (!currentSeason) {
@@ -226,17 +232,33 @@ export default function ScheduledEventsPage() {
     <div className={styles.container}>
       <div className={styles.header}>
         <h2>Scheduled Events - {currentSeason.name}</h2>
-        <button onClick={() => setIsCreating(true)}>Create Event</button>
+        <div className={styles.headerActions}>
+          <div className={styles.viewToggle}>
+            <button
+              className={viewMode === 'list' ? styles.active : ''}
+              onClick={() => setViewMode('list')}
+            >
+              List View
+            </button>
+            <button
+              className={viewMode === 'calendar' ? styles.active : ''}
+              onClick={() => setViewMode('calendar')}
+            >
+              Calendar View
+            </button>
+          </div>
+          <button onClick={() => setIsCreating(true)}>Create Event</button>
+        </div>
       </div>
 
       <div className={styles.filters}>
         <div className={styles.filterGroup}>
-          <label>Phase:</label>
-          <select value={filterPhase} onChange={(e) => setFilterPhase(e.target.value)}>
-            <option value="">All Phases</option>
-            {seasonPhases.map((phase) => (
-              <option key={phase.id} value={phase.id}>
-                {phase.name}
+          <label>Period:</label>
+          <select value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value)}>
+            <option value="">All Periods</option>
+            {seasonPeriods.map((period) => (
+              <option key={period.id} value={period.id}>
+                {period.name}
               </option>
             ))}
           </select>
@@ -285,16 +307,16 @@ export default function ScheduledEventsPage() {
               </select>
             </div>
             <div className={styles.formGroup}>
-              <label>Season Phase *</label>
+              <label>Season Period *</label>
               <select
-                value={formData.seasonPhaseId}
-                onChange={(e) => setFormData({ ...formData, seasonPhaseId: e.target.value })}
+                value={formData.seasonPeriodId}
+                onChange={(e) => setFormData({ ...formData, seasonPeriodId: e.target.value })}
                 required
               >
-                <option value="">Select Phase</option>
-                {seasonPhases.map((phase) => (
-                  <option key={phase.id} value={phase.id}>
-                    {phase.name}
+                <option value="">Select Period</option>
+                {seasonPeriods.map((period) => (
+                  <option key={period.id} value={period.id}>
+                    {period.name}
                   </option>
                 ))}
               </select>
@@ -391,11 +413,11 @@ export default function ScheduledEventsPage() {
                     required
                   >
                     <option value="">Select Field</option>
-                    {fields
-                      .filter((f) => f.divisionCompatibility.includes(formData.divisionId))
-                      .map((field) => (
-                        <option key={field.id} value={field.id}>
-                          {field.name}
+                    {seasonFields
+                      .filter((sf) => sf.divisionCompatibility?.includes(formData.divisionId) ?? true)
+                      .map((sf) => (
+                        <option key={sf.fieldId} value={sf.fieldId}>
+                          {sf.fieldName || sf.field?.name}
                         </option>
                       ))}
                   </select>
@@ -432,11 +454,11 @@ export default function ScheduledEventsPage() {
                     required
                   >
                     <option value="">Select Field</option>
-                    {fields
-                      .filter((f) => f.divisionCompatibility.includes(formData.divisionId))
-                      .map((field) => (
-                        <option key={field.id} value={field.id}>
-                          {field.name}
+                    {seasonFields
+                      .filter((sf) => sf.divisionCompatibility?.includes(formData.divisionId) ?? true)
+                      .map((sf) => (
+                        <option key={sf.fieldId} value={sf.fieldId}>
+                          {sf.fieldName || sf.field?.name}
                         </option>
                       ))}
                   </select>
@@ -473,11 +495,11 @@ export default function ScheduledEventsPage() {
                     required
                   >
                     <option value="">Select Cage</option>
-                    {cages
-                      .filter((c) => c.divisionCompatibility.includes(formData.divisionId))
-                      .map((cage) => (
-                        <option key={cage.id} value={cage.id}>
-                          {cage.name}
+                    {seasonCages
+                      .filter((sc) => sc.divisionCompatibility?.includes(formData.divisionId) ?? true)
+                      .map((sc) => (
+                        <option key={sc.cageId} value={sc.cageId}>
+                          {sc.cageName || sc.cage?.name}
                         </option>
                       ))}
                   </select>
@@ -512,13 +534,24 @@ export default function ScheduledEventsPage() {
       )}
 
       <div className={styles.eventsList}>
-        {sortedDates.length === 0 && !isCreating && (
-          <div className={styles.empty}>
-            <p>No events scheduled yet. Create one to get started!</p>
-          </div>
-        )}
+        {viewMode === 'calendar' ? (
+          <CalendarView
+            events={events}
+            teams={teams}
+            seasonFields={seasonFields}
+            seasonCages={seasonCages}
+            divisions={divisions}
+            onEventClick={(event) => setEditingId(event.id)}
+          />
+        ) : (
+          <>
+            {sortedDates.length === 0 && !isCreating && (
+              <div className={styles.empty}>
+                <p>No events scheduled yet. Create one to get started!</p>
+              </div>
+            )}
 
-        {sortedDates.map((date) => (
+            {sortedDates.map((date) => (
           <div key={date} className={styles.dateGroup}>
             <h3 className={styles.dateHeader}>{new Date(date + 'T00:00:00').toLocaleDateString()}</h3>
             <div className={styles.eventsForDate}>
@@ -609,7 +642,7 @@ export default function ScheduledEventsPage() {
                             <strong>Division:</strong> {getDivisionName(event.divisionId)}
                           </p>
                           <p>
-                            <strong>Phase:</strong> {getPhaseName(event.seasonPhaseId)}
+                            <strong>Period:</strong> {getPeriodName(event.seasonPeriodId)}
                           </p>
                           {event.eventType === 'game' && (
                             <>
@@ -655,6 +688,8 @@ export default function ScheduledEventsPage() {
             </div>
           </div>
         ))}
+          </>
+        )}
       </div>
     </div>
   );

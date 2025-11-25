@@ -10,7 +10,7 @@ export type EventStatus = 'scheduled' | 'completed' | 'cancelled' | 'postponed';
  */
 export interface ScheduledEvent {
   id: string;
-  seasonPhaseId: string;
+  seasonPeriodId: string;
   divisionId: string;
   eventType: EventType;
   date: string; // ISO date (YYYY-MM-DD)
@@ -37,7 +37,7 @@ export interface ScheduledEvent {
  * Input for creating a new scheduled event
  */
 export interface CreateScheduledEventInput {
-  seasonPhaseId: string;
+  seasonPeriodId: string;
   divisionId: string;
   eventType: EventType;
   date: string;
@@ -72,7 +72,8 @@ export interface UpdateScheduledEventInput {
  * Query parameters for filtering scheduled events
  */
 export interface ScheduledEventQuery {
-  seasonPhaseId?: string;
+  seasonPeriodId?: string;
+  seasonPeriodIds?: string[]; // Filter by multiple periods
   divisionId?: string;
   teamId?: string;
   fieldId?: string;
