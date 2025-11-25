@@ -5,7 +5,7 @@ import type {
   ScheduleGenerationLog,
 } from '@ll-scheduler/shared';
 
-const API_BASE = 'http://localhost:8787/api';
+const API_BASE = '/api';
 
 export async function fetchLatestGenerationLog(
   seasonId: string

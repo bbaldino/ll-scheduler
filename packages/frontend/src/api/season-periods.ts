@@ -4,7 +4,7 @@ import type {
   UpdateSeasonPeriodInput,
 } from '@ll-scheduler/shared';
 
-const API_BASE = 'http://localhost:8787/api';
+const API_BASE = '/api';
 
 export async function fetchSeasonPeriods(seasonId: string): Promise<SeasonPeriod[]> {
   const response = await fetch(`${API_BASE}/season-periods?seasonId=${seasonId}`);

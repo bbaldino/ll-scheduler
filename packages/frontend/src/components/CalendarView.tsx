@@ -111,23 +111,108 @@ export default function CalendarView({
     return week;
   };
 
+  // Constants for time-based layout
+  const START_HOUR = 6;
+  const END_HOUR = 22;
+  const HOUR_HEIGHT = 60; // pixels per hour
+
   const timeSlots = useMemo(() => {
     const slots: string[] = [];
-    for (let hour = 6; hour <= 22; hour++) {
+    for (let hour = START_HOUR; hour <= END_HOUR; hour++) {
       slots.push(`${hour.toString().padStart(2, '0')}:00`);
     }
     return slots;
   }, []);
 
-  const getEventsInTimeSlot = (date: Date, timeSlot: string) => {
-    const dateStr = date.toISOString().split('T')[0];
-    const slotHour = parseInt(timeSlot.split(':')[0]);
+  // Convert time string to minutes from midnight
+  const timeToMinutes = (time: string): number => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
 
-    return events.filter((e) => {
-      if (e.date !== dateStr) return false;
-      const eventHour = parseInt(e.startTime.split(':')[0]);
-      return eventHour === slotHour;
+  // Get events for a specific date
+  const getEventsForDateStr = (dateStr: string): ScheduledEvent[] => {
+    return events.filter((e) => e.date === dateStr);
+  };
+
+  // Calculate overlapping event groups and assign columns
+  const layoutEvents = (dayEvents: ScheduledEvent[]): Array<{
+    event: ScheduledEvent;
+    column: number;
+    totalColumns: number;
+    top: number;
+    height: number;
+  }> => {
+    if (dayEvents.length === 0) return [];
+
+    // Sort events by start time, then by end time
+    const sortedEvents = [...dayEvents].sort((a, b) => {
+      const startDiff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+      if (startDiff !== 0) return startDiff;
+      return timeToMinutes(a.endTime) - timeToMinutes(b.endTime);
     });
+
+    // Find overlapping groups and assign columns
+    const layoutInfo: Array<{
+      event: ScheduledEvent;
+      column: number;
+      totalColumns: number;
+      top: number;
+      height: number;
+    }> = [];
+
+    // Track active columns (end time for each column)
+    const columns: number[] = [];
+
+    for (const event of sortedEvents) {
+      const startMinutes = timeToMinutes(event.startTime);
+      const endMinutes = timeToMinutes(event.endTime);
+      const startFromBase = startMinutes - START_HOUR * 60;
+      const duration = endMinutes - startMinutes;
+
+      // Find the first available column
+      let column = 0;
+      while (column < columns.length && columns[column] > startMinutes) {
+        column++;
+      }
+
+      // Assign event to this column
+      if (column < columns.length) {
+        columns[column] = endMinutes;
+      } else {
+        columns.push(endMinutes);
+      }
+
+      layoutInfo.push({
+        event,
+        column,
+        totalColumns: 0, // Will be calculated later
+        top: (startFromBase / 60) * HOUR_HEIGHT,
+        height: (duration / 60) * HOUR_HEIGHT,
+      });
+    }
+
+    // Calculate total columns for each event based on overlapping events
+    for (const info of layoutInfo) {
+      const startMinutes = timeToMinutes(info.event.startTime);
+      const endMinutes = timeToMinutes(info.event.endTime);
+
+      // Find max column among overlapping events
+      let maxColumn = info.column;
+      for (const other of layoutInfo) {
+        const otherStart = timeToMinutes(other.event.startTime);
+        const otherEnd = timeToMinutes(other.event.endTime);
+
+        // Check if events overlap
+        if (startMinutes < otherEnd && endMinutes > otherStart) {
+          maxColumn = Math.max(maxColumn, other.column);
+        }
+      }
+
+      info.totalColumns = maxColumn + 1;
+    }
+
+    return layoutInfo;
   };
 
   // Navigation helpers
@@ -206,6 +291,7 @@ export default function CalendarView({
 
   const renderWeekView = () => {
     const weekDates = getWeekDates(currentDate);
+    const totalHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
 
     return (
       <div className={styles.weekView}>
@@ -218,31 +304,47 @@ export default function CalendarView({
               </div>
             ))}
           </div>
-          {weekDates.map((date) => (
-            <div key={date.toISOString()} className={styles.dayColumn}>
-              <div className={styles.weekDayHeader}>
-                <div className={styles.weekDayName}>{DAYS_OF_WEEK[date.getDay()]}</div>
-                <div className={`${styles.weekDayDate} ${
-                  date.toDateString() === new Date().toDateString() ? styles.today : ''
-                }`}>
-                  {date.getDate()}
+          {weekDates.map((date) => {
+            const dateStr = date.toISOString().split('T')[0];
+            const dayEvents = getEventsForDateStr(dateStr);
+            const layoutInfo = layoutEvents(dayEvents);
+
+            return (
+              <div key={date.toISOString()} className={styles.dayColumn}>
+                <div className={styles.weekDayHeader}>
+                  <div className={styles.weekDayName}>{DAYS_OF_WEEK[date.getDay()]}</div>
+                  <div className={`${styles.weekDayDate} ${
+                    date.toDateString() === new Date().toDateString() ? styles.today : ''
+                  }`}>
+                    {date.getDate()}
+                  </div>
                 </div>
-              </div>
-              {timeSlots.map((slot) => (
-                <div key={slot} className={styles.weekTimeSlot}>
-                  {getEventsInTimeSlot(date, slot).map((event) => (
+                <div className={styles.weekDayBody} style={{ height: totalHeight, position: 'relative' }}>
+                  {/* Grid lines for hours */}
+                  {timeSlots.map((slot) => (
+                    <div key={slot} className={styles.weekTimeSlotLine}></div>
+                  ))}
+                  {/* Events positioned absolutely */}
+                  {layoutInfo.map(({ event, column, totalColumns, top, height }) => (
                     <div
                       key={event.id}
                       className={`${styles.weekEventItem} ${styles[event.eventType]}`}
                       onClick={() => onEventClick?.(event)}
                       title={formatEventSummary(event)}
+                      style={{
+                        position: 'absolute',
+                        top: `${top}px`,
+                        height: `${Math.max(height, 20)}px`,
+                        left: `${(column / totalColumns) * 100}%`,
+                        width: `${(1 / totalColumns) * 100 - 1}%`,
+                        overflow: 'hidden',
+                      }}
                     >
                       <div className={styles.eventTime}>{event.startTime}-{event.endTime}</div>
                       <div className={styles.eventDetails}>
                         {event.eventType === 'game' && (
                           <>
-                            <div>{getTeamName(event.homeTeamId)} vs</div>
-                            <div>{getTeamName(event.awayTeamId)}</div>
+                            <div>{getTeamName(event.homeTeamId)} vs {getTeamName(event.awayTeamId)}</div>
                             <div className={styles.eventLocation}>@ {getFieldName(event.fieldId)}</div>
                           </>
                         )}
@@ -262,9 +364,9 @@ export default function CalendarView({
                     </div>
                   ))}
                 </div>
-              ))}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -273,53 +375,60 @@ export default function CalendarView({
   const renderDayView = () => {
     const dateStr = currentDate.toISOString().split('T')[0];
     const dayEvents = events.filter((e) => e.date === dateStr);
+    const layoutInfo = layoutEvents(dayEvents);
+    const totalHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
 
     return (
       <div className={styles.dayView}>
         <div className={styles.dayGrid}>
-          {timeSlots.map((slot) => {
-            const slotHour = parseInt(slot.split(':')[0]);
-            const slotEvents = dayEvents.filter((e) => {
-              const eventHour = parseInt(e.startTime.split(':')[0]);
-              return eventHour === slotHour;
-            });
-
-            return (
-              <div key={slot} className={styles.dayTimeSlot}>
-                <div className={styles.dayTimeLabel}>{slot}</div>
-                <div className={styles.dayTimeEvents}>
-                  {slotEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      className={`${styles.dayEventItem} ${styles[event.eventType]}`}
-                      onClick={() => onEventClick?.(event)}
-                    >
-                      <div className={styles.eventTime}>
-                        {event.startTime} - {event.endTime}
-                      </div>
-                      <div className={styles.eventType}>
-                        {event.eventType === 'game' ? 'Game' : event.eventType === 'practice' ? 'Practice' : 'Cage Time'}
-                      </div>
-                      {event.eventType === 'game' && (
-                        <div className={styles.eventTeams}>
-                          {getTeamName(event.homeTeamId)} vs {getTeamName(event.awayTeamId)}
-                        </div>
-                      )}
-                      {(event.eventType === 'practice' || event.eventType === 'cage') && (
-                        <div className={styles.eventTeams}>{getTeamName(event.teamId)}</div>
-                      )}
-                      <div className={styles.eventLocation}>
-                        {event.eventType === 'cage' ? getCageName(event.cageId) : getFieldName(event.fieldId)}
-                      </div>
-                      <div className={styles.eventDivision}>
-                        {getDivisionName(event.divisionId)}
-                      </div>
-                    </div>
-                  ))}
+          <div className={styles.dayTimeColumn}>
+            {timeSlots.map((slot) => (
+              <div key={slot} className={styles.dayTimeLabel}>{slot}</div>
+            ))}
+          </div>
+          <div className={styles.dayEventsColumn} style={{ height: totalHeight, position: 'relative' }}>
+            {/* Grid lines for hours */}
+            {timeSlots.map((slot) => (
+              <div key={slot} className={styles.dayTimeSlotLine}></div>
+            ))}
+            {/* Events positioned absolutely */}
+            {layoutInfo.map(({ event, column, totalColumns, top, height }) => (
+              <div
+                key={event.id}
+                className={`${styles.dayEventItem} ${styles[event.eventType]}`}
+                onClick={() => onEventClick?.(event)}
+                style={{
+                  position: 'absolute',
+                  top: `${top}px`,
+                  height: `${Math.max(height, 40)}px`,
+                  left: `${(column / totalColumns) * 100}%`,
+                  width: `${(1 / totalColumns) * 100 - 1}%`,
+                  overflow: 'hidden',
+                }}
+              >
+                <div className={styles.eventTime}>
+                  {event.startTime} - {event.endTime}
+                </div>
+                <div className={styles.eventType}>
+                  {event.eventType === 'game' ? 'Game' : event.eventType === 'practice' ? 'Practice' : 'Cage Time'}
+                </div>
+                {event.eventType === 'game' && (
+                  <div className={styles.eventTeams}>
+                    {getTeamName(event.homeTeamId)} vs {getTeamName(event.awayTeamId)}
+                  </div>
+                )}
+                {(event.eventType === 'practice' || event.eventType === 'cage') && (
+                  <div className={styles.eventTeams}>{getTeamName(event.teamId)}</div>
+                )}
+                <div className={styles.eventLocation}>
+                  {event.eventType === 'cage' ? getCageName(event.cageId) : getFieldName(event.fieldId)}
+                </div>
+                <div className={styles.eventDivision}>
+                  {getDivisionName(event.divisionId)}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       </div>
     );

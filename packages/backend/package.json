@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --ip 0.0.0.0",
     "deploy": "wrangler deploy",
     "build": "tsc",
     "type-check": "tsc --noEmit"
