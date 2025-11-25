@@ -1,0 +1,408 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #ddd;
+  gap: 1.5rem;
+}
+
+.titleArea {
+  flex: 1;
+}
+
+.titleArea h2 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+}
+
+.timestamp {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.scoreArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.score {
+  font-size: 2rem;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  border-radius: 8px;
+}
+
+.scoreGood {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.scoreWarning {
+  background: #fff3e0;
+  color: #ef6c00;
+}
+
+.scoreBad {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.scoreLabel {
+  font-size: 0.8rem;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.section {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  background: #f9f9f9;
+  cursor: pointer;
+  gap: 1rem;
+}
+
+.sectionHeader:hover {
+  background: #f0f0f0;
+}
+
+.sectionStatus {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sectionTitle {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.sectionSummary {
+  flex: 1;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.expandIcon {
+  color: #999;
+  font-size: 0.8rem;
+}
+
+.statusPass {
+  color: #2e7d32;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.statusFail {
+  color: #c62828;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.sectionContent {
+  padding: 1rem;
+  border-top: 1px solid #ddd;
+}
+
+.noData,
+.noViolations {
+  color: #666;
+  text-align: center;
+  padding: 1rem;
+  font-style: italic;
+}
+
+.noViolations {
+  color: #2e7d32;
+}
+
+/* Team Report Styles */
+.teamReport {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.teamHeader {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #fafafa;
+  cursor: pointer;
+  gap: 0.75rem;
+}
+
+.teamHeader:hover {
+  background: #f0f0f0;
+}
+
+.teamName {
+  font-weight: 500;
+  flex: 1;
+}
+
+.issueCount {
+  background: #fff3e0;
+  color: #ef6c00;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.teamDetails {
+  padding: 1rem;
+  background: white;
+  border-top: 1px solid #e0e0e0;
+}
+
+.issuesList {
+  margin-bottom: 1rem;
+}
+
+.issue {
+  background: #fff3e0;
+  color: #e65100;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+/* Table Styles */
+.weekTable,
+.balanceTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.weekTable th,
+.weekTable td,
+.balanceTable th,
+.balanceTable td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.weekTable th,
+.balanceTable th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.cellWarning {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+/* Violation Styles */
+.violationsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.violation {
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.violationError {
+  background: #ffebee;
+  border-left: 4px solid #c62828;
+}
+
+.violationWarning {
+  background: #fff3e0;
+  border-left: 4px solid #ef6c00;
+}
+
+.violationHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.violationType {
+  font-weight: 600;
+}
+
+.severityError {
+  background: #c62828;
+  color: white;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.severityWarning {
+  background: #ef6c00;
+  color: white;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.violationDescription {
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.violationMeta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+/* Division Report Styles */
+.divisionReport {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.divisionHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.divisionName {
+  font-weight: 600;
+  flex: 1;
+}
+
+.complianceRate {
+  background: #e3f2fd;
+  color: #1565c0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+/* Day Distribution Chart */
+.dayDistribution {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.dayColumn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dayCount {
+  font-size: 1.25rem;
+  font-weight: 600;
+  background: #f5f5f5;
+  width: 100%;
+  text-align: center;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.dayName {
+  font-size: 0.8rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.dayPref {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.dayPref.required {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.dayPref.preferred {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.dayPref.acceptable {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.dayPref.avoid {
+  background: #ffebee;
+  color: #c62828;
+}

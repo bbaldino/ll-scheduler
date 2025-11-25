@@ -9,3 +9,4 @@ export * from './types/batting-cage.js';
 export * from './types/availability.js';
 export * from './types/scheduled-event.js';
 export * from './types/schedule-generator.js';
+export * from './types/schedule-evaluation.js';

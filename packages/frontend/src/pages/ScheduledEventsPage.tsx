@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSeason } from '../contexts/SeasonContext';
 import CalendarView from '../components/CalendarView';
+import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
 import {
   fetchScheduledEvents,
   createScheduledEvent,
@@ -12,6 +13,7 @@ import { fetchDivisions } from '../api/divisions';
 import { fetchTeams } from '../api/teams';
 import { fetchSeasonFields } from '../api/fields';
 import { fetchSeasonCages } from '../api/batting-cages';
+import { evaluateSchedule } from '../api/schedule-generator';
 import type {
   ScheduledEvent,
   CreateScheduledEventInput,
@@ -23,6 +25,7 @@ import type {
   SeasonCage,
   EventType,
   EventStatus,
+  ScheduleEvaluationResult,
 } from '@ll-scheduler/shared';
 import styles from './ScheduledEventsPage.module.css';
 
@@ -58,6 +61,10 @@ export default function ScheduledEventsPage() {
 
   // View state
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
+
+  // Evaluation state
+  const [evaluationResult, setEvaluationResult] = useState<ScheduleEvaluationResult | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
 
   const [formData, setFormData] = useState<CreateScheduledEventInput>({
     seasonPeriodId: '',
@@ -184,6 +191,25 @@ export default function ScheduledEventsPage() {
     });
   };
 
+  const handleEvaluate = async () => {
+    if (seasonPeriods.length === 0) {
+      alert('No season periods available to evaluate');
+      return;
+    }
+
+    setIsEvaluating(true);
+    try {
+      const periodIds = seasonPeriods.map((p) => p.id);
+      const result = await evaluateSchedule(periodIds);
+      setEvaluationResult(result);
+    } catch (error) {
+      console.error('Failed to evaluate schedule:', error);
+      alert('Failed to evaluate schedule');
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
+
   const getTeamName = (teamId?: string) => {
     if (!teamId) return 'N/A';
     return teams.find((t) => t.id === teamId)?.name || 'Unknown';
@@ -247,6 +273,9 @@ export default function ScheduledEventsPage() {
               Calendar View
             </button>
           </div>
+          <button onClick={handleEvaluate} disabled={isEvaluating}>
+            {isEvaluating ? 'Evaluating...' : 'Evaluate Schedule'}
+          </button>
           <button onClick={() => setIsCreating(true)}>Create Event</button>
         </div>
       </div>
@@ -691,6 +720,13 @@ export default function ScheduledEventsPage() {
           </>
         )}
       </div>
+
+      {evaluationResult && (
+        <ScheduleEvaluationReport
+          result={evaluationResult}
+          onClose={() => setEvaluationResult(null)}
+        />
+      )}
     </div>
   );
 }

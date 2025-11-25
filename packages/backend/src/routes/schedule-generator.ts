@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../index.js';
-import type { GenerateScheduleRequest } from '@ll-scheduler/shared';
+import type { GenerateScheduleRequest, EvaluateScheduleRequest } from '@ll-scheduler/shared';
 import { generateSchedule } from '../services/schedule-generator/index.js';
+import { evaluateSchedule } from '../services/schedule-evaluator.js';
 
 const router = new Hono<{ Bindings: Env }>();
 
@@ -24,6 +25,23 @@ router.post('/generate', async (c) => {
   } catch (error) {
     console.error('Error generating schedule:', error);
     return c.json({ error: 'Failed to generate schedule' }, 500);
+  }
+});
+
+// POST /api/schedule-generator/evaluate - Evaluate a generated schedule
+router.post('/evaluate', async (c) => {
+  try {
+    const request: EvaluateScheduleRequest = await c.req.json();
+
+    if (!request.periodIds || request.periodIds.length === 0) {
+      return c.json({ error: 'periodIds array is required and must not be empty' }, 400);
+    }
+
+    const result = await evaluateSchedule(c.env.DB, request.periodIds);
+    return c.json(result);
+  } catch (error) {
+    console.error('Error evaluating schedule:', error);
+    return c.json({ error: 'Failed to evaluate schedule' }, 500);
   }
 });
 
