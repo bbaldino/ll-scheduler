@@ -98,11 +98,12 @@ export default function CalendarView({
     return events.filter((e) => e.date === dateStr);
   };
 
-  // Week view helpers
+  // Week view helpers - starts on Monday
   const getWeekDates = (date: Date) => {
     const week: Date[] = [];
     const day = date.getDay();
-    const diff = date.getDate() - day; // Get Sunday of current week
+    // Adjust to get Monday: if Sunday (0), go back 6 days; otherwise go back (day - 1) days
+    const diff = date.getDate() - (day === 0 ? 6 : day - 1);
 
     for (let i = 0; i < 7; i++) {
       week.push(new Date(date.getFullYear(), date.getMonth(), diff + i));

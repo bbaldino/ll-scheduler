@@ -8,6 +8,12 @@ export interface GenerateScheduleRequest {
   divisionIds?: string[]; // Optional: only generate for specific divisions
   clearExisting?: boolean; // If true, delete existing events before generating
   maxAttempts?: number; // Maximum number of generation attempts (default: 10)
+  scoringWeights?: Partial<ScoringWeights>; // Optional: override default scoring weights
+  optimization?: {
+    enabled?: boolean; // Enable local search optimization (default: true)
+    maxIterations?: number; // Max optimization iterations (default: 100)
+  };
+  seed?: number; // Optional: seed for reproducible results
 }
 
 /**
@@ -183,4 +189,143 @@ export interface ScheduleGenerationLog {
   errors?: ScheduleError[];
   warnings?: ScheduleWarning[];
   createdAt: string;
+}
+
+// ============================================
+// Draft-Based Scheduling Types
+// ============================================
+
+/**
+ * Scoring weights for placement decisions
+ *
+ * All factors use the pattern: contribution = rawScore × weight
+ * - rawScore is 0-1 (continuous) or 0/1 (binary)
+ * - Positive weights reward higher rawScores
+ * - Negative weights penalize higher rawScores
+ */
+export interface ScoringWeights {
+  // Continuous positive factors (rawScore 0-1, positive weights reward higher scores)
+  daySpread: number; // Prefer spreading events across different days of week
+  weekBalance: number; // Prefer meeting weekly requirements evenly
+  resourceUtilization: number; // Prefer underutilized resources
+  gameDayPreference: number; // Match division's preferred game days
+  timeQuality: number; // Prefer mid-afternoon times
+  homeAwayBalance: number; // For games: balance home/away assignments
+  dayGap: number; // Prefer spacing events apart (1 = 2+ day gap, 0.5 = consecutive)
+
+  // Binary penalty factor (rawScore 0 or 1, negative weight penalizes when true)
+  sameDayEvent: number; // Penalize when team already has event on this date
+
+  // Continuous penalty factor (rawScore 0-1, negative weight)
+  scarcity: number; // Penalize taking slots that are scarce for other teams
+}
+
+/**
+ * Default scoring weights
+ */
+export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
+  // Positive factors
+  daySpread: 100,
+  weekBalance: 100,
+  resourceUtilization: 50,
+  gameDayPreference: 80,
+  timeQuality: 30,
+  homeAwayBalance: 70,
+  dayGap: 100,
+
+  // Penalty factors
+  sameDayEvent: -1000,
+  scarcity: -1000,
+};
+
+/**
+ * A candidate placement for an event
+ */
+export interface PlacementCandidate {
+  eventType: EventType;
+  date: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  resourceId: string;
+  resourceName: string;
+  resourceType: 'field' | 'cage';
+  seasonPeriodId: string;
+  // For games
+  homeTeamId?: string;
+  awayTeamId?: string;
+  // For practices/cages
+  teamId?: string;
+}
+
+/**
+ * A scored placement candidate
+ */
+export interface ScoredCandidate extends PlacementCandidate {
+  score: number;
+  scoreBreakdown?: {
+    daySpread: number;
+    weekBalance: number;
+    resourceUtilization: number;
+    gameDayPreference: number;
+    timeQuality: number;
+    homeAwayBalance: number;
+    dayGap: number;
+    sameDayEvent: number;
+    scarcity: number;
+  };
+}
+
+/**
+ * Team scheduling state during draft allocation
+ */
+export interface TeamSchedulingState {
+  teamId: string;
+  teamName: string;
+  divisionId: string;
+  // Requirements tracking
+  totalGamesNeeded: number;
+  totalPracticesNeeded: number;
+  totalCagesNeeded: number;
+  gamesScheduled: number;
+  practicesScheduled: number;
+  cagesScheduled: number;
+  // Per-week tracking
+  eventsPerWeek: Map<number, { games: number; practices: number; cages: number }>;
+  // Day distribution tracking
+  dayOfWeekUsage: Map<number, number>; // dayOfWeek -> count of events
+  // Home/away tracking for games
+  homeGames: number;
+  awayGames: number;
+  // Constraint tracking
+  datesUsed: Set<string>; // Dates with events scheduled
+  minDaysBetweenEvents: number;
+}
+
+/**
+ * Week definition for scheduling
+ */
+export interface WeekDefinition {
+  weekNumber: number;
+  startDate: string; // Monday
+  endDate: string; // Sunday
+  dates: string[]; // All dates in the week
+}
+
+/**
+ * Fairness metrics for the generated schedule
+ */
+export interface FairnessMetrics {
+  // Standard deviation of day-of-week usage across teams (lower = more fair)
+  dayDistributionStdDev: number;
+  // Percentage of teams meeting all weekly requirements
+  weeklyRequirementsMet: number;
+  // Home/away balance variance across teams (lower = more fair)
+  homeAwayVariance: number;
+  // Teams with issues
+  teamsWithIssues: Array<{
+    teamId: string;
+    teamName: string;
+    issues: string[];
+  }>;
 }

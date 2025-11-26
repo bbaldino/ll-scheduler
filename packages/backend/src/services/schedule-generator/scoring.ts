@@ -1,0 +1,417 @@
+import type {
+  PlacementCandidate,
+  ScoredCandidate,
+  ScoringWeights,
+  TeamSchedulingState,
+  ScheduledEventDraft,
+  DEFAULT_SCORING_WEIGHTS,
+} from '@ll-scheduler/shared';
+import type { GameDayPreference } from '@ll-scheduler/shared';
+
+export { DEFAULT_SCORING_WEIGHTS };
+
+/**
+ * Context information needed for scoring
+ */
+export interface ScoringContext {
+  // All team states for looking up other teams
+  teamStates: Map<string, TeamSchedulingState>;
+  // Resource usage: resourceId -> date -> hours booked
+  resourceUsage: Map<string, Map<string, number>>;
+  // Resource capacity: resourceId -> hours per day
+  resourceCapacity: Map<string, number>;
+  // Division game day preferences: divisionId -> preferences
+  gameDayPreferences: Map<string, GameDayPreference[]>;
+  // Week definitions for week number lookup
+  weekDefinitions: Array<{ weekNumber: number; startDate: string; endDate: string }>;
+  // Scheduled events for conflict checking
+  scheduledEvents: ScheduledEventDraft[];
+  // Division configs for weekly requirements
+  divisionConfigs: Map<string, { practicesPerWeek: number; gamesPerWeek: number; cageSessionsPerWeek: number }>;
+  // Team slot availability for scarcity calculation: teamId -> set of available slot keys
+  teamSlotAvailability?: Map<string, Set<string>>;
+}
+
+/**
+ * Score breakdown for debugging and analysis
+ */
+export interface ScoreBreakdown {
+  daySpread: number;
+  weekBalance: number;
+  resourceUtilization: number;
+  gameDayPreference: number;
+  timeQuality: number;
+  homeAwayBalance: number;
+  dayGap: number;
+  sameDayEvent: number;
+  scarcity: number;
+}
+
+/**
+ * Calculate the score for a placement candidate
+ * Higher scores are better placements
+ *
+ * All factors use the pattern: contribution = rawScore × weight
+ * - rawScore is 0-1 (continuous) or 0/1 (binary)
+ * - Positive weights reward higher rawScores
+ * - Negative weights penalize higher rawScores
+ */
+export function calculatePlacementScore(
+  candidate: PlacementCandidate,
+  teamState: TeamSchedulingState,
+  context: ScoringContext,
+  weights: ScoringWeights
+): ScoredCandidate {
+  const breakdown: ScoreBreakdown = {
+    daySpread: 0,
+    weekBalance: 0,
+    resourceUtilization: 0,
+    gameDayPreference: 0,
+    timeQuality: 0,
+    homeAwayBalance: 0,
+    dayGap: 0,
+    sameDayEvent: 0,
+    scarcity: 0,
+  };
+
+  // Continuous positive factors (rawScore 0-1)
+  breakdown.daySpread = calculateDaySpreadRaw(candidate.dayOfWeek, teamState) * weights.daySpread;
+  breakdown.weekBalance = calculateWeekBalanceRaw(candidate.eventType, candidate.date, teamState, context) * weights.weekBalance;
+  breakdown.resourceUtilization = calculateResourceUtilizationRaw(candidate.resourceId, candidate.date, context) * weights.resourceUtilization;
+  breakdown.timeQuality = calculateTimeQualityRaw(candidate.startTime) * weights.timeQuality;
+  breakdown.dayGap = calculateDayGapRaw(candidate.date, teamState) * weights.dayGap;
+
+  // Game-specific factors
+  if (candidate.eventType === 'game') {
+    breakdown.gameDayPreference = calculateGameDayPreferenceRaw(candidate.dayOfWeek, teamState.divisionId, context) * weights.gameDayPreference;
+
+    if (candidate.homeTeamId && candidate.awayTeamId) {
+      breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
+    }
+  }
+
+  // Binary penalty: same-day event
+  const sameDayRaw = teamState.datesUsed.has(candidate.date) ? 1 : 0;
+  breakdown.sameDayEvent = sameDayRaw * weights.sameDayEvent;
+
+  // For games, also check away team same-day conflict
+  if (candidate.eventType === 'game' && candidate.awayTeamId) {
+    const awayTeam = context.teamStates.get(candidate.awayTeamId);
+    if (awayTeam?.datesUsed.has(candidate.date)) {
+      breakdown.sameDayEvent += 1 * weights.sameDayEvent;
+    }
+  }
+
+  // Continuous penalty: scarcity
+  breakdown.scarcity = calculateScarcityRaw(candidate, teamState, context) * weights.scarcity;
+
+  // Calculate total score
+  const score = Object.values(breakdown).reduce((sum, v) => sum + v, 0);
+
+  return {
+    ...candidate,
+    score,
+    scoreBreakdown: breakdown,
+  };
+}
+
+// ============================================
+// Raw Score Calculations (all return 0-1)
+// ============================================
+
+/**
+ * Calculate day spread raw score
+ * Returns 0-1 where 1 = unused day of week, 0 = most-used day
+ */
+export function calculateDaySpreadRaw(
+  dayOfWeek: number,
+  teamState: TeamSchedulingState
+): number {
+  const usage = teamState.dayOfWeekUsage.get(dayOfWeek) || 0;
+
+  // Find max usage across all days
+  let maxUsage = 0;
+  for (const count of teamState.dayOfWeekUsage.values()) {
+    maxUsage = Math.max(maxUsage, count);
+  }
+
+  // If no events scheduled yet, all days are equally good
+  if (maxUsage === 0) {
+    return 1.0;
+  }
+
+  // Score inversely proportional to usage
+  return 1 - usage / (maxUsage + 1);
+}
+
+/**
+ * Calculate week balance raw score
+ * Returns 0-1 where 1 = under quota, 0.5 = at quota, 0.2 = over quota
+ */
+export function calculateWeekBalanceRaw(
+  eventType: 'game' | 'practice' | 'cage',
+  date: string,
+  teamState: TeamSchedulingState,
+  context: ScoringContext
+): number {
+  const weekNum = getWeekNumber(date, context.weekDefinitions);
+  if (weekNum === -1) return 0.5; // Unknown week, neutral score
+
+  const weekEvents = teamState.eventsPerWeek.get(weekNum) || { games: 0, practices: 0, cages: 0 };
+  const config = context.divisionConfigs.get(teamState.divisionId);
+  if (!config) return 0.5;
+
+  let current: number;
+  let required: number;
+
+  switch (eventType) {
+    case 'game':
+      current = weekEvents.games;
+      required = config.gamesPerWeek || 0;
+      break;
+    case 'practice':
+      current = weekEvents.practices;
+      required = config.practicesPerWeek || 0;
+      break;
+    case 'cage':
+      current = weekEvents.cages;
+      required = config.cageSessionsPerWeek || 0;
+      break;
+  }
+
+  if (current < required) {
+    return 1.0;
+  } else if (current === required) {
+    return 0.5;
+  } else {
+    return 0.2;
+  }
+}
+
+/**
+ * Calculate resource utilization raw score
+ * Returns 0-1 where 1 = empty resource, 0 = fully loaded
+ */
+export function calculateResourceUtilizationRaw(
+  resourceId: string,
+  date: string,
+  context: ScoringContext
+): number {
+  const dateUsage = context.resourceUsage.get(resourceId)?.get(date) || 0;
+  const capacity = context.resourceCapacity.get(resourceId) || 8; // Default 8 hours
+
+  const loadPercent = dateUsage / capacity;
+  return Math.max(0, 1 - loadPercent);
+}
+
+/**
+ * Calculate game day preference raw score
+ * Returns 0-1 where 1 = required day, 0.1 = avoid day
+ */
+export function calculateGameDayPreferenceRaw(
+  dayOfWeek: number,
+  divisionId: string,
+  context: ScoringContext
+): number {
+  const preferences = context.gameDayPreferences.get(divisionId) || [];
+
+  const pref = preferences.find((p) => p.dayOfWeek === dayOfWeek);
+  if (!pref) {
+    return 0.5; // No preference set, neutral
+  }
+
+  switch (pref.priority) {
+    case 'required':
+      return 1.0;
+    case 'preferred':
+      return 0.8;
+    case 'acceptable':
+      return 0.5;
+    case 'avoid':
+      return 0.1;
+    default:
+      return 0.5;
+  }
+}
+
+/**
+ * Calculate time quality raw score
+ * Returns 0-1 where 1 = ideal time (3-6pm), ~0.4 = far from ideal
+ */
+export function calculateTimeQualityRaw(startTime: string): number {
+  const [hours, minutes] = startTime.split(':').map(Number);
+  const timeInMinutes = hours * 60 + minutes;
+
+  // Ideal range: 3pm-6pm
+  const idealStart = 15 * 60; // 3pm
+  const idealEnd = 18 * 60; // 6pm
+
+  if (timeInMinutes >= idealStart && timeInMinutes <= idealEnd) {
+    return 1.0;
+  }
+
+  // Calculate distance from ideal range
+  let distance: number;
+  if (timeInMinutes < idealStart) {
+    distance = idealStart - timeInMinutes;
+  } else {
+    distance = timeInMinutes - idealEnd;
+  }
+
+  // Score decreases with distance (max penalty at 4+ hours away)
+  const maxDistance = 4 * 60; // 4 hours
+  const penalty = Math.min(distance / maxDistance, 1);
+  return 1 - penalty * 0.6; // Max 60% penalty, so minimum is 0.4
+}
+
+/**
+ * Calculate home/away balance raw score
+ * Returns 0-1 where 1 = balanced, 0 = very imbalanced
+ */
+export function calculateHomeAwayBalanceRaw(
+  homeTeamId: string,
+  awayTeamId: string,
+  context: ScoringContext
+): number {
+  const homeTeam = context.teamStates.get(homeTeamId);
+  const awayTeam = context.teamStates.get(awayTeamId);
+
+  if (!homeTeam || !awayTeam) return 0.5;
+
+  // Calculate current imbalance
+  const homeImbalance = homeTeam.homeGames - homeTeam.awayGames;
+  const awayImbalance = awayTeam.homeGames - awayTeam.awayGames;
+
+  // This assignment would add 1 home game to homeTeam and 1 away game to awayTeam
+  const newHomeImbalance = homeImbalance + 1;
+  const newAwayImbalance = awayImbalance - 1;
+
+  // Score based on total absolute imbalance (lower is better)
+  const totalImbalance = Math.abs(newHomeImbalance) + Math.abs(newAwayImbalance);
+
+  // Max imbalance we expect is around 6-8 for a 10-game season
+  // Scale so 0 imbalance = 1.0, 8 imbalance = 0
+  return Math.max(0, 1 - totalImbalance / 8);
+}
+
+/**
+ * Calculate day gap raw score
+ * Returns 0-1 where:
+ * - 1.0 = 2+ day gap between events (ideal)
+ * - 0.5 = consecutive day (1 day gap)
+ * - 0.0 = same day (but blocked by sameDayEvent anyway)
+ */
+export function calculateDayGapRaw(
+  candidateDate: string,
+  teamState: TeamSchedulingState
+): number {
+  if (teamState.datesUsed.size === 0) {
+    return 1.0; // No existing events, best possible score
+  }
+
+  const candidate = new Date(candidateDate);
+  let closestGap = Infinity;
+
+  for (const usedDate of teamState.datesUsed) {
+    const existing = new Date(usedDate);
+    const gapDays = Math.abs((candidate.getTime() - existing.getTime()) / (1000 * 60 * 60 * 24));
+    closestGap = Math.min(closestGap, gapDays);
+  }
+
+  // Scale: 0 days → 0, 1 day → 0.5, 2+ days → 1.0
+  return Math.min(closestGap / 2, 1.0);
+}
+
+/**
+ * Calculate scarcity raw score
+ * Returns 0-1 where:
+ * - 0 = no impact on other teams
+ * - 1 = this is another team's ONLY option
+ *
+ * Used with a negative weight to penalize taking scarce slots
+ */
+export function calculateScarcityRaw(
+  candidate: PlacementCandidate,
+  teamState: TeamSchedulingState,
+  context: ScoringContext
+): number {
+  if (!context.teamSlotAvailability) {
+    return 0; // No scarcity data available
+  }
+
+  // Create slot key for this candidate
+  const slotKey = `${candidate.date}|${candidate.startTime}|${candidate.resourceId}`;
+  let worstImpact = 0;
+
+  for (const [otherTeamId, availableSlots] of context.teamSlotAvailability) {
+    if (otherTeamId === teamState.teamId) continue;
+    if (!availableSlots.has(slotKey)) continue;
+
+    // This team could use this slot - how many alternatives do they have?
+    const alternativeCount = availableSlots.size - 1;
+    // 0 alternatives = impact 1.0, 1 alternative = 0.5, 2 = 0.33, etc.
+    const impact = 1 / (alternativeCount + 1);
+    worstImpact = Math.max(worstImpact, impact);
+  }
+
+  return worstImpact;
+}
+
+// ============================================
+// Helper Functions
+// ============================================
+
+/**
+ * Get the week number for a date
+ */
+function getWeekNumber(
+  date: string,
+  weekDefinitions: Array<{ weekNumber: number; startDate: string; endDate: string }>
+): number {
+  for (const week of weekDefinitions) {
+    if (date >= week.startDate && date <= week.endDate) {
+      return week.weekNumber;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Create an empty scoring context
+ */
+export function createScoringContext(): ScoringContext {
+  return {
+    teamStates: new Map(),
+    resourceUsage: new Map(),
+    resourceCapacity: new Map(),
+    gameDayPreferences: new Map(),
+    weekDefinitions: [],
+    scheduledEvents: [],
+    divisionConfigs: new Map(),
+  };
+}
+
+/**
+ * Update resource usage after scheduling an event
+ */
+export function updateResourceUsage(
+  context: ScoringContext,
+  resourceId: string,
+  date: string,
+  durationHours: number
+): void {
+  if (!context.resourceUsage.has(resourceId)) {
+    context.resourceUsage.set(resourceId, new Map());
+  }
+  const dateMap = context.resourceUsage.get(resourceId)!;
+  const current = dateMap.get(date) || 0;
+  dateMap.set(date, current + durationHours);
+}
+
+/**
+ * Generate a slot key for scarcity tracking
+ * This should match the format used in calculateScarcityRaw
+ */
+export function generateSlotKey(date: string, startTime: string, resourceId: string): string {
+  return `${date}|${startTime}|${resourceId}`;
+}

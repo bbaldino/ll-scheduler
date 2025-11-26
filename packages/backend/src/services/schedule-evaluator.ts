@@ -117,6 +117,28 @@ function getWeekEnd(dateStr: string): string {
 }
 
 /**
+ * Get allowed event types for a week based on overlapping periods
+ */
+function getAllowedEventTypesForWeek(
+  weekStart: string,
+  weekEnd: string,
+  periods: SeasonPeriod[]
+): Set<string> {
+  const allowed = new Set<string>();
+
+  for (const period of periods) {
+    // Check if period overlaps with this week
+    if (period.startDate <= weekEnd && period.endDate >= weekStart) {
+      for (const eventType of period.eventTypes) {
+        allowed.add(eventType);
+      }
+    }
+  }
+
+  return allowed;
+}
+
+/**
  * Evaluate weekly requirements for all teams
  */
 function evaluateWeeklyRequirements(
@@ -173,9 +195,13 @@ function evaluateWeeklyRequirements(
       const practicesScheduled = weekEvents.filter((e) => e.eventType === 'practice').length;
       const cagesScheduled = weekEvents.filter((e) => e.eventType === 'cage').length;
 
-      const gamesRequired = config.gamesPerWeek;
-      const practicesRequired = config.practicesPerWeek;
-      const cagesRequired = config.cageSessionsPerWeek || 0;
+      // Determine which event types are allowed for this week based on periods
+      const allowedTypes = getAllowedEventTypesForWeek(week.start, week.end, periods);
+
+      // Only require events that are allowed in this week's periods
+      const gamesRequired = allowedTypes.has('game') ? config.gamesPerWeek : 0;
+      const practicesRequired = allowedTypes.has('practice') ? config.practicesPerWeek : 0;
+      const cagesRequired = allowedTypes.has('cage') ? (config.cageSessionsPerWeek || 0) : 0;
 
       // Check for issues
       if (gamesScheduled < gamesRequired) {
