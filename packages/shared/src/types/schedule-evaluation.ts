@@ -15,6 +15,7 @@ export interface ScheduleEvaluationResult {
   homeAwayBalance: HomeAwayBalanceReport;
   constraintViolations: ConstraintViolationsReport;
   gameDayPreferences: GameDayPreferencesReport;
+  gameSpacing: GameSpacingReport;
 }
 
 // Weekly Requirements Report
@@ -103,6 +104,27 @@ export interface DivisionGameDayReport {
   actualDistribution: Record<number, number>; // dayOfWeek (0-6) -> game count
   issues: string[]; // e.g., "3 games on Monday (should avoid)"
   complianceRate: number; // 0-100%
+  passed: boolean;
+}
+
+// Game Spacing Report - tracks days between games for each team
+export interface GameSpacingReport {
+  passed: boolean;
+  summary: string;
+  teamReports: TeamGameSpacingReport[];
+  overallAverageDaysBetweenGames: number;
+}
+
+export interface TeamGameSpacingReport {
+  teamId: string;
+  teamName: string;
+  divisionId: string;
+  divisionName: string;
+  totalGames: number;
+  averageDaysBetweenGames: number; // Average days between consecutive games
+  minDaysBetweenGames: number; // Minimum gap found
+  maxDaysBetweenGames: number; // Maximum gap found
+  gameGaps: number[]; // Array of days between each consecutive game pair
   passed: boolean;
 }
 

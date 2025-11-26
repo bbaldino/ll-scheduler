@@ -9,6 +9,8 @@ import type {
   ConstraintViolation,
   GameDayPreferencesReport,
   DivisionGameDayReport,
+  GameSpacingReport,
+  TeamGameSpacingReport,
   ScheduledEvent,
   Team,
   Division,
@@ -72,6 +74,7 @@ export async function evaluateSchedule(
     divisionMap,
     configByDivision
   );
+  const gameSpacing = evaluateGameSpacing(events, teams, divisionMap);
 
   // Calculate overall score
   const checks = [
@@ -79,6 +82,7 @@ export async function evaluateSchedule(
     homeAwayBalance.passed,
     constraintViolations.passed,
     gameDayPreferences.passed,
+    gameSpacing.passed,
   ];
   const passedCount = checks.filter(Boolean).length;
   const overallScore = Math.round((passedCount / checks.length) * 100);
@@ -91,6 +95,7 @@ export async function evaluateSchedule(
     homeAwayBalance,
     constraintViolations,
     gameDayPreferences,
+    gameSpacing,
   };
 }
 
@@ -591,5 +596,96 @@ function evaluateGameDayPreferences(
       ? `All divisions compliant (avg: ${avgCompliance}%)`
       : `Game day preference issues found (avg compliance: ${avgCompliance}%)`,
     divisionReports,
+  };
+}
+
+/**
+ * Evaluate game spacing - average days between games for each team
+ */
+function evaluateGameSpacing(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisionMap: Map<string, Division>
+): GameSpacingReport {
+  const teamReports: TeamGameSpacingReport[] = [];
+  const MIN_ACCEPTABLE_AVG_DAYS = 5; // Minimum acceptable average days between games
+
+  for (const team of teams) {
+    const division = divisionMap.get(team.divisionId);
+    if (!division) continue;
+
+    // Get all games for this team, sorted by date
+    const teamGames = events
+      .filter(
+        (e) =>
+          e.eventType === 'game' &&
+          (e.homeTeamId === team.id || e.awayTeamId === team.id)
+      )
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    if (teamGames.length < 2) {
+      // Not enough games to calculate spacing
+      teamReports.push({
+        teamId: team.id,
+        teamName: team.name,
+        divisionId: team.divisionId,
+        divisionName: division.name,
+        totalGames: teamGames.length,
+        averageDaysBetweenGames: 0,
+        minDaysBetweenGames: 0,
+        maxDaysBetweenGames: 0,
+        gameGaps: [],
+        passed: true, // Can't fail with < 2 games
+      });
+      continue;
+    }
+
+    // Calculate gaps between consecutive games
+    const gameGaps: number[] = [];
+    for (let i = 0; i < teamGames.length - 1; i++) {
+      const currentDate = new Date(teamGames[i].date + 'T12:00:00');
+      const nextDate = new Date(teamGames[i + 1].date + 'T12:00:00');
+      const daysDiff = Math.round(
+        (nextDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      gameGaps.push(daysDiff);
+    }
+
+    const avgDays = gameGaps.reduce((sum, gap) => sum + gap, 0) / gameGaps.length;
+    const minDays = Math.min(...gameGaps);
+    const maxDays = Math.max(...gameGaps);
+
+    teamReports.push({
+      teamId: team.id,
+      teamName: team.name,
+      divisionId: team.divisionId,
+      divisionName: division.name,
+      totalGames: teamGames.length,
+      averageDaysBetweenGames: Math.round(avgDays * 10) / 10, // Round to 1 decimal
+      minDaysBetweenGames: minDays,
+      maxDaysBetweenGames: maxDays,
+      gameGaps,
+      passed: avgDays >= MIN_ACCEPTABLE_AVG_DAYS,
+    });
+  }
+
+  // Calculate overall average
+  const teamsWithGames = teamReports.filter((r) => r.totalGames >= 2);
+  const overallAvg =
+    teamsWithGames.length > 0
+      ? teamsWithGames.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) /
+        teamsWithGames.length
+      : 0;
+
+  const allPassed = teamReports.every((r) => r.passed);
+  const failedCount = teamReports.filter((r) => !r.passed).length;
+
+  return {
+    passed: allPassed,
+    summary: allPassed
+      ? `All teams have adequate game spacing (avg: ${overallAvg.toFixed(1)} days)`
+      : `${failedCount} teams with insufficient game spacing (avg: ${overallAvg.toFixed(1)} days)`,
+    teamReports,
+    overallAverageDaysBetweenGames: Math.round(overallAvg * 10) / 10,
   };
 }

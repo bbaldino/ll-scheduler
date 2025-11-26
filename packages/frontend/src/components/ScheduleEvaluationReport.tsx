@@ -9,6 +9,8 @@ import type {
   ConstraintViolation,
   GameDayPreferencesReport,
   DivisionGameDayReport,
+  GameSpacingReport,
+  TeamGameSpacingReport,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
 
@@ -88,6 +90,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.gameDayPreferences}
             expanded={expandedSections.has('gameDays')}
             onToggle={() => toggleSection('gameDays')}
+          />
+
+          {/* Game Spacing */}
+          <GameSpacingSection
+            report={result.gameSpacing}
+            expanded={expandedSections.has('gameSpacing')}
+            onToggle={() => toggleSection('gameSpacing')}
           />
         </div>
       </div>
@@ -439,6 +448,73 @@ function GameDayPreferencesSection({
                 </div>
               </div>
             ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameSpacingSection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: GameSpacingReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Game Spacing"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          <div className={styles.overallAverage}>
+            Overall Average: <strong>{report.overallAverageDaysBetweenGames}</strong> days between games
+          </div>
+          {report.teamReports.length === 0 ? (
+            <p className={styles.noData}>No team data available</p>
+          ) : (
+            <table className={styles.balanceTable}>
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th>Division</th>
+                  <th>Games</th>
+                  <th>Avg Days</th>
+                  <th>Min</th>
+                  <th>Max</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.teamReports.map((team: TeamGameSpacingReport) => (
+                  <tr key={team.teamId}>
+                    <td>{team.teamName}</td>
+                    <td>{team.divisionName}</td>
+                    <td>{team.totalGames}</td>
+                    <td className={team.averageDaysBetweenGames < 5 ? styles.cellWarning : ''}>
+                      {team.averageDaysBetweenGames}
+                    </td>
+                    <td className={team.minDaysBetweenGames < 3 ? styles.cellWarning : ''}>
+                      {team.minDaysBetweenGames || '-'}
+                    </td>
+                    <td>{team.maxDaysBetweenGames || '-'}</td>
+                    <td>
+                      <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                        {team.passed ? '✓' : '✗'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}

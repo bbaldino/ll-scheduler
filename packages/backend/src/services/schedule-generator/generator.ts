@@ -58,6 +58,8 @@ import {
   getWeekNumberForDate,
   teamNeedsEventInWeek,
   anyTeamNeedsEventInWeek,
+  parseLocalDate,
+  formatDateStr,
 } from './draft.js';
 
 /**
@@ -593,8 +595,8 @@ export class ScheduleGenerator {
    * Calculate duration in weeks between two dates
    */
   private calculateDurationWeeks(startDate: string, endDate: string): number {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const start = parseLocalDate(startDate);
+    const end = parseLocalDate(endDate);
     const days = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
     return Math.max(1, Math.ceil(days / 7));
   }
@@ -627,8 +629,8 @@ export class ScheduleGenerator {
    */
   private getWeeksInRange(startDate: string, endDate: string): Array<{ startDate: string; endDate: string }> {
     const weeks: Array<{ startDate: string; endDate: string }> = [];
-    const rangeStart = new Date(startDate);
-    const rangeEnd = new Date(endDate);
+    const rangeStart = parseLocalDate(startDate);
+    const rangeEnd = parseLocalDate(endDate);
 
     // Start from the beginning of the range
     let currentWeekStart = new Date(rangeStart);
@@ -643,8 +645,8 @@ export class ScheduleGenerator {
       }
 
       weeks.push({
-        startDate: currentWeekStart.toISOString().split('T')[0],
-        endDate: currentWeekEnd.toISOString().split('T')[0],
+        startDate: formatDateStr(currentWeekStart),
+        endDate: formatDateStr(currentWeekEnd),
       });
 
       // Move to next week
@@ -862,10 +864,25 @@ export class ScheduleGenerator {
     // Count failed matchups (remaining unscheduled)
     totalFailed = shuffledMatchups.length;
     for (const matchup of shuffledMatchups) {
+      const homeTeam = this.teams.find((t) => t.id === matchup.homeTeamId);
+      const awayTeam = this.teams.find((t) => t.id === matchup.awayTeamId);
+      const homeTeamName = homeTeam?.name || matchup.homeTeamId;
+      const awayTeamName = awayTeam?.name || matchup.awayTeamId;
+
       this.warnings.push({
         type: 'insufficient_resources',
-        message: `Could not schedule game between teams in division ${matchup.divisionId}`,
+        message: `Could not schedule game: ${homeTeamName} vs ${awayTeamName}`,
         details: matchup,
+      });
+
+      // Log at error level for easy filtering
+      this.log('error', 'game', `Failed to schedule game: ${homeTeamName} vs ${awayTeamName}`, {
+        homeTeamId: matchup.homeTeamId,
+        homeTeamName,
+        awayTeamId: matchup.awayTeamId,
+        awayTeamName,
+        divisionId: matchup.divisionId,
+        reason: 'No available time slots found across all game weeks',
       });
     }
 
@@ -1168,6 +1185,37 @@ export class ScheduleGenerator {
         continue;
       }
 
+      // Check capacity: count total practice slots needed vs available
+      let totalPracticesNeeded = 0;
+      for (const ts of teamsNeedingPractices) {
+        const config = this.divisionConfigs.get(ts.divisionId);
+        if (config) {
+          const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
+          totalPracticesNeeded += config.practicesPerWeek - weekEvents.practices;
+        }
+      }
+
+      // Count available slots in this week (unique date+time+resource combinations)
+      const weekSlots = practiceFieldSlots.filter((rs) => week.dates.includes(rs.slot.date));
+      const uniqueSlotKeys = new Set(weekSlots.map(s => `${s.slot.date}|${s.slot.startTime}|${s.resourceId}`));
+      const availableSlots = uniqueSlotKeys.size;
+
+      console.log(`  Capacity check: ${totalPracticesNeeded} practices needed, ${availableSlots} unique slots available`);
+
+      if (availableSlots < totalPracticesNeeded) {
+        this.log('warning', 'practice', `Insufficient practice capacity in week ${week.weekNumber + 1}`, {
+          weekNumber: week.weekNumber + 1,
+          weekStart: week.startDate,
+          weekEnd: week.endDate,
+          practicesNeeded: totalPracticesNeeded,
+          slotsAvailable: availableSlots,
+          teamsNeedingPractices: teamsNeedingPractices.length,
+          shortfall: totalPracticesNeeded - availableSlots,
+          datesWithSlots: [...new Set(weekSlots.map(s => s.slot.date))].sort(),
+        });
+        console.log(`  ⚠️  CAPACITY WARNING: Need ${totalPracticesNeeded} practices but only ${availableSlots} slots available (shortfall: ${totalPracticesNeeded - availableSlots})`);
+      }
+
       // Draft rounds - keep going until no team needs more practices this week
       let round = 0;
       const maxRounds = 10; // Safety limit
@@ -1255,6 +1303,35 @@ export class ScheduleGenerator {
               this.scoringContext,
               true // Enable detailed logging
             );
+
+            // Find what events are already scheduled in this week
+            const eventsThisWeek = this.scheduledEvents.filter(e => week.dates.includes(e.date));
+            const practicesThisWeek = eventsThisWeek.filter(e => e.eventType === 'practice');
+
+            // Log at error level for easy filtering
+            this.log('error', 'practice', `No practice slots available for ${teamState.teamName} in week ${week.weekNumber + 1}`, {
+              teamId: teamState.teamId,
+              teamName: teamState.teamName,
+              weekNumber: week.weekNumber + 1,
+              weekStart: week.startDate,
+              weekEnd: week.endDate,
+              weekSlotsCount: weekSlots.length,
+              requiredDuration: config.practiceDurationHours,
+              fieldDatesUsed: Array.from(teamState.fieldDatesUsed).sort(),
+              cageDatesUsed: Array.from(teamState.cageDatesUsed).sort(),
+              eventsAlreadyScheduledThisWeek: eventsThisWeek.length,
+              practicesAlreadyScheduledThisWeek: practicesThisWeek.length,
+              scheduledPracticeDetails: practicesThisWeek.map(p => ({
+                teamId: p.teamId,
+                teamName: this.teamSchedulingStates.get(p.teamId || '')?.teamName || 'unknown',
+                date: p.date,
+                time: `${p.startTime}-${p.endTime}`,
+                fieldId: p.fieldId,
+              })),
+              reason: weekSlots.length === 0
+                ? 'No compatible field slots available this week'
+                : 'All available slots conflict with existing events or team schedule',
+            });
             continue;
           }
 
@@ -1318,7 +1395,21 @@ export class ScheduleGenerator {
             for (const ts of unscheduledTeams) {
               const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
               const cfg = this.divisionConfigs.get(ts.divisionId);
-              console.log(`      - ${ts.teamName}: has ${weekEvents.practices}/${cfg?.practicesPerWeek || '?'} practices, dates used: [${Array.from(ts.datesUsed).sort().join(', ')}]`);
+              console.log(`      - ${ts.teamName}: has ${weekEvents.practices}/${cfg?.practicesPerWeek || '?'} practices, field dates: [${Array.from(ts.fieldDatesUsed).sort().join(', ')}]`);
+
+              // Log at error level for easy filtering
+              this.log('error', 'practice', `Failed to schedule practice for ${ts.teamName} in week ${week.weekNumber + 1}`, {
+                teamId: ts.teamId,
+                teamName: ts.teamName,
+                weekNumber: week.weekNumber + 1,
+                weekStart: week.startDate,
+                weekEnd: week.endDate,
+                practicesScheduledThisWeek: weekEvents.practices,
+                practicesRequiredPerWeek: cfg?.practicesPerWeek || 0,
+                fieldDatesUsed: Array.from(ts.fieldDatesUsed).sort(),
+                cageDatesUsed: Array.from(ts.cageDatesUsed).sort(),
+                reason: 'No available slots remaining after all draft rounds',
+              });
             }
           }
           break;
@@ -1347,6 +1438,18 @@ export class ScheduleGenerator {
             scheduled: teamState.practicesScheduled,
             needed: totalNeeded,
           },
+        });
+
+        // Log at error level for easy filtering - summary of total shortfall
+        this.log('error', 'practice', `Practice requirement not met for ${teamState.teamName}: ${teamState.practicesScheduled}/${totalNeeded} practices scheduled`, {
+          teamId: teamState.teamId,
+          teamName: teamState.teamName,
+          divisionId: teamState.divisionId,
+          practicesScheduled: teamState.practicesScheduled,
+          practicesNeeded: totalNeeded,
+          practicesPerWeek: config.practicesPerWeek,
+          totalWeeks: practiceWeeks.length,
+          shortfall: totalNeeded - teamState.practicesScheduled,
         });
       }
     }
@@ -1746,6 +1849,21 @@ export class ScheduleGenerator {
 
           if (candidates.length === 0) {
             console.log(`    ${teamState.teamName}: No candidates available`);
+            // Log at error level for easy filtering
+            this.log('error', 'cage', `No cage slots available for ${teamState.teamName} in week ${week.weekNumber + 1}`, {
+              teamId: teamState.teamId,
+              teamName: teamState.teamName,
+              weekNumber: week.weekNumber + 1,
+              weekStart: week.startDate,
+              weekEnd: week.endDate,
+              weekSlotsCount: weekSlots.length,
+              requiredDuration: config.cageSessionDurationHours ?? 1,
+              fieldDatesUsed: Array.from(teamState.fieldDatesUsed).sort(),
+              cageDatesUsed: Array.from(teamState.cageDatesUsed).sort(),
+              reason: weekSlots.length === 0
+                ? 'No compatible cage slots available this week'
+                : 'All available slots conflict with existing events or team schedule',
+            });
             continue;
           }
 
@@ -1793,6 +1911,34 @@ export class ScheduleGenerator {
 
         if (!anyScheduledThisRound) {
           console.log(`  No cage sessions scheduled this round, moving to next week`);
+          // Log which teams still needed cage sessions but couldn't get any
+          const unscheduledTeams = teamsNeedingCages.filter((ts) => {
+            const cfg = this.divisionConfigs.get(ts.divisionId);
+            if (!cfg || !cfg.cageSessionsPerWeek) return false;
+            return teamNeedsEventInWeek(ts, 'cage', week.weekNumber, {
+              practicesPerWeek: cfg.practicesPerWeek,
+              gamesPerWeek: cfg.gamesPerWeek || 0,
+              cageSessionsPerWeek: cfg.cageSessionsPerWeek,
+            });
+          });
+          if (unscheduledTeams.length > 0) {
+            for (const ts of unscheduledTeams) {
+              const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
+              const cfg = this.divisionConfigs.get(ts.divisionId);
+              this.log('error', 'cage', `Failed to schedule cage session for ${ts.teamName} in week ${week.weekNumber + 1}`, {
+                teamId: ts.teamId,
+                teamName: ts.teamName,
+                weekNumber: week.weekNumber + 1,
+                weekStart: week.startDate,
+                weekEnd: week.endDate,
+                cagesScheduledThisWeek: weekEvents.cages,
+                cagesRequiredPerWeek: cfg?.cageSessionsPerWeek || 0,
+                fieldDatesUsed: Array.from(ts.fieldDatesUsed).sort(),
+                cageDatesUsed: Array.from(ts.cageDatesUsed).sort(),
+                reason: 'No available slots remaining after all draft rounds',
+              });
+            }
+          }
           break;
         }
 
@@ -1819,6 +1965,18 @@ export class ScheduleGenerator {
             scheduled: teamState.cagesScheduled,
             needed: totalNeeded,
           },
+        });
+
+        // Log at error level for easy filtering - summary of total shortfall
+        this.log('error', 'cage', `Cage requirement not met for ${teamState.teamName}: ${teamState.cagesScheduled}/${totalNeeded} cage sessions scheduled`, {
+          teamId: teamState.teamId,
+          teamName: teamState.teamName,
+          divisionId: teamState.divisionId,
+          cagesScheduled: teamState.cagesScheduled,
+          cagesNeeded: totalNeeded,
+          cagesPerWeek: config.cageSessionsPerWeek,
+          totalWeeks: cageWeeks.length,
+          shortfall: totalNeeded - teamState.cagesScheduled,
         });
       }
     }
@@ -2012,10 +2170,11 @@ export class ScheduleGenerator {
       if (!config) continue;
 
       // Filter slots to this week and compatible with division
+      // For practices (field events), only check fieldDatesUsed since cage + field on same day is OK
       const teamWeekSlots = resourceSlots.filter((rs) =>
         week.dates.includes(rs.slot.date) &&
         this.isFieldCompatibleWithDivision(rs.resourceId, teamState.divisionId) &&
-        !teamState.datesUsed.has(rs.slot.date) // Team can't use dates they already have events on
+        !teamState.fieldDatesUsed.has(rs.slot.date) // Team can't have two field events on same day
       );
 
       const durationHours = config.practiceDurationHours;

@@ -4,6 +4,7 @@ import type {
   ScheduledEventDraft,
   TeamConstraint,
 } from '@ll-scheduler/shared';
+import { parseLocalDate, formatDateStr } from './draft.js';
 
 /**
  * Check if a time slot conflicts with an existing event
@@ -81,10 +82,10 @@ export function violatesMinDayGap(
       e.teamId === teamId || e.homeTeamId === teamId || e.awayTeamId === teamId
   );
 
-  const targetDate = new Date(date);
+  const targetDate = parseLocalDate(date);
 
   return teamEvents.some((event) => {
-    const eventDate = new Date(event.date);
+    const eventDate = parseLocalDate(event.date);
     const daysDiff = Math.abs(
       (targetDate.getTime() - eventDate.getTime()) / (1000 * 60 * 60 * 24)
     );
@@ -155,11 +156,11 @@ export function countTeamEvents(
  */
 export function getDateRange(startDate: string, endDate: string): string[] {
   const dates: string[] = [];
-  const current = new Date(startDate);
-  const end = new Date(endDate);
+  const current = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
 
   while (current <= end) {
-    dates.push(current.toISOString().split('T')[0]);
+    dates.push(formatDateStr(current));
     current.setDate(current.getDate() + 1);
   }
 
@@ -168,10 +169,10 @@ export function getDateRange(startDate: string, endDate: string): string[] {
 
 /**
  * Get day of week for a date (0 = Sunday, 6 = Saturday)
- * Uses 'T00:00:00' suffix to interpret date in local timezone, not UTC
+ * Uses parseLocalDate to avoid timezone issues
  */
 export function getDayOfWeek(date: string): number {
-  return new Date(date + 'T00:00:00').getDay();
+  return parseLocalDate(date).getDay();
 }
 
 /**

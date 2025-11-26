@@ -406,3 +406,12 @@
   background: #ffebee;
   color: #c62828;
 }
+
+/* Game Spacing Styles */
+.overallAverage {
+  background: #e3f2fd;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  color: #1565c0;
+}

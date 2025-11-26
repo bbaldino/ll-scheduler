@@ -209,15 +209,19 @@ export interface ScoringWeights {
   weekBalance: number; // Prefer meeting weekly requirements evenly
   resourceUtilization: number; // Prefer underutilized resources
   gameDayPreference: number; // Match division's preferred game days
-  timeQuality: number; // Prefer mid-afternoon times
+  timeQuality: number; // Prefer mid-afternoon times (for practices)
   homeAwayBalance: number; // For games: balance home/away assignments
   dayGap: number; // Prefer spacing events apart (1 = 2+ day gap, 0.5 = consecutive)
+  timeAdjacency: number; // Prefer slots adjacent to existing events (pack events together)
+  earliestTime: number; // For games: prefer earlier start times
 
   // Binary penalty factor (rawScore 0 or 1, negative weight penalizes when true)
-  sameDayEvent: number; // Penalize when team already has event on this date
+  sameDayEvent: number; // Penalize when team already has same-type event on this date
 
   // Continuous penalty factor (rawScore 0-1, negative weight)
   scarcity: number; // Penalize taking slots that are scarce for other teams
+  sameDayCageFieldGap: number; // Penalize non-adjacent cage+field events on same day
+  weekendMorningPractice: number; // Penalize practices on weekend mornings (games should get priority)
 }
 
 /**
@@ -232,10 +236,14 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   timeQuality: 30,
   homeAwayBalance: 70,
   dayGap: 100,
+  timeAdjacency: 150, // Strong preference for packing events together
+  earliestTime: 200, // Strong preference for earlier game times
 
   // Penalty factors
   sameDayEvent: -1000,
   scarcity: -1000,
+  sameDayCageFieldGap: -1000, // Strong penalty for non-adjacent cage+field on same day
+  weekendMorningPractice: -500, // Penalty for practices on weekend mornings (reserve for games)
 };
 
 /**
@@ -271,8 +279,12 @@ export interface ScoredCandidate extends PlacementCandidate {
     timeQuality: number;
     homeAwayBalance: number;
     dayGap: number;
+    timeAdjacency: number;
+    earliestTime: number;
     sameDayEvent: number;
     scarcity: number;
+    sameDayCageFieldGap: number;
+    weekendMorningPractice: number;
   };
 }
 
@@ -297,8 +309,9 @@ export interface TeamSchedulingState {
   // Home/away tracking for games
   homeGames: number;
   awayGames: number;
-  // Constraint tracking
-  datesUsed: Set<string>; // Dates with events scheduled
+  // Constraint tracking - separate field and cage dates since cage + field on same day is OK
+  fieldDatesUsed: Set<string>; // Dates with field events (games/practices) scheduled
+  cageDatesUsed: Set<string>; // Dates with cage events scheduled
   minDaysBetweenEvents: number;
 }
 

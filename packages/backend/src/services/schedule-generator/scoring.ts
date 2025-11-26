@@ -7,6 +7,7 @@ import type {
   DEFAULT_SCORING_WEIGHTS,
 } from '@ll-scheduler/shared';
 import type { GameDayPreference } from '@ll-scheduler/shared';
+import { parseLocalDate } from './draft.js';
 
 export { DEFAULT_SCORING_WEIGHTS };
 
@@ -43,8 +44,12 @@ export interface ScoreBreakdown {
   timeQuality: number;
   homeAwayBalance: number;
   dayGap: number;
+  timeAdjacency: number;
+  earliestTime: number;
   sameDayEvent: number;
   scarcity: number;
+  sameDayCageFieldGap: number;
+  weekendMorningPractice: number;
 }
 
 /**
@@ -70,8 +75,12 @@ export function calculatePlacementScore(
     timeQuality: 0,
     homeAwayBalance: 0,
     dayGap: 0,
+    timeAdjacency: 0,
+    earliestTime: 0,
     sameDayEvent: 0,
     scarcity: 0,
+    sameDayCageFieldGap: 0,
+    weekendMorningPractice: 0,
   };
 
   // Continuous positive factors (rawScore 0-1)
@@ -80,30 +89,42 @@ export function calculatePlacementScore(
   breakdown.resourceUtilization = calculateResourceUtilizationRaw(candidate.resourceId, candidate.date, context) * weights.resourceUtilization;
   breakdown.timeQuality = calculateTimeQualityRaw(candidate.startTime) * weights.timeQuality;
   breakdown.dayGap = calculateDayGapRaw(candidate.date, teamState) * weights.dayGap;
+  breakdown.timeAdjacency = calculateTimeAdjacencyRaw(candidate, context) * weights.timeAdjacency;
 
   // Game-specific factors
   if (candidate.eventType === 'game') {
     breakdown.gameDayPreference = calculateGameDayPreferenceRaw(candidate.dayOfWeek, teamState.divisionId, context) * weights.gameDayPreference;
+    breakdown.earliestTime = calculateEarliestTimeRaw(candidate.startTime) * weights.earliestTime;
 
     if (candidate.homeTeamId && candidate.awayTeamId) {
       breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
     }
   }
 
-  // Binary penalty: same-day event
-  const sameDayRaw = teamState.datesUsed.has(candidate.date) ? 1 : 0;
+  // Practice-specific penalties
+  if (candidate.eventType === 'practice') {
+    breakdown.weekendMorningPractice = calculateWeekendMorningPracticeRaw(candidate.dayOfWeek, candidate.startTime) * weights.weekendMorningPractice;
+  }
+
+  // Binary penalty: same-day event (only for same resource type)
+  // Cage + field on same day is OK, but not two field events or two cage events
+  const relevantDatesUsed = candidate.resourceType === 'cage' ? teamState.cageDatesUsed : teamState.fieldDatesUsed;
+  const sameDayRaw = relevantDatesUsed.has(candidate.date) ? 1 : 0;
   breakdown.sameDayEvent = sameDayRaw * weights.sameDayEvent;
 
-  // For games, also check away team same-day conflict
+  // For games, also check away team same-day conflict (games use fields)
   if (candidate.eventType === 'game' && candidate.awayTeamId) {
     const awayTeam = context.teamStates.get(candidate.awayTeamId);
-    if (awayTeam?.datesUsed.has(candidate.date)) {
+    if (awayTeam?.fieldDatesUsed.has(candidate.date)) {
       breakdown.sameDayEvent += 1 * weights.sameDayEvent;
     }
   }
 
   // Continuous penalty: scarcity
   breakdown.scarcity = calculateScarcityRaw(candidate, teamState, context) * weights.scarcity;
+
+  // Continuous penalty: same-day cage+field gap (must be adjacent if on same day)
+  breakdown.sameDayCageFieldGap = calculateSameDayCageFieldGapRaw(candidate, teamState, context) * weights.sameDayCageFieldGap;
 
   // Calculate total score
   const score = Object.values(breakdown).reduce((sum, v) => sum + v, 0);
@@ -265,6 +286,57 @@ export function calculateTimeQualityRaw(startTime: string): number {
 }
 
 /**
+ * Calculate earliest time raw score (for games)
+ * Returns 0-1 where 1 = earliest possible time (8am or before), 0 = latest (8pm+)
+ * This encourages games to fill from the earliest available slots first
+ */
+export function calculateEarliestTimeRaw(startTime: string): number {
+  const [hours, minutes] = startTime.split(':').map(Number);
+  const timeInMinutes = hours * 60 + minutes;
+
+  // 8am = 480 minutes = best score (1.0)
+  // 8pm = 1200 minutes = worst score (0.0)
+  const earliestTime = 8 * 60; // 8am
+  const latestTime = 20 * 60; // 8pm
+
+  if (timeInMinutes <= earliestTime) {
+    return 1.0;
+  }
+  if (timeInMinutes >= latestTime) {
+    return 0.0;
+  }
+
+  // Linear scale between 8am and 8pm
+  return 1 - (timeInMinutes - earliestTime) / (latestTime - earliestTime);
+}
+
+/**
+ * Calculate weekend morning practice penalty raw score
+ * Returns 0-1 where:
+ * - 1 = practice on weekend morning (before 1pm on Sat/Sun) - apply penalty
+ * - 0 = practice on weekday or weekend afternoon - no penalty
+ *
+ * This reserves weekend mornings for games
+ */
+export function calculateWeekendMorningPracticeRaw(dayOfWeek: number, startTime: string): number {
+  // Check if it's a weekend (0 = Sunday, 6 = Saturday)
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  if (!isWeekend) {
+    return 0; // No penalty for weekday practices
+  }
+
+  // Check if it's a morning slot (before 1pm)
+  const [hours] = startTime.split(':').map(Number);
+  const isMorning = hours < 13; // Before 1pm
+
+  if (isMorning) {
+    return 1; // Full penalty for weekend morning practices
+  }
+
+  return 0; // No penalty for weekend afternoon practices
+}
+
+/**
  * Calculate home/away balance raw score
  * Returns 0-1 where 1 = balanced, 0 = very imbalanced
  */
@@ -300,26 +372,103 @@ export function calculateHomeAwayBalanceRaw(
  * - 1.0 = 2+ day gap between events (ideal)
  * - 0.5 = consecutive day (1 day gap)
  * - 0.0 = same day (but blocked by sameDayEvent anyway)
+ *
+ * Note: This considers ALL events (both field and cage) when calculating gaps,
+ * since we want to spread out a team's overall schedule even if cage + field
+ * on same day is technically allowed.
  */
 export function calculateDayGapRaw(
   candidateDate: string,
   teamState: TeamSchedulingState
 ): number {
-  if (teamState.datesUsed.size === 0) {
+  // Combine both field and cage dates to get all dates with events
+  const allDatesUsed = new Set([...teamState.fieldDatesUsed, ...teamState.cageDatesUsed]);
+
+  if (allDatesUsed.size === 0) {
     return 1.0; // No existing events, best possible score
   }
 
-  const candidate = new Date(candidateDate);
+  const candidate = parseLocalDate(candidateDate);
   let closestGap = Infinity;
 
-  for (const usedDate of teamState.datesUsed) {
-    const existing = new Date(usedDate);
+  for (const usedDate of allDatesUsed) {
+    const existing = parseLocalDate(usedDate);
     const gapDays = Math.abs((candidate.getTime() - existing.getTime()) / (1000 * 60 * 60 * 24));
     closestGap = Math.min(closestGap, gapDays);
   }
 
   // Scale: 0 days → 0, 1 day → 0.5, 2+ days → 1.0
   return Math.min(closestGap / 2, 1.0);
+}
+
+/**
+ * Calculate time adjacency raw score
+ * Returns 0-1 where:
+ * - 1.0 = directly adjacent to an existing event (no gap)
+ * - 0.5 = small gap (1-2 hours)
+ * - 0.0 = no events on this resource/date or large gap
+ *
+ * Encourages packing events together on the same resource
+ */
+export function calculateTimeAdjacencyRaw(
+  candidate: PlacementCandidate,
+  context: ScoringContext
+): number {
+  // Find events on the same resource and date
+  const sameResourceDateEvents = context.scheduledEvents.filter(
+    (e) =>
+      e.date === candidate.date &&
+      ((e.fieldId && e.fieldId === candidate.resourceId) ||
+        (e.cageId && e.cageId === candidate.resourceId))
+  );
+
+  if (sameResourceDateEvents.length === 0) {
+    // No existing events - neutral score (first event of the day)
+    // We want to encourage starting early, so return a small bonus for early times
+    return 0.3;
+  }
+
+  const candidateStart = timeToMinutes(candidate.startTime);
+  const candidateEnd = timeToMinutes(candidate.endTime);
+
+  let minGap = Infinity;
+
+  for (const event of sameResourceDateEvents) {
+    const eventStart = timeToMinutes(event.startTime);
+    const eventEnd = timeToMinutes(event.endTime);
+
+    // Calculate gap between candidate and existing event
+    let gap: number;
+    if (candidateEnd <= eventStart) {
+      // Candidate is before existing event
+      gap = eventStart - candidateEnd;
+    } else if (candidateStart >= eventEnd) {
+      // Candidate is after existing event
+      gap = candidateStart - eventEnd;
+    } else {
+      // Overlapping (shouldn't happen, but handle gracefully)
+      gap = 0;
+    }
+
+    minGap = Math.min(minGap, gap);
+  }
+
+  // Convert gap to score:
+  // 0 minutes gap = 1.0 (directly adjacent)
+  // 30 minutes gap = 0.75
+  // 60 minutes gap = 0.5
+  // 120 minutes gap = 0.25
+  // 180+ minutes gap = 0.0
+  const maxGapMinutes = 180;
+  return Math.max(0, 1 - minGap / maxGapMinutes);
+}
+
+/**
+ * Helper to convert time string to minutes
+ */
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
 }
 
 /**
@@ -355,6 +504,88 @@ export function calculateScarcityRaw(
   }
 
   return worstImpact;
+}
+
+/**
+ * Calculate same-day cage+field gap raw score
+ * Returns 0-1 where:
+ * - 0 = no cage+field on same day, OR they are adjacent (no penalty)
+ * - 1 = cage+field on same day with a gap between them (full penalty)
+ *
+ * This ensures that if a team has both cage and field events on the same day,
+ * they must be in adjacent time slots.
+ */
+export function calculateSameDayCageFieldGapRaw(
+  candidate: PlacementCandidate,
+  teamState: TeamSchedulingState,
+  context: ScoringContext
+): number {
+  const isCageCandidate = candidate.resourceType === 'cage';
+
+  // Check if placing cage event and team has field event on same day (or vice versa)
+  const oppositeTypeDatesUsed = isCageCandidate ? teamState.fieldDatesUsed : teamState.cageDatesUsed;
+
+  if (!oppositeTypeDatesUsed.has(candidate.date)) {
+    // No opposite-type event on this day, no penalty
+    return 0;
+  }
+
+  // Find the opposite-type events on this date
+  const oppositeTypeEvents = context.scheduledEvents.filter((e) => {
+    if (e.date !== candidate.date) return false;
+    // Get the team ID for this scheduled event
+    const eventTeamId = e.teamId || e.homeTeamId;
+    if (eventTeamId !== teamState.teamId) return false;
+    // Check if it's the opposite resource type
+    if (isCageCandidate) {
+      // Candidate is cage, look for field events (has fieldId, no cageId)
+      return e.fieldId && !e.cageId;
+    } else {
+      // Candidate is field, look for cage events
+      return e.cageId && !e.fieldId;
+    }
+  });
+
+  if (oppositeTypeEvents.length === 0) {
+    // No opposite-type events found for this team on this date
+    return 0;
+  }
+
+  // Calculate the minimum gap to any opposite-type event
+  const candidateStart = timeToMinutes(candidate.startTime);
+  const candidateEnd = timeToMinutes(candidate.endTime);
+
+  let minGap = Infinity;
+
+  for (const event of oppositeTypeEvents) {
+    const eventStart = timeToMinutes(event.startTime);
+    const eventEnd = timeToMinutes(event.endTime);
+
+    // Calculate gap between candidate and existing event
+    let gap: number;
+    if (candidateEnd <= eventStart) {
+      // Candidate is before existing event
+      gap = eventStart - candidateEnd;
+    } else if (candidateStart >= eventEnd) {
+      // Candidate is after existing event
+      gap = candidateStart - eventEnd;
+    } else {
+      // Overlapping (shouldn't happen)
+      gap = 0;
+    }
+
+    minGap = Math.min(minGap, gap);
+  }
+
+  // If adjacent (0-15 min gap), no penalty
+  // If gap exists, full penalty (we use a harsh threshold since adjacent is required)
+  const adjacentThreshold = 15; // Allow small 15 min buffer
+  if (minGap <= adjacentThreshold) {
+    return 0;
+  }
+
+  // Any gap > 15 minutes is a full penalty
+  return 1;
 }
 
 // ============================================

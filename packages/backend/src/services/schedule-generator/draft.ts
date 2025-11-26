@@ -45,17 +45,46 @@ export function shuffleWithSeed<T>(arr: T[], seed: number): T[] {
 }
 
 /**
+ * Parse a date string (YYYY-MM-DD) into a Date object at noon local time.
+ * This avoids timezone issues where UTC midnight becomes the previous day in local time.
+ */
+export function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0);
+}
+
+/**
+ * Format a Date object to YYYY-MM-DD string
+ */
+export function formatDateStr(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get day of week (0=Sunday, 6=Saturday) from a date string, handling timezone correctly
+ */
+export function getDayOfWeekFromDateStr(dateStr: string): number {
+  return parseLocalDate(dateStr).getDay();
+}
+
+/**
  * Generate week definitions from a date range
+ * Weeks run Monday through Sunday
  */
 export function generateWeekDefinitions(startDate: string, endDate: string): WeekDefinition[] {
   const weeks: WeekDefinition[] = [];
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
 
-  // Adjust start to Monday
+  // Adjust start to the Monday of the week containing startDate
+  // getDay(): 0=Sunday, 1=Monday, ..., 6=Saturday
+  // For Monday-based weeks: Sunday goes back 6 days, other days go back (day-1) days
   const dayOfWeek = start.getDay();
-  const daysToMonday = dayOfWeek === 0 ? 1 : dayOfWeek === 1 ? 0 : 8 - dayOfWeek;
-  start.setDate(start.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  start.setDate(start.getDate() - daysToSubtract);
 
   let weekNumber = 0;
   while (start <= end) {
@@ -66,19 +95,22 @@ export function generateWeekDefinitions(startDate: string, endDate: string): Wee
     const dates: string[] = [];
     const current = new Date(weekStart);
     while (current <= weekEnd && current <= end) {
-      dates.push(current.toISOString().split('T')[0]);
+      dates.push(formatDateStr(current));
       current.setDate(current.getDate() + 1);
     }
 
-    weeks.push({
-      weekNumber,
-      startDate: weekStart.toISOString().split('T')[0],
-      endDate: weekEnd.toISOString().split('T')[0],
-      dates,
-    });
+    // Only include weeks that have at least one date in range
+    if (dates.length > 0) {
+      weeks.push({
+        weekNumber,
+        startDate: formatDateStr(weekStart),
+        endDate: formatDateStr(weekEnd),
+        dates,
+      });
+      weekNumber++;
+    }
 
     start.setDate(start.getDate() + 7);
-    weekNumber++;
   }
 
   return weeks;
@@ -112,7 +144,8 @@ export function initializeTeamState(
     dayOfWeekUsage: new Map(),
     homeGames: 0,
     awayGames: 0,
-    datesUsed: new Set(),
+    fieldDatesUsed: new Set(),
+    cageDatesUsed: new Set(),
     minDaysBetweenEvents: requirements.minDaysBetweenEvents,
   };
 }
@@ -164,12 +197,17 @@ export function updateTeamStateAfterScheduling(
   }
 
   // Update day of week usage
-  const dayOfWeek = new Date(event.date).getDay();
+  const dayOfWeek = getDayOfWeekFromDateStr(event.date);
   const currentUsage = teamState.dayOfWeekUsage.get(dayOfWeek) || 0;
   teamState.dayOfWeekUsage.set(dayOfWeek, currentUsage + 1);
 
-  // Update dates used
-  teamState.datesUsed.add(event.date);
+  // Update dates used - track field and cage dates separately
+  // Games and practices use fields, cages use cages
+  if (event.eventType === 'cage') {
+    teamState.cageDatesUsed.add(event.date);
+  } else {
+    teamState.fieldDatesUsed.add(event.date);
+  }
 }
 
 /**
@@ -207,9 +245,16 @@ export function generateCandidatesForTeamEvent(
   // Filter slots to this week and compatible resources
   const weekSlots = resourceSlots.filter((rs) => week.dates.includes(rs.slot.date));
 
+  // Determine which dates set to check based on event type
+  // Cage events only conflict with other cage events on the same date
+  // Field events (practice) only conflict with other field events on the same date
+  const relevantDatesUsed = eventType === 'cage' ? teamState.cageDatesUsed : teamState.fieldDatesUsed;
+
   if (enableLogging) {
     console.log(`      [generateCandidates] Team ${teamState.teamName}: ${weekSlots.length} slots in week ${week.weekNumber + 1}`);
-    console.log(`      [generateCandidates] Team dates already used: [${Array.from(teamState.datesUsed).sort().join(', ')}]`);
+    console.log(`      [generateCandidates] Team ${eventType} dates already used: [${Array.from(relevantDatesUsed).sort().join(', ')}]`);
+    console.log(`      [generateCandidates] Team field dates: [${Array.from(teamState.fieldDatesUsed).sort().join(', ')}]`);
+    console.log(`      [generateCandidates] Team cage dates: [${Array.from(teamState.cageDatesUsed).sort().join(', ')}]`);
 
     // Log available dates in this week
     const datesWithSlots = new Set(weekSlots.map(s => s.slot.date));
@@ -231,10 +276,11 @@ export function generateCandidatesForTeamEvent(
       continue;
     }
 
-    // Check if team already has an event on this date - filter out entirely, not just penalty
-    if (teamState.datesUsed.has(slot.slot.date)) {
+    // Check if team already has a same-type event on this date
+    // (cage + field on same day is OK, but not two field events or two cage events)
+    if (relevantDatesUsed.has(slot.slot.date)) {
       rejectionStats.teamAlreadyHasEvent++;
-      stats.rejected.push('team_has_event');
+      stats.rejected.push(`team_has_${eventType}_event`);
       continue;
     }
 
@@ -284,7 +330,7 @@ export function generateCandidatesForTeamEvent(
 
     // Log per-date breakdown
     for (const [date, stats] of Array.from(dateStats.entries()).sort()) {
-      const dayOfWeek = new Date(date).getDay();
+      const dayOfWeek = getDayOfWeekFromDateStr(date);
       const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek];
       if (stats.rejected.length > 0 || stats.accepted === 0) {
         console.log(`        ${date} (${dayName}): ${stats.slots} slots, ${stats.accepted} candidates, rejections: ${stats.rejected.length > 0 ? [...new Set(stats.rejected)].join(', ') : 'none'}`);
