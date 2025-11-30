@@ -12,6 +12,9 @@ import type {
   TeamGameDayDistribution,
   GameSpacingReport,
   TeamGameSpacingReport,
+  MatchupBalanceReport,
+  DivisionMatchupReport,
+  TeamMatchupReport,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
 
@@ -98,6 +101,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.gameSpacing}
             expanded={expandedSections.has('gameSpacing')}
             onToggle={() => toggleSection('gameSpacing')}
+          />
+
+          {/* Matchup Balance */}
+          <MatchupBalanceSection
+            report={result.matchupBalance}
+            expanded={expandedSections.has('matchupBalance')}
+            onToggle={() => toggleSection('matchupBalance')}
           />
         </div>
       </div>
@@ -569,6 +579,115 @@ function GameSpacingSection({
                 ))}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatchupBalanceSection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: MatchupBalanceReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+
+  const toggleTeam = (teamId: string) => {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Matchup Balance"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          {report.divisionReports.length === 0 ? (
+            <p className={styles.noData}>No division data available</p>
+          ) : (
+            report.divisionReports.map((division: DivisionMatchupReport) => (
+              <div key={division.divisionId} className={styles.divisionReport}>
+                <div className={styles.divisionHeader}>
+                  <span className={division.passed ? styles.statusPass : styles.statusFail}>
+                    {division.passed ? '✓' : '✗'}
+                  </span>
+                  <span className={styles.divisionName}>{division.divisionName}</span>
+                  <span className={styles.complianceRate}>
+                    Ideal: {division.idealGamesPerMatchup} games/matchup
+                  </span>
+                </div>
+
+                <div className={styles.matchupSummary}>
+                  Max imbalance: {division.maxImbalance} games from ideal
+                </div>
+
+                {division.teamMatchups.map((team: TeamMatchupReport) => (
+                  <div key={team.teamId} className={styles.teamReport}>
+                    <div
+                      className={styles.teamHeader}
+                      onClick={() => toggleTeam(`${division.divisionId}-${team.teamId}`)}
+                    >
+                      <span className={styles.teamName}>
+                        {team.teamName}
+                      </span>
+                      <span className={styles.teamGameCount}>
+                        {team.totalGames} total games
+                      </span>
+                      <span className={styles.expandIcon}>
+                        {expandedTeams.has(`${division.divisionId}-${team.teamId}`) ? '▼' : '▶'}
+                      </span>
+                    </div>
+                    {expandedTeams.has(`${division.divisionId}-${team.teamId}`) && (
+                      <div className={styles.teamDetails}>
+                        <table className={styles.matchupTable}>
+                          <thead>
+                            <tr>
+                              <th>Opponent</th>
+                              <th>Games</th>
+                              <th>Home</th>
+                              <th>Away</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {team.opponents.map((opp) => {
+                              const diff = Math.abs(opp.gamesPlayed - division.idealGamesPerMatchup);
+                              return (
+                                <tr key={opp.opponentId}>
+                                  <td>{opp.opponentName}</td>
+                                  <td className={diff > 1 ? styles.cellWarning : ''}>
+                                    {opp.gamesPlayed}
+                                  </td>
+                                  <td>{opp.homeGames}</td>
+                                  <td>{opp.awayGames}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))
           )}
         </div>
       )}

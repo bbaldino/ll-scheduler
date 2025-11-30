@@ -505,3 +505,38 @@
   margin-bottom: 1rem;
   color: #1565c0;
 }
+
+/* Matchup Balance Styles */
+.matchupSummary {
+  background: #f5f5f5;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.matchupTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.matchupTable th,
+.matchupTable td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.matchupTable th {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+.teamGameCount {
+  color: #888;
+  font-size: 0.85rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+}

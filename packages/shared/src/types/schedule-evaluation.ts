@@ -16,6 +16,7 @@ export interface ScheduleEvaluationResult {
   constraintViolations: ConstraintViolationsReport;
   gameDayPreferences: GameDayPreferencesReport;
   gameSpacing: GameSpacingReport;
+  matchupBalance: MatchupBalanceReport;
 }
 
 // Weekly Requirements Report
@@ -134,6 +135,37 @@ export interface TeamGameSpacingReport {
   maxDaysBetweenGames: number; // Maximum gap found
   gameGaps: number[]; // Array of days between each consecutive game pair
   passed: boolean;
+}
+
+// Matchup Balance Report - tracks how many times each team plays each other team
+export interface MatchupBalanceReport {
+  passed: boolean;
+  summary: string;
+  divisionReports: DivisionMatchupReport[];
+}
+
+export interface DivisionMatchupReport {
+  divisionId: string;
+  divisionName: string;
+  teamMatchups: TeamMatchupReport[];
+  idealGamesPerMatchup: number; // Expected games between any two teams
+  maxImbalance: number; // Largest difference from ideal across all matchups
+  passed: boolean;
+}
+
+export interface TeamMatchupReport {
+  teamId: string;
+  teamName: string;
+  opponents: OpponentMatchup[];
+  totalGames: number;
+}
+
+export interface OpponentMatchup {
+  opponentId: string;
+  opponentName: string;
+  gamesPlayed: number;
+  homeGames: number; // Games where this team was home
+  awayGames: number; // Games where this team was away
 }
 
 // Request type for evaluate endpoint

@@ -12,6 +12,10 @@ import type {
   TeamGameDayDistribution,
   GameSpacingReport,
   TeamGameSpacingReport,
+  MatchupBalanceReport,
+  DivisionMatchupReport,
+  TeamMatchupReport,
+  OpponentMatchup,
   ScheduledEvent,
   Team,
   Division,
@@ -77,6 +81,7 @@ export async function evaluateSchedule(
     configByDivision
   );
   const gameSpacing = evaluateGameSpacing(events, teams, divisionMap);
+  const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, periods);
 
   // Calculate overall score
   const checks = [
@@ -85,6 +90,7 @@ export async function evaluateSchedule(
     constraintViolations.passed,
     gameDayPreferences.passed,
     gameSpacing.passed,
+    matchupBalance.passed,
   ];
   const passedCount = checks.filter(Boolean).length;
   const overallScore = Math.round((passedCount / checks.length) * 100);
@@ -98,6 +104,7 @@ export async function evaluateSchedule(
     constraintViolations,
     gameDayPreferences,
     gameSpacing,
+    matchupBalance,
   };
 }
 
@@ -722,5 +729,131 @@ function evaluateGameSpacing(
       : `${failedCount} teams with insufficient game spacing (avg: ${overallAvg.toFixed(1)} days)`,
     teamReports,
     overallAverageDaysBetweenGames: Math.round(overallAvg * 10) / 10,
+  };
+}
+
+/**
+ * Evaluate matchup balance - how many times each team plays each other team
+ */
+function evaluateMatchupBalance(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisionMap: Map<string, Division>,
+  configByDivision: Map<string, DivisionConfig>,
+  periods: SeasonPeriod[]
+): MatchupBalanceReport {
+  const divisionReports: DivisionMatchupReport[] = [];
+  const IMBALANCE_THRESHOLD = 2; // Allow up to 2 games difference from ideal
+
+  // Get unique divisions
+  const divisionIds = new Set(teams.map((t) => t.divisionId));
+
+  for (const divisionId of divisionIds) {
+    const division = divisionMap.get(divisionId);
+    const config = configByDivision.get(divisionId);
+    if (!division) continue;
+
+    const divisionTeams = teams.filter((t) => t.divisionId === divisionId);
+    const divisionGames = events.filter(
+      (e) => e.divisionId === divisionId && e.eventType === 'game'
+    );
+
+    // Calculate ideal games per matchup
+    // Total games per team = gamesPerWeek * number of weeks
+    // Number of opponents = (teamCount - 1)
+    // Ideal games per matchup = (totalGamesPerTeam) / numberOfOpponents
+    const teamCount = divisionTeams.length;
+    if (teamCount < 2) continue;
+
+    // Calculate number of weeks from periods
+    const startDates = periods.map((p) => p.startDate).sort();
+    const endDates = periods.map((p) => p.endDate).sort().reverse();
+    const scheduleStart = startDates[0];
+    const scheduleEnd = endDates[0];
+
+    const startDate = new Date(scheduleStart + 'T00:00:00');
+    const endDate = new Date(scheduleEnd + 'T00:00:00');
+    const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const numWeeks = Math.ceil(totalDays / 7);
+
+    const gamesPerWeek = config?.gamesPerWeek || 2;
+    const totalGamesPerTeam = gamesPerWeek * numWeeks;
+    const numberOfOpponents = teamCount - 1;
+    const idealGamesPerMatchup = totalGamesPerTeam / numberOfOpponents;
+
+    // Build matchup counts for each team
+    const teamMatchups: TeamMatchupReport[] = [];
+    let maxImbalance = 0;
+
+    for (const team of divisionTeams) {
+      const opponents: OpponentMatchup[] = [];
+
+      for (const opponent of divisionTeams) {
+        if (opponent.id === team.id) continue;
+
+        // Count games between these two teams
+        const matchupGames = divisionGames.filter(
+          (g) =>
+            (g.homeTeamId === team.id && g.awayTeamId === opponent.id) ||
+            (g.homeTeamId === opponent.id && g.awayTeamId === team.id)
+        );
+
+        const homeGames = matchupGames.filter((g) => g.homeTeamId === team.id).length;
+        const awayGames = matchupGames.filter((g) => g.awayTeamId === team.id).length;
+        const gamesPlayed = homeGames + awayGames;
+
+        // Track imbalance from ideal
+        const imbalance = Math.abs(gamesPlayed - idealGamesPerMatchup);
+        maxImbalance = Math.max(maxImbalance, imbalance);
+
+        opponents.push({
+          opponentId: opponent.id,
+          opponentName: opponent.name,
+          gamesPlayed,
+          homeGames,
+          awayGames,
+        });
+      }
+
+      // Sort opponents by name for consistent display
+      opponents.sort((a, b) => a.opponentName.localeCompare(b.opponentName));
+
+      // Count total games for this team
+      const totalGames = divisionGames.filter(
+        (g) => g.homeTeamId === team.id || g.awayTeamId === team.id
+      ).length;
+
+      teamMatchups.push({
+        teamId: team.id,
+        teamName: team.name,
+        opponents,
+        totalGames,
+      });
+    }
+
+    // Sort teams by name for consistent display
+    teamMatchups.sort((a, b) => a.teamName.localeCompare(b.teamName));
+
+    divisionReports.push({
+      divisionId,
+      divisionName: division.name,
+      teamMatchups,
+      idealGamesPerMatchup: Math.round(idealGamesPerMatchup * 10) / 10,
+      maxImbalance: Math.round(maxImbalance * 10) / 10,
+      passed: maxImbalance <= IMBALANCE_THRESHOLD,
+    });
+  }
+
+  const allPassed = divisionReports.every((r) => r.passed);
+  const maxOverallImbalance = divisionReports.length > 0
+    ? Math.max(...divisionReports.map((r) => r.maxImbalance))
+    : 0;
+
+  return {
+    passed: allPassed,
+    summary: allPassed
+      ? `All matchups balanced (max imbalance: ${maxOverallImbalance})`
+      : `Matchup imbalance detected (max: ${maxOverallImbalance} games from ideal)`,
+    divisionReports,
   };
 }
