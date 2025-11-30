@@ -29,46 +29,6 @@ export default function CalendarView({
 }: CalendarViewProps) {
   const [viewType, setViewType] = useState<ViewType>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
-  const [selectedDivisionId, setSelectedDivisionId] = useState<string>('');
-
-  // Filter events based on selected team
-  const filteredEvents = useMemo(() => {
-    if (!selectedTeamId) return events;
-    return events.filter((e) =>
-      e.teamId === selectedTeamId ||
-      e.homeTeamId === selectedTeamId ||
-      e.awayTeamId === selectedTeamId
-    );
-  }, [events, selectedTeamId]);
-
-  // Filter teams by division for the dropdown
-  const filteredTeams = useMemo(() => {
-    if (!selectedDivisionId) return teams;
-    return teams.filter((t) => t.divisionId === selectedDivisionId);
-  }, [teams, selectedDivisionId]);
-
-  // Sort teams alphabetically
-  const sortedTeams = useMemo(() => {
-    return [...filteredTeams].sort((a, b) => a.name.localeCompare(b.name));
-  }, [filteredTeams]);
-
-  // Sort divisions alphabetically
-  const sortedDivisions = useMemo(() => {
-    return [...divisions].sort((a, b) => a.name.localeCompare(b.name));
-  }, [divisions]);
-
-  // Handle division change - clear team selection if it's not in the new division
-  const handleDivisionChange = (divisionId: string) => {
-    setSelectedDivisionId(divisionId);
-    // Clear team selection if current team is not in the newly selected division
-    if (selectedTeamId && divisionId) {
-      const team = teams.find((t) => t.id === selectedTeamId);
-      if (team && team.divisionId !== divisionId) {
-        setSelectedTeamId('');
-      }
-    }
-  };
 
   const getTeamName = (teamId?: string) => {
     if (!teamId) return '';
@@ -135,7 +95,7 @@ export default function CalendarView({
   const getEventsForDate = (date: Date | null) => {
     if (!date) return [];
     const dateStr = date.toISOString().split('T')[0];
-    return filteredEvents.filter((e) => e.date === dateStr);
+    return events.filter((e) => e.date === dateStr);
   };
 
   // Week view helpers - starts on Monday
@@ -173,7 +133,7 @@ export default function CalendarView({
 
   // Get events for a specific date
   const getEventsForDateStr = (dateStr: string): ScheduledEvent[] => {
-    return filteredEvents.filter((e) => e.date === dateStr);
+    return events.filter((e) => e.date === dateStr);
   };
 
   // Calculate overlapping event groups and assign columns
@@ -415,7 +375,7 @@ export default function CalendarView({
 
   const renderDayView = () => {
     const dateStr = currentDate.toISOString().split('T')[0];
-    const dayEvents = filteredEvents.filter((e) => e.date === dateStr);
+    const dayEvents = events.filter((e) => e.date === dateStr);
     const layoutInfo = layoutEvents(dayEvents);
     const totalHeight = (END_HOUR - START_HOUR + 1) * HOUR_HEIGHT;
 
@@ -522,43 +482,6 @@ export default function CalendarView({
           <button onClick={goToPreviousPeriod}>←</button>
           <button onClick={goToToday}>Today</button>
           <button onClick={goToNextPeriod}>→</button>
-        </div>
-        <div className={styles.teamFilter}>
-          <select
-            value={selectedDivisionId}
-            onChange={(e) => handleDivisionChange(e.target.value)}
-            className={styles.filterSelect}
-          >
-            <option value="">All Divisions</option>
-            {sortedDivisions.map((division) => (
-              <option key={division.id} value={division.id}>
-                {division.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedTeamId}
-            onChange={(e) => setSelectedTeamId(e.target.value)}
-            className={styles.filterSelect}
-          >
-            <option value="">All Teams</option>
-            {sortedTeams.map((team) => (
-              <option key={team.id} value={team.id}>
-                {team.name}
-              </option>
-            ))}
-          </select>
-          {selectedTeamId && (
-            <button
-              className={styles.clearFilter}
-              onClick={() => {
-                setSelectedTeamId('');
-                setSelectedDivisionId('');
-              }}
-            >
-              Clear
-            </button>
-          )}
         </div>
         <div className={styles.currentPeriod}>{getHeaderTitle()}</div>
       </div>

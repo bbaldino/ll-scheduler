@@ -737,7 +737,100 @@ export class ScheduleGenerator {
       opponentHistory.get(team2Id)?.get(team1Id)?.push(date);
     };
 
+    // Helper to schedule a single game between two teams
+    const tryScheduleGame = (
+      team: Team,
+      opponent: Team,
+      divisionId: string,
+      config: { gamesPerWeek: number; gameDurationHours: number },
+      week: WeekDefinition
+    ): boolean => {
+      const teamState = this.teamSchedulingStates.get(team.id);
+      const opponentState = this.teamSchedulingStates.get(opponent.id);
+      if (!teamState || !opponentState) return false;
+
+      // Filter field slots to this week and compatible with division
+      const weekFieldSlots = this.gameFieldSlots.filter((rs) =>
+        week.dates.includes(rs.slot.date) &&
+        this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
+      );
+
+      if (weekFieldSlots.length === 0) return false;
+
+      // Get period ID for games on these dates
+      const periodId = week.dates
+        .map((d) => this.getEventTypeAllowedOnDate(d, 'game'))
+        .find((id) => id !== null);
+
+      if (!periodId) return false;
+
+      // Create a matchup object
+      const matchup: GameMatchup = {
+        homeTeamId: team.id,
+        awayTeamId: opponent.id,
+        divisionId,
+      };
+
+      // Generate placement candidates for this game
+      const candidates = generateCandidatesForGame(
+        matchup,
+        weekFieldSlots,
+        week,
+        config.gameDurationHours,
+        periodId,
+        this.scoringContext!
+      );
+
+      if (candidates.length === 0) return false;
+
+      // Score all candidates
+      const scoredCandidates = candidates.map((c) =>
+        calculatePlacementScore(c, teamState, this.scoringContext!, this.scoringWeights)
+      );
+      scoredCandidates.sort((a, b) => b.score - a.score);
+      const bestCandidate = scoredCandidates[0];
+
+      if (!bestCandidate) return false;
+
+      // Create the event draft
+      const eventDraft = candidateToEventDraft(bestCandidate, divisionId);
+      this.scheduledEvents.push(eventDraft);
+      this.scoringContext!.scheduledEvents = this.scheduledEvents;
+
+      // Update both team states
+      const isHomeTeam = bestCandidate.homeTeamId === teamState.teamId;
+      updateTeamStateAfterScheduling(teamState, eventDraft, week.weekNumber, isHomeTeam);
+      updateTeamStateAfterScheduling(opponentState, eventDraft, week.weekNumber, !isHomeTeam);
+
+      // Update resource usage
+      updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, config.gameDurationHours);
+
+      // Record the game in opponent history
+      recordGame(team.id, opponent.id, bestCandidate.date);
+
+      const homeTeam = this.teams.find((t) => t.id === bestCandidate.homeTeamId);
+      const awayTeam = this.teams.find((t) => t.id === bestCandidate.awayTeamId);
+      const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
+
+      console.log(`    ✅ ${homeTeam?.name || 'Team'} vs ${awayTeam?.name || 'Team'}: ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName} (score: ${bestCandidate.score.toFixed(1)})`);
+
+      this.log('info', 'game', `Scheduled game: ${homeTeam?.name} vs ${awayTeam?.name}`, {
+        homeTeamId: bestCandidate.homeTeamId,
+        awayTeamId: bestCandidate.awayTeamId,
+        date: bestCandidate.date,
+        dayOfWeek: bestCandidate.dayOfWeek,
+        dayName,
+        time: `${bestCandidate.startTime}-${bestCandidate.endTime}`,
+        resourceName: bestCandidate.resourceName,
+        score: bestCandidate.score,
+        scoreBreakdown: bestCandidate.scoreBreakdown,
+      });
+
+      return true;
+    };
+
     // Schedule games week by week using draft approach
+    // The high gameDayPreference weight (500) ensures required/preferred days are chosen
     let totalScheduled = 0;
 
     for (const week of gameWeeks) {
@@ -836,95 +929,13 @@ export class ScheduleGenerator {
             const opponentGamesThisWeek = opponentState.eventsPerWeek.get(week.weekNumber)?.games || 0;
             if (opponentGamesThisWeek >= config.gamesPerWeek) continue;
 
-            // Filter field slots to this week and compatible with division
-            const weekFieldSlots = this.gameFieldSlots.filter((rs) =>
-              week.dates.includes(rs.slot.date) &&
-              this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
-            );
-
-            // Get period ID for games on these dates
-            const periodId = week.dates
-              .map((d) => this.getEventTypeAllowedOnDate(d, 'game'))
-              .find((id) => id !== null);
-
-            if (!periodId) continue;
-
-            // Create a matchup object
-            const matchup: GameMatchup = {
-              homeTeamId: team.id,
-              awayTeamId: opponent.id,
-              divisionId,
-            };
-
-            // Generate placement candidates for this game
-            const candidates = generateCandidatesForGame(
-              matchup,
-              weekFieldSlots,
-              week,
-              config.gameDurationHours,
-              periodId,
-              this.scoringContext
-            );
-
-            if (candidates.length === 0) {
-              this.log('debug', 'game', `No candidates for ${team.name} vs ${opponent.name} in week ${week.weekNumber + 1}`, {
-                homeTeamId: team.id,
-                awayTeamId: opponent.id,
-                weekNumber: week.weekNumber + 1,
-                weekFieldSlotsAvailable: weekFieldSlots.length,
-              });
-              continue;
+            if (tryScheduleGame(team, opponent, divisionId, config, week)) {
+              totalScheduled++;
+              gamesScheduledThisWeek++;
+              anyScheduledThisRound = true;
+              scheduled = true;
+              break; // Move to next team
             }
-
-            // Score all candidates
-            const scoredCandidates = candidates.map((c) =>
-              calculatePlacementScore(c, teamState, this.scoringContext!, this.scoringWeights)
-            );
-            scoredCandidates.sort((a, b) => b.score - a.score);
-            const bestCandidate = scoredCandidates[0];
-
-            if (!bestCandidate) continue;
-
-            // Create the event draft
-            const eventDraft = candidateToEventDraft(bestCandidate, divisionId);
-            this.scheduledEvents.push(eventDraft);
-            this.scoringContext.scheduledEvents = this.scheduledEvents;
-
-            // Update both team states
-            const isHomeTeam = bestCandidate.homeTeamId === teamState.teamId;
-            updateTeamStateAfterScheduling(teamState, eventDraft, week.weekNumber, isHomeTeam);
-            updateTeamStateAfterScheduling(opponentState, eventDraft, week.weekNumber, !isHomeTeam);
-
-            // Update resource usage
-            updateResourceUsage(this.scoringContext, bestCandidate.resourceId, bestCandidate.date, config.gameDurationHours);
-
-            // Record the game in opponent history
-            recordGame(team.id, opponent.id, bestCandidate.date);
-
-            const homeTeam = this.teams.find((t) => t.id === bestCandidate.homeTeamId);
-            const awayTeam = this.teams.find((t) => t.id === bestCandidate.awayTeamId);
-            const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
-            const daysSince = getDaysSinceLastGame(team.id, opponent.id, bestCandidate.date);
-
-            console.log(`    ✅ ${homeTeam?.name || 'Team'} vs ${awayTeam?.name || 'Team'}: ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName} (score: ${bestCandidate.score.toFixed(1)})`);
-
-            this.log('info', 'game', `Scheduled game: ${homeTeam?.name} vs ${awayTeam?.name}`, {
-              homeTeamId: bestCandidate.homeTeamId,
-              awayTeamId: bestCandidate.awayTeamId,
-              date: bestCandidate.date,
-              dayOfWeek: bestCandidate.dayOfWeek,
-              dayName,
-              time: `${bestCandidate.startTime}-${bestCandidate.endTime}`,
-              resourceName: bestCandidate.resourceName,
-              score: bestCandidate.score,
-              scoreBreakdown: bestCandidate.scoreBreakdown,
-            });
-
-            totalScheduled++;
-            gamesScheduledThisWeek++;
-            anyScheduledThisRound = true;
-            scheduled = true;
-            break; // Move to next team
           }
 
           if (!scheduled) {
@@ -938,7 +949,7 @@ export class ScheduleGenerator {
         }
 
         if (!anyScheduledThisRound) {
-          // No games could be scheduled this round, log which teams still need games
+          // No games could be scheduled this round
           const stillNeedingGames = teamsNeedingGames.filter((t) => {
             const state = this.teamSchedulingStates.get(t.team.id);
             const games = state?.eventsPerWeek.get(week.weekNumber)?.games || 0;

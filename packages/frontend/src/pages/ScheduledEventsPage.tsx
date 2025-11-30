@@ -59,6 +59,7 @@ export default function ScheduledEventsPage() {
   const [filterPeriod, setFilterPeriod] = useState<string>('');
   const [filterDivision, setFilterDivision] = useState<string>('');
   const [filterType, setFilterType] = useState<EventType | ''>('');
+  const [filterTeam, setFilterTeam] = useState<string>('');
 
   // View state
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
@@ -244,8 +245,18 @@ export default function ScheduledEventsPage() {
     );
   }
 
+  // Filter events by team (for calendar view - API already filters by division/type/period)
+  const filteredEvents = filterTeam
+    ? events.filter(
+        (e) =>
+          e.teamId === filterTeam ||
+          e.homeTeamId === filterTeam ||
+          e.awayTeamId === filterTeam
+      )
+    : events;
+
   // Group events by date
-  const eventsByDate = events.reduce((acc, event) => {
+  const eventsByDate = filteredEvents.reduce((acc, event) => {
     if (!acc[event.date]) {
       acc[event.date] = [];
     }
@@ -319,6 +330,34 @@ export default function ScheduledEventsPage() {
             <option value="cage">Cage Time</option>
           </select>
         </div>
+        <div className={styles.filterGroup}>
+          <label>Team:</label>
+          <select
+            value={filterTeam}
+            onChange={(e) => setFilterTeam(e.target.value)}
+          >
+            <option value="">All Teams</option>
+            {teams
+              .filter((t) => !filterDivision || t.divisionId === filterDivision)
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+          </select>
+        </div>
+        {filterTeam && (
+          <button
+            className={styles.clearFilterButton}
+            onClick={() => {
+              setFilterTeam('');
+              setFilterDivision('');
+            }}
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {isCreating && (
@@ -569,7 +608,7 @@ export default function ScheduledEventsPage() {
       <div className={styles.eventsList}>
         {viewMode === 'calendar' ? (
           <CalendarView
-            events={events}
+            events={filteredEvents}
             teams={teams}
             seasonFields={seasonFields}
             seasonCages={seasonCages}

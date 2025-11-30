@@ -232,7 +232,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   daySpread: 100,
   weekBalance: 100,
   resourceUtilization: 50,
-  gameDayPreference: 80,
+  gameDayPreference: 500, // High weight so required/preferred days dominate day selection
   timeQuality: 30,
   homeAwayBalance: 70,
   dayGap: 100,

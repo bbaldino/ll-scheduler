@@ -108,16 +108,21 @@ export function calculatePlacementScore(
 
   // Binary penalty: same-day event (only for same resource type)
   // Cage + field on same day is OK, but not two field events or two cage events
-  const relevantDatesUsed = candidate.resourceType === 'cage' ? teamState.cageDatesUsed : teamState.fieldDatesUsed;
-  const sameDayRaw = relevantDatesUsed.has(candidate.date) ? 1 : 0;
-  breakdown.sameDayEvent = sameDayRaw * weights.sameDayEvent;
-
-  // For games, also check away team same-day conflict (games use fields)
-  if (candidate.eventType === 'game' && candidate.awayTeamId) {
+  // For games, check both home and away teams from the candidate (not teamState, which may differ)
+  if (candidate.eventType === 'game' && candidate.homeTeamId && candidate.awayTeamId) {
+    const homeTeam = context.teamStates.get(candidate.homeTeamId);
     const awayTeam = context.teamStates.get(candidate.awayTeamId);
+    if (homeTeam?.fieldDatesUsed.has(candidate.date)) {
+      breakdown.sameDayEvent += 1 * weights.sameDayEvent;
+    }
     if (awayTeam?.fieldDatesUsed.has(candidate.date)) {
       breakdown.sameDayEvent += 1 * weights.sameDayEvent;
     }
+  } else {
+    // For practices/cages, use the passed teamState
+    const relevantDatesUsed = candidate.resourceType === 'cage' ? teamState.cageDatesUsed : teamState.fieldDatesUsed;
+    const sameDayRaw = relevantDatesUsed.has(candidate.date) ? 1 : 0;
+    breakdown.sameDayEvent = sameDayRaw * weights.sameDayEvent;
   }
 
   // Continuous penalty: scarcity
