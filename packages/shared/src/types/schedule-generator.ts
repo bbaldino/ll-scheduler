@@ -210,7 +210,8 @@ export interface ScoringWeights {
   resourceUtilization: number; // Prefer underutilized resources
   gameDayPreference: number; // Match division's preferred game days
   timeQuality: number; // Prefer mid-afternoon times (for practices)
-  homeAwayBalance: number; // For games: balance home/away assignments
+  homeAwayBalance: number; // For games: balance home/away assignments across season
+  matchupHomeAwayBalance: number; // For games: balance home/away within each specific matchup
   dayGap: number; // Prefer spacing events apart (1 = 2+ day gap, 0.5 = consecutive)
   timeAdjacency: number; // Prefer slots adjacent to existing events (pack events together)
   earliestTime: number; // For games: prefer earlier start times
@@ -235,6 +236,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   gameDayPreference: 500, // High weight so required/preferred days dominate day selection
   timeQuality: 30,
   homeAwayBalance: 70,
+  matchupHomeAwayBalance: 150, // Strong preference for balanced home/away within each matchup
   dayGap: 100,
   timeAdjacency: 150, // Strong preference for packing events together
   earliestTime: 200, // Strong preference for earlier game times
@@ -309,6 +311,8 @@ export interface TeamSchedulingState {
   // Home/away tracking for games
   homeGames: number;
   awayGames: number;
+  // Per-opponent home/away tracking: opponentId -> { home: number, away: number }
+  matchupHomeAway: Map<string, { home: number; away: number }>;
   // Constraint tracking - separate field and cage dates since cage + field on same day is OK
   fieldDatesUsed: Set<string>; // Dates with field events (games/practices) scheduled
   cageDatesUsed: Set<string>; // Dates with cage events scheduled

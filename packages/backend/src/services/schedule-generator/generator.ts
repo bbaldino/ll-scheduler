@@ -799,8 +799,8 @@ export class ScheduleGenerator {
 
       // Update both team states
       const isHomeTeam = bestCandidate.homeTeamId === teamState.teamId;
-      updateTeamStateAfterScheduling(teamState, eventDraft, week.weekNumber, isHomeTeam);
-      updateTeamStateAfterScheduling(opponentState, eventDraft, week.weekNumber, !isHomeTeam);
+      updateTeamStateAfterScheduling(teamState, eventDraft, week.weekNumber, isHomeTeam, opponentState.teamId);
+      updateTeamStateAfterScheduling(opponentState, eventDraft, week.weekNumber, !isHomeTeam, teamState.teamId);
 
       // Update resource usage
       updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, config.gameDurationHours);

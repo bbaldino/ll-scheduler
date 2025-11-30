@@ -43,6 +43,7 @@ export interface ScoreBreakdown {
   gameDayPreference: number;
   timeQuality: number;
   homeAwayBalance: number;
+  matchupHomeAwayBalance: number;
   dayGap: number;
   timeAdjacency: number;
   earliestTime: number;
@@ -74,6 +75,7 @@ export function calculatePlacementScore(
     gameDayPreference: 0,
     timeQuality: 0,
     homeAwayBalance: 0,
+    matchupHomeAwayBalance: 0,
     dayGap: 0,
     timeAdjacency: 0,
     earliestTime: 0,
@@ -98,6 +100,7 @@ export function calculatePlacementScore(
 
     if (candidate.homeTeamId && candidate.awayTeamId) {
       breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
+      breakdown.matchupHomeAwayBalance = calculateMatchupHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.matchupHomeAwayBalance;
     }
   }
 
@@ -393,6 +396,42 @@ export function calculateHomeAwayBalanceRaw(
   // Max imbalance we expect is around 6-8 for a 10-game season
   // Scale so 0 imbalance = 1.0, 8 imbalance = 0
   return Math.max(0, 1 - totalImbalance / 8);
+}
+
+/**
+ * Calculate matchup-specific home/away balance raw score
+ * Returns 0-1 where 1 = this assignment improves/maintains balance, 0 = creates imbalance
+ *
+ * For example, if Team A has played Team B 3 times (2 home, 1 away),
+ * scheduling Team A as home again would increase imbalance (score closer to 0),
+ * while scheduling Team A as away would improve balance (score closer to 1).
+ */
+export function calculateMatchupHomeAwayBalanceRaw(
+  homeTeamId: string,
+  awayTeamId: string,
+  context: ScoringContext
+): number {
+  const homeTeam = context.teamStates.get(homeTeamId);
+  const awayTeam = context.teamStates.get(awayTeamId);
+
+  if (!homeTeam || !awayTeam) return 0.5;
+
+  // Get current matchup history from home team's perspective
+  const homeTeamMatchup = homeTeam.matchupHomeAway.get(awayTeamId) || { home: 0, away: 0 };
+
+  // Current imbalance (positive = more home games, negative = more away games)
+  const currentImbalance = homeTeamMatchup.home - homeTeamMatchup.away;
+
+  // This assignment would add 1 home game for homeTeam against awayTeam
+  const newImbalance = currentImbalance + 1;
+
+  // Score based on absolute imbalance after this assignment
+  // 0 imbalance = 1.0 (perfect)
+  // 1 imbalance = 0.75
+  // 2 imbalance = 0.5
+  // 3 imbalance = 0.25
+  // 4+ imbalance = 0
+  return Math.max(0, 1 - Math.abs(newImbalance) / 4);
 }
 
 /**

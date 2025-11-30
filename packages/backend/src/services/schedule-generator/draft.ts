@@ -144,6 +144,7 @@ export function initializeTeamState(
     dayOfWeekUsage: new Map(),
     homeGames: 0,
     awayGames: 0,
+    matchupHomeAway: new Map(),
     fieldDatesUsed: new Set(),
     cageDatesUsed: new Set(),
     minDaysBetweenEvents: requirements.minDaysBetweenEvents,
@@ -152,12 +153,14 @@ export function initializeTeamState(
 
 /**
  * Update team state after scheduling an event
+ * For games, isHomeTeam indicates if this team is home, and opponentId is the other team
  */
 export function updateTeamStateAfterScheduling(
   teamState: TeamSchedulingState,
   event: ScheduledEventDraft,
   weekNumber: number,
-  isHomeTeam?: boolean
+  isHomeTeam?: boolean,
+  opponentId?: string
 ): void {
   // Update event type counts
   switch (event.eventType) {
@@ -168,6 +171,17 @@ export function updateTeamStateAfterScheduling(
           teamState.homeGames++;
         } else {
           teamState.awayGames++;
+        }
+
+        // Update per-opponent home/away tracking
+        if (opponentId) {
+          const matchup = teamState.matchupHomeAway.get(opponentId) || { home: 0, away: 0 };
+          if (isHomeTeam) {
+            matchup.home++;
+          } else {
+            matchup.away++;
+          }
+          teamState.matchupHomeAway.set(opponentId, matchup);
         }
       }
       break;
