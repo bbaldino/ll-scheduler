@@ -528,6 +528,8 @@ function GameSpacingSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const overallAvg = report.overallAverageDaysBetweenGames;
+
   return (
     <div className={styles.section}>
       <SectionHeader
@@ -540,7 +542,7 @@ function GameSpacingSection({
       {expanded && (
         <div className={styles.sectionContent}>
           <div className={styles.overallAverage}>
-            Overall Average: <strong>{report.overallAverageDaysBetweenGames}</strong> days between games
+            Overall Average: <strong>{overallAvg}</strong> days between games
           </div>
           {report.teamReports.length === 0 ? (
             <p className={styles.noData}>No team data available</p>
@@ -552,31 +554,36 @@ function GameSpacingSection({
                   <th>Division</th>
                   <th>Games</th>
                   <th>Avg Days</th>
+                  <th>Deviation</th>
                   <th>Min</th>
                   <th>Max</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {report.teamReports.map((team: TeamGameSpacingReport) => (
-                  <tr key={team.teamId}>
-                    <td>{team.teamName}</td>
-                    <td>{team.divisionName}</td>
-                    <td>{team.totalGames}</td>
-                    <td className={team.averageDaysBetweenGames < 5 ? styles.cellWarning : ''}>
-                      {team.averageDaysBetweenGames}
-                    </td>
-                    <td className={team.minDaysBetweenGames < 3 ? styles.cellWarning : ''}>
-                      {team.minDaysBetweenGames || '-'}
-                    </td>
-                    <td>{team.maxDaysBetweenGames || '-'}</td>
-                    <td>
-                      <span className={team.passed ? styles.statusPass : styles.statusFail}>
-                        {team.passed ? '✓' : '✗'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {report.teamReports.map((team: TeamGameSpacingReport) => {
+                  const deviation = team.totalGames >= 2
+                    ? Math.abs(team.averageDaysBetweenGames - overallAvg)
+                    : 0;
+                  return (
+                    <tr key={team.teamId}>
+                      <td>{team.teamName}</td>
+                      <td>{team.divisionName}</td>
+                      <td>{team.totalGames}</td>
+                      <td>{team.averageDaysBetweenGames || '-'}</td>
+                      <td className={deviation > 1.5 ? styles.cellWarning : ''}>
+                        {team.totalGames >= 2 ? `±${deviation.toFixed(1)}` : '-'}
+                      </td>
+                      <td>{team.minDaysBetweenGames || '-'}</td>
+                      <td>{team.maxDaysBetweenGames || '-'}</td>
+                      <td>
+                        <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                          {team.passed ? '✓' : '✗'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

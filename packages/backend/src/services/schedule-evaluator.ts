@@ -643,6 +643,7 @@ function evaluateGameDayPreferences(
 
 /**
  * Evaluate game spacing - average days between games for each team
+ * Evaluates fairness: all teams should have similar average spacing
  */
 function evaluateGameSpacing(
   events: ScheduledEvent[],
@@ -650,7 +651,7 @@ function evaluateGameSpacing(
   divisionMap: Map<string, Division>
 ): GameSpacingReport {
   const teamReports: TeamGameSpacingReport[] = [];
-  const MIN_ACCEPTABLE_AVG_DAYS = 5; // Minimum acceptable average days between games
+  const MAX_DEVIATION_FROM_AVG = 1.5; // Max allowed deviation from overall average (in days)
 
   for (const team of teams) {
     const division = divisionMap.get(team.divisionId);
@@ -707,7 +708,7 @@ function evaluateGameSpacing(
       minDaysBetweenGames: minDays,
       maxDaysBetweenGames: maxDays,
       gameGaps,
-      passed: avgDays >= MIN_ACCEPTABLE_AVG_DAYS,
+      passed: true, // Will be updated after calculating overall average
     });
   }
 
@@ -719,14 +720,26 @@ function evaluateGameSpacing(
         teamsWithGames.length
       : 0;
 
+  // Now check each team's deviation from the overall average
+  for (const report of teamReports) {
+    if (report.totalGames < 2) continue;
+    const deviation = Math.abs(report.averageDaysBetweenGames - overallAvg);
+    report.passed = deviation <= MAX_DEVIATION_FROM_AVG;
+  }
+
   const allPassed = teamReports.every((r) => r.passed);
   const failedCount = teamReports.filter((r) => !r.passed).length;
+
+  // Calculate max deviation for summary
+  const maxDeviation = teamsWithGames.length > 0
+    ? Math.max(...teamsWithGames.map((r) => Math.abs(r.averageDaysBetweenGames - overallAvg)))
+    : 0;
 
   return {
     passed: allPassed,
     summary: allPassed
-      ? `All teams have adequate game spacing (avg: ${overallAvg.toFixed(1)} days)`
-      : `${failedCount} teams with insufficient game spacing (avg: ${overallAvg.toFixed(1)} days)`,
+      ? `Game spacing is fair across teams (avg: ${overallAvg.toFixed(1)} days, max deviation: ${maxDeviation.toFixed(1)})`
+      : `${failedCount} teams with uneven game spacing (avg: ${overallAvg.toFixed(1)} days, max deviation: ${maxDeviation.toFixed(1)})`,
     teamReports,
     overallAverageDaysBetweenGames: Math.round(overallAvg * 10) / 10,
   };
