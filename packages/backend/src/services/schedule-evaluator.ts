@@ -9,6 +9,7 @@ import type {
   ConstraintViolation,
   GameDayPreferencesReport,
   DivisionGameDayReport,
+  TeamGameDayDistribution,
   GameSpacingReport,
   TeamGameSpacingReport,
   ScheduledEvent,
@@ -71,6 +72,7 @@ export async function evaluateSchedule(
   );
   const gameDayPreferences = evaluateGameDayPreferences(
     events,
+    teams,
     divisionMap,
     configByDivision
   );
@@ -504,6 +506,7 @@ function evaluateConstraintViolations(
  */
 function evaluateGameDayPreferences(
   events: ScheduledEvent[],
+  teams: Team[],
   divisionMap: Map<string, Division>,
   configByDivision: Map<string, DivisionConfig>
 ): GameDayPreferencesReport {
@@ -522,8 +525,9 @@ function evaluateGameDayPreferences(
     const divisionGames = events.filter(
       (e) => e.divisionId === divisionId && e.eventType === 'game'
     );
+    const divisionTeams = teams.filter((t) => t.divisionId === divisionId);
 
-    // Count games by day of week
+    // Count games by day of week (total for division)
     const actualDistribution: Record<number, number> = {};
     for (let i = 0; i < 7; i++) {
       actualDistribution[i] = 0;
@@ -534,6 +538,36 @@ function evaluateGameDayPreferences(
       const dayOfWeek = date.getDay();
       actualDistribution[dayOfWeek]++;
     }
+
+    // Calculate per-team distributions
+    const teamDistributions: TeamGameDayDistribution[] = [];
+    for (const team of divisionTeams) {
+      const distribution: Record<number, number> = {};
+      for (let i = 0; i < 7; i++) {
+        distribution[i] = 0;
+      }
+
+      // Find games where this team participates
+      const teamGames = divisionGames.filter(
+        (g) => g.homeTeamId === team.id || g.awayTeamId === team.id
+      );
+
+      for (const game of teamGames) {
+        const date = new Date(game.date + 'T00:00:00');
+        const dayOfWeek = date.getDay();
+        distribution[dayOfWeek]++;
+      }
+
+      teamDistributions.push({
+        teamId: team.id,
+        teamName: team.name,
+        distribution,
+        totalGames: teamGames.length,
+      });
+    }
+
+    // Sort teams by name for consistent display
+    teamDistributions.sort((a, b) => a.teamName.localeCompare(b.teamName));
 
     const issues: string[] = [];
     let totalGames = divisionGames.length;
@@ -575,6 +609,7 @@ function evaluateGameDayPreferences(
       divisionName: division.name,
       preferences,
       actualDistribution,
+      teamDistributions,
       issues,
       complianceRate,
       passed: issues.length === 0 && complianceRate >= 70,

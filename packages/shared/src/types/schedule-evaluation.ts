@@ -101,10 +101,18 @@ export interface DivisionGameDayReport {
   divisionId: string;
   divisionName: string;
   preferences: GameDayPreference[];
-  actualDistribution: Record<number, number>; // dayOfWeek (0-6) -> game count
+  actualDistribution: Record<number, number>; // dayOfWeek (0-6) -> game count (total for division)
+  teamDistributions: TeamGameDayDistribution[]; // Per-team breakdown
   issues: string[]; // e.g., "3 games on Monday (should avoid)"
   complianceRate: number; // 0-100%
   passed: boolean;
+}
+
+export interface TeamGameDayDistribution {
+  teamId: string;
+  teamName: string;
+  distribution: Record<number, number>; // dayOfWeek (0-6) -> game count for this team
+  totalGames: number;
 }
 
 // Game Spacing Report - tracks days between games for each team

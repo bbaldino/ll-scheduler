@@ -9,6 +9,7 @@ import type {
   ConstraintViolation,
   GameDayPreferencesReport,
   DivisionGameDayReport,
+  TeamGameDayDistribution,
   GameSpacingReport,
   TeamGameSpacingReport,
 } from '@ll-scheduler/shared';
@@ -393,6 +394,20 @@ function GameDayPreferencesSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className={styles.section}>
       <SectionHeader
@@ -429,6 +444,7 @@ function GameDayPreferencesSection({
                   </div>
                 )}
 
+                <p className={styles.distributionLabel}>Division Total:</p>
                 <div className={styles.dayDistribution}>
                   {DAY_NAMES.map((name, idx) => {
                     const count = division.actualDistribution[idx] || 0;
@@ -446,6 +462,44 @@ function GameDayPreferencesSection({
                     );
                   })}
                 </div>
+
+                {/* Per-team breakdown */}
+                {division.teamDistributions && division.teamDistributions.length > 0 && (
+                  <div className={styles.teamBreakdown}>
+                    <div
+                      className={styles.teamBreakdownHeader}
+                      onClick={() => toggleDivision(division.divisionId)}
+                    >
+                      <span className={styles.expandIcon}>
+                        {expandedDivisions.has(division.divisionId) ? '▼' : '▶'}
+                      </span>
+                      <span>Per-Team Breakdown ({division.teamDistributions.length} teams)</span>
+                    </div>
+                    {expandedDivisions.has(division.divisionId) && (
+                      <div className={styles.teamDistributionList}>
+                        {division.teamDistributions.map((team: TeamGameDayDistribution) => (
+                          <div key={team.teamId} className={styles.teamDistributionRow}>
+                            <div className={styles.teamDistributionName}>
+                              {team.teamName}
+                              <span className={styles.teamGameCount}>({team.totalGames} games)</span>
+                            </div>
+                            <div className={styles.teamDayDistribution}>
+                              {DAY_NAMES.map((name, idx) => {
+                                const count = team.distribution[idx] || 0;
+                                return (
+                                  <div key={idx} className={styles.teamDayColumn}>
+                                    <div className={styles.teamDayCount}>{count}</div>
+                                    <div className={styles.teamDayName}>{name}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))
           )}
