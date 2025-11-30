@@ -434,6 +434,27 @@ function hasResourceConflict(
 }
 
 /**
+ * Check if a team has a time conflict at the given date/time
+ */
+function hasTeamTimeConflict(
+  teamId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  context: ScoringContext
+): boolean {
+  return context.scheduledEvents.some((event) => {
+    if (event.date !== date) return false;
+    // Check if team is involved in this event
+    const isInvolved = event.teamId === teamId ||
+                       event.homeTeamId === teamId ||
+                       event.awayTeamId === teamId;
+    if (!isInvolved) return false;
+    return timesOverlap(event.startTime, event.endTime, startTime, endTime);
+  });
+}
+
+/**
  * Check if two time ranges overlap
  */
 function timesOverlap(

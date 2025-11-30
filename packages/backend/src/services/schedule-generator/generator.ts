@@ -754,7 +754,39 @@ export class ScheduleGenerator {
         }
 
         if (eligibleMatchups.length === 0) {
+          // Log details about why no matchups are eligible
+          const teamsNeedingGames: string[] = [];
+          const teamsSatisfied: string[] = [];
+          for (const [teamId, target] of targetGamesThisWeek) {
+            const teamState = this.teamSchedulingStates.get(teamId);
+            if (!teamState) continue;
+            const gamesThisWeek = teamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+            if (gamesThisWeek < target) {
+              teamsNeedingGames.push(`${teamState.teamName}(${gamesThisWeek}/${target})`);
+            } else {
+              teamsSatisfied.push(`${teamState.teamName}(${gamesThisWeek}/${target})`);
+            }
+          }
           console.log(`  No more eligible matchups for this week`);
+          if (teamsNeedingGames.length > 0) {
+            console.log(`    Teams still needing games: ${teamsNeedingGames.join(', ')}`);
+            console.log(`    Teams satisfied: ${teamsSatisfied.length}`);
+            // Check remaining unscheduled matchups for these teams
+            const remainingMatchupsForNeedy = shuffledMatchups.filter((m) => {
+              return teamsNeedingGames.some((t) => t.startsWith(
+                this.teamSchedulingStates.get(m.homeTeamId)?.teamName || ''
+              ) || t.startsWith(
+                this.teamSchedulingStates.get(m.awayTeamId)?.teamName || ''
+              ));
+            });
+            console.log(`    Remaining matchups involving teams needing games: ${remainingMatchupsForNeedy.length}`);
+            this.log('warning', 'game', `Teams need games but no eligible matchups in week ${week.weekNumber + 1}`, {
+              weekNumber: week.weekNumber + 1,
+              teamsNeedingGames,
+              teamsSatisfiedCount: teamsSatisfied.length,
+              remainingMatchupsTotal: shuffledMatchups.length,
+            });
+          }
           break;
         }
 
@@ -790,6 +822,17 @@ export class ScheduleGenerator {
           );
 
           if (candidates.length === 0) {
+            const homeTeam = this.teams.find((t) => t.id === matchup.homeTeamId);
+            const awayTeam = this.teams.find((t) => t.id === matchup.awayTeamId);
+            this.log('debug', 'game', `No candidates for ${homeTeam?.name} vs ${awayTeam?.name} in week ${week.weekNumber + 1}`, {
+              homeTeamId: matchup.homeTeamId,
+              awayTeamId: matchup.awayTeamId,
+              weekNumber: week.weekNumber + 1,
+              weekStart: week.startDate,
+              weekEnd: week.endDate,
+              weekFieldSlotsAvailable: weekFieldSlots.length,
+              reason: 'generateCandidatesForGame returned no candidates',
+            });
             continue;
           }
 
@@ -799,15 +842,57 @@ export class ScheduleGenerator {
 
           if (!homeTeamState || !awayTeamState) continue;
 
-          // Score candidates (use home team state as primary for scoring)
-          const bestCandidate = selectBestCandidate(
-            candidates,
-            homeTeamState,
-            this.scoringContext,
-            this.scoringWeights
+          // Re-check that both teams still need games this week (state may have changed from earlier in this round)
+          const homeGamesThisWeek = homeTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+          const awayGamesThisWeek = awayTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+          const homeTarget = targetGamesThisWeek.get(matchup.homeTeamId) || 0;
+          const awayTarget = targetGamesThisWeek.get(matchup.awayTeamId) || 0;
+
+          if (homeGamesThisWeek >= homeTarget || awayGamesThisWeek >= awayTarget) {
+            // One or both teams have met their weekly quota, skip this matchup for now
+            continue;
+          }
+
+          // Score all candidates for debugging
+          const scoredCandidates = candidates.map((c) =>
+            calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
           );
+          scoredCandidates.sort((a, b) => b.score - a.score);
+          const bestCandidate = scoredCandidates[0] || null;
 
           if (!bestCandidate) continue;
+
+          // Debug: Log top candidates by day to see why certain days are preferred
+          if (scoredCandidates.length > 0) {
+            const scoredByDay = new Map<number, { count: number; maxScore: number; bestCandidate: typeof scoredCandidates[0] | null }>();
+            for (const c of scoredCandidates) {
+              const existing = scoredByDay.get(c.dayOfWeek) || { count: 0, maxScore: -Infinity, bestCandidate: null };
+              existing.count++;
+              if (c.score > existing.maxScore) {
+                existing.maxScore = c.score;
+                existing.bestCandidate = c;
+              }
+              scoredByDay.set(c.dayOfWeek, existing);
+            }
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const candidatesByDaySummary = Array.from(scoredByDay.entries())
+              .sort((a, b) => b[1].maxScore - a[1].maxScore)
+              .map(([day, info]) => ({
+                day: dayNames[day],
+                dayOfWeek: day,
+                slotCount: info.count,
+                bestScore: info.maxScore,
+                bestDate: info.bestCandidate?.date,
+                bestTime: info.bestCandidate?.startTime,
+                scoreBreakdown: info.bestCandidate?.scoreBreakdown,
+              }));
+
+            this.log('debug', 'game', `Game candidates by day for matchup`, {
+              homeTeamId: matchup.homeTeamId,
+              awayTeamId: matchup.awayTeamId,
+              candidatesByDay: candidatesByDaySummary,
+            });
+          }
 
           // Create the event draft
           const eventDraft = candidateToEventDraft(bestCandidate, matchup.divisionId);
@@ -859,6 +944,38 @@ export class ScheduleGenerator {
       }
 
       console.log(`  Scheduled ${gamesScheduledThisWeek} games this week`);
+
+      // Log which teams didn't meet their game targets this week
+      const teamsShortOnGames: Array<{ teamName: string; teamId: string; scheduled: number; target: number }> = [];
+      for (const [teamId, target] of targetGamesThisWeek) {
+        const teamState = this.teamSchedulingStates.get(teamId);
+        if (!teamState) continue;
+        const gamesThisWeek = teamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+        if (gamesThisWeek < target) {
+          teamsShortOnGames.push({
+            teamName: teamState.teamName,
+            teamId,
+            scheduled: gamesThisWeek,
+            target,
+          });
+        }
+      }
+
+      if (teamsShortOnGames.length > 0) {
+        console.log(`  ⚠️  Teams that didn't meet game targets this week:`);
+        for (const team of teamsShortOnGames) {
+          console.log(`      - ${team.teamName}: ${team.scheduled}/${team.target} games`);
+          this.log('warning', 'game', `Team ${team.teamName} short on games in week ${week.weekNumber + 1}`, {
+            teamId: team.teamId,
+            teamName: team.teamName,
+            weekNumber: week.weekNumber + 1,
+            weekStart: week.startDate,
+            weekEnd: week.endDate,
+            gamesScheduled: team.scheduled,
+            gamesTarget: team.target,
+          });
+        }
+      }
     }
 
     // Count failed matchups (remaining unscheduled)
@@ -886,6 +1003,39 @@ export class ScheduleGenerator {
       });
     }
 
+    // Report any teams that didn't get all their games
+    for (const teamState of this.teamSchedulingStates.values()) {
+      const config = this.divisionConfigs.get(teamState.divisionId);
+      if (!config || !config.gamesPerWeek) continue;
+
+      const totalNeeded = config.gamesPerWeek * gameWeeks.length;
+      if (teamState.gamesScheduled < totalNeeded) {
+        this.warnings.push({
+          type: 'insufficient_resources',
+          message: `Team ${teamState.teamName} only got ${teamState.gamesScheduled}/${totalNeeded} games`,
+          details: {
+            teamId: teamState.teamId,
+            scheduled: teamState.gamesScheduled,
+            needed: totalNeeded,
+          },
+        });
+
+        // Log at error level for easy filtering
+        this.log('error', 'game', `Game requirement not met for ${teamState.teamName}: ${teamState.gamesScheduled}/${totalNeeded} games scheduled`, {
+          teamId: teamState.teamId,
+          teamName: teamState.teamName,
+          divisionId: teamState.divisionId,
+          gamesScheduled: teamState.gamesScheduled,
+          gamesNeeded: totalNeeded,
+          gamesPerWeek: config.gamesPerWeek,
+          totalWeeks: gameWeeks.length,
+          shortfall: totalNeeded - teamState.gamesScheduled,
+          homeGames: teamState.homeGames,
+          awayGames: teamState.awayGames,
+        });
+      }
+    }
+
     const totalGames = this.scheduledEvents.filter((e) => e.eventType === 'game').length;
     console.log(`\n✅ Game scheduling complete. Total scheduled: ${totalGames}`);
     if (totalFailed > 0) {
@@ -895,25 +1045,60 @@ export class ScheduleGenerator {
 
   /**
    * Generate round-robin matchups for a division
+   * Creates enough matchups so each team can play the required number of games,
+   * with opponents distributed as evenly as possible.
    */
   private generateRoundRobinMatchups(
     teams: Team[],
     divisionId: string
   ): GameMatchup[] {
+    if (teams.length < 2) return [];
+
+    const config = this.divisionConfigs.get(divisionId);
+    const gameWeeks = this.weekDefinitions.filter((week) =>
+      week.dates.some((date) => this.getEventTypeAllowedOnDate(date, 'game'))
+    );
+
+    // Calculate total games needed per team
+    const gamesPerWeek = config?.gamesPerWeek || 1;
+    const totalGamesNeeded = gamesPerWeek * gameWeeks.length;
+
+    // Number of opponents each team has
+    const numOpponents = teams.length - 1;
+
+    // How many times each team should play each opponent (may not be perfectly even)
+    // e.g., 32 games with 5 opponents = ~6.4 games per opponent
+    const gamesPerOpponent = Math.ceil(totalGamesNeeded / numOpponents);
+
+    console.log(`  Generating matchups: ${totalGamesNeeded} games needed per team, ${numOpponents} opponents, ~${gamesPerOpponent} games per opponent`);
+
     const matchups: GameMatchup[] = [];
 
-    // Each team plays each other team once (can be extended for multiple rounds)
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        matchups.push({
-          homeTeamId: teams[i].id,
-          awayTeamId: teams[j].id,
-          divisionId,
-        });
+    // Generate multiple rounds of matchups
+    for (let round = 0; round < gamesPerOpponent; round++) {
+      for (let i = 0; i < teams.length; i++) {
+        for (let j = i + 1; j < teams.length; j++) {
+          // Alternate home/away each round for fairness
+          if (round % 2 === 0) {
+            matchups.push({
+              homeTeamId: teams[i].id,
+              awayTeamId: teams[j].id,
+              divisionId,
+            });
+          } else {
+            matchups.push({
+              homeTeamId: teams[j].id,
+              awayTeamId: teams[i].id,
+              divisionId,
+            });
+          }
+        }
       }
     }
 
-    // Shuffle to randomize home/away and scheduling order
+    console.log(`  Generated ${matchups.length} total matchups (${gamesPerOpponent} rounds)`);
+
+    // Shuffle to randomize scheduling order
     return this.shuffleArray(matchups);
   }
 

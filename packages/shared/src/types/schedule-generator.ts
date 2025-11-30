@@ -240,7 +240,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   earliestTime: 200, // Strong preference for earlier game times
 
   // Penalty factors
-  sameDayEvent: -1000,
+  sameDayEvent: -1000000, // Effectively a hard constraint - teams can't have two field events on same day
   scarcity: -1000,
   sameDayCageFieldGap: -1000, // Strong penalty for non-adjacent cage+field on same day
   weekendMorningPractice: -500, // Penalty for practices on weekend mornings (reserve for games)

@@ -94,7 +94,7 @@ export function calculatePlacementScore(
   // Game-specific factors
   if (candidate.eventType === 'game') {
     breakdown.gameDayPreference = calculateGameDayPreferenceRaw(candidate.dayOfWeek, teamState.divisionId, context) * weights.gameDayPreference;
-    breakdown.earliestTime = calculateEarliestTimeRaw(candidate.startTime) * weights.earliestTime;
+    breakdown.earliestTime = calculateEarliestTimeRaw(candidate, context) * weights.earliestTime;
 
     if (candidate.homeTeamId && candidate.awayTeamId) {
       breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
@@ -287,27 +287,51 @@ export function calculateTimeQualityRaw(startTime: string): number {
 
 /**
  * Calculate earliest time raw score (for games)
- * Returns 0-1 where 1 = earliest possible time (8am or before), 0 = latest (8pm+)
- * This encourages games to fill from the earliest available slots first
+ *
+ * This score should ONLY influence which time slot is picked WITHIN a given day,
+ * not which day is selected. To achieve this:
+ * - First slot of any day gets a consistent score (1.0)
+ * - Subsequent slots on the same day/resource are scored based on packing efficiency
+ *
+ * This way, a Tuesday 6pm game and a Sunday 9am game both score 1.0 for earliestTime
+ * if they're each the first game on that day/resource.
  */
-export function calculateEarliestTimeRaw(startTime: string): number {
-  const [hours, minutes] = startTime.split(':').map(Number);
-  const timeInMinutes = hours * 60 + minutes;
+export function calculateEarliestTimeRaw(
+  candidate: PlacementCandidate,
+  context: ScoringContext
+): number {
+  // Find all scheduled events on this resource and date
+  const eventsOnSameResourceDate = context.scheduledEvents.filter(
+    (e) =>
+      e.date === candidate.date &&
+      ((e.fieldId && e.fieldId === candidate.resourceId) ||
+        (e.cageId && e.cageId === candidate.resourceId))
+  );
 
-  // 8am = 480 minutes = best score (1.0)
-  // 8pm = 1200 minutes = worst score (0.0)
-  const earliestTime = 8 * 60; // 8am
-  const latestTime = 20 * 60; // 8pm
-
-  if (timeInMinutes <= earliestTime) {
+  if (eventsOnSameResourceDate.length === 0) {
+    // First event on this resource/date - all first slots are equal
+    // This ensures day selection isn't influenced by absolute time
     return 1.0;
   }
-  if (timeInMinutes >= latestTime) {
-    return 0.0;
+
+  // Find the latest end time of existing events
+  const latestEndTime = eventsOnSameResourceDate.reduce((latest, e) => {
+    return e.endTime > latest ? e.endTime : latest;
+  }, '00:00');
+
+  // Prefer slots that pack tightly after existing events
+  const candidateStartMinutes = timeToMinutes(candidate.startTime);
+  const latestEndMinutes = timeToMinutes(latestEndTime);
+
+  if (candidateStartMinutes >= latestEndMinutes) {
+    // This slot is after existing events - prefer tighter packing
+    const gap = candidateStartMinutes - latestEndMinutes;
+    // 0 gap = 1.0, 2+ hours gap = 0.3
+    return Math.max(0.3, 1 - gap / 120);
   }
 
-  // Linear scale between 8am and 8pm
-  return 1 - (timeInMinutes - earliestTime) / (latestTime - earliestTime);
+  // Slot overlaps or is before existing events - less ideal
+  return 0.5;
 }
 
 /**
