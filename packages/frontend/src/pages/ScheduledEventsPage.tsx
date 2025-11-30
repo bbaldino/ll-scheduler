@@ -181,6 +181,18 @@ export default function ScheduledEventsPage() {
     }
   };
 
+  // Wrapper for CalendarView that handles update without confirmation
+  const handleCalendarUpdate = async (id: string, input: UpdateScheduledEventInput) => {
+    await updateScheduledEvent(id, input);
+    await loadEvents();
+  };
+
+  // Wrapper for CalendarView delete (confirmation handled in CalendarView)
+  const handleCalendarDelete = async (id: string) => {
+    await deleteScheduledEvent(id);
+    await loadEvents();
+  };
+
   const resetForm = () => {
     setFormData({
       seasonPeriodId: '',
@@ -613,7 +625,8 @@ export default function ScheduledEventsPage() {
             seasonFields={seasonFields}
             seasonCages={seasonCages}
             divisions={divisions}
-            onEventClick={(event) => setEditingId(event.id)}
+            onEventUpdate={handleCalendarUpdate}
+            onEventDelete={handleCalendarDelete}
           />
         ) : (
           <>
@@ -683,6 +696,82 @@ export default function ScheduledEventsPage() {
                             </select>
                           </div>
                         </div>
+                        {/* Field selection for games and practices */}
+                        {(event.eventType === 'game' || event.eventType === 'practice') && (
+                          <div className={styles.formRow}>
+                            <div className={styles.formGroup}>
+                              <label>Field</label>
+                              <select
+                                value={editFormData.fieldId || event.fieldId || ''}
+                                onChange={(e) =>
+                                  setEditFormData({ ...editFormData, fieldId: e.target.value })
+                                }
+                              >
+                                <option value="">Select Field</option>
+                                {seasonFields.map((sf) => (
+                                  <option key={sf.id} value={sf.fieldId}>
+                                    {sf.field?.name || sf.fieldId}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                        {/* Cage selection for cage events */}
+                        {event.eventType === 'cage' && (
+                          <div className={styles.formRow}>
+                            <div className={styles.formGroup}>
+                              <label>Cage</label>
+                              <select
+                                value={editFormData.cageId || event.cageId || ''}
+                                onChange={(e) =>
+                                  setEditFormData({ ...editFormData, cageId: e.target.value })
+                                }
+                              >
+                                <option value="">Select Cage</option>
+                                {seasonCages.map((sc) => (
+                                  <option key={sc.id} value={sc.cageId}>
+                                    {sc.cage?.name || sc.cageId}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                        {/* Home/Away swap for games */}
+                        {event.eventType === 'game' && (
+                          <div className={styles.formRow}>
+                            <div className={styles.formGroup}>
+                              <label>Home Team</label>
+                              <span className={styles.teamDisplay}>
+                                {getTeamName(editFormData.homeTeamId || event.homeTeamId)}
+                              </span>
+                            </div>
+                            <div className={styles.formGroup}>
+                              <label>Away Team</label>
+                              <span className={styles.teamDisplay}>
+                                {getTeamName(editFormData.awayTeamId || event.awayTeamId)}
+                              </span>
+                            </div>
+                            <div className={styles.formGroup}>
+                              <button
+                                type="button"
+                                className={styles.swapButton}
+                                onClick={() => {
+                                  const currentHome = editFormData.homeTeamId || event.homeTeamId;
+                                  const currentAway = editFormData.awayTeamId || event.awayTeamId;
+                                  setEditFormData({
+                                    ...editFormData,
+                                    homeTeamId: currentAway,
+                                    awayTeamId: currentHome,
+                                  });
+                                }}
+                              >
+                                ⇄ Swap Home/Away
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         <div className={styles.formActions}>
                           <button type="submit">Save</button>
                           <button type="button" onClick={() => setEditingId(null)}>

@@ -1,8 +1,21 @@
 import { useState, useMemo } from 'react';
-import type { ScheduledEvent, Team, SeasonField, SeasonCage, Division } from '@ll-scheduler/shared';
+import type {
+  ScheduledEvent,
+  Team,
+  SeasonField,
+  SeasonCage,
+  Division,
+  UpdateScheduledEventInput,
+} from '@ll-scheduler/shared';
 import styles from './CalendarView.module.css';
 
 type ViewType = 'month' | 'week' | 'day';
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  game: 'Game',
+  practice: 'Practice',
+  cage: 'Cage',
+};
 
 interface CalendarViewProps {
   events: ScheduledEvent[];
@@ -11,6 +24,8 @@ interface CalendarViewProps {
   seasonCages: SeasonCage[];
   divisions: Division[];
   onEventClick?: (event: ScheduledEvent) => void;
+  onEventUpdate?: (id: string, input: UpdateScheduledEventInput) => Promise<void>;
+  onEventDelete?: (id: string) => Promise<void>;
 }
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -26,9 +41,65 @@ export default function CalendarView({
   seasonCages,
   divisions,
   onEventClick,
+  onEventUpdate,
+  onEventDelete,
 }: CalendarViewProps) {
   const [viewType, setViewType] = useState<ViewType>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [editingEvent, setEditingEvent] = useState<ScheduledEvent | null>(null);
+  const [editFormData, setEditFormData] = useState<UpdateScheduledEventInput>({});
+
+  const handleEventClick = (event: ScheduledEvent) => {
+    if (onEventUpdate) {
+      // If we have update capability, open the edit modal
+      setEditingEvent(event);
+      setEditFormData({
+        date: event.date,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        status: event.status,
+        fieldId: event.fieldId,
+        cageId: event.cageId,
+        homeTeamId: event.homeTeamId,
+        awayTeamId: event.awayTeamId,
+        teamId: event.teamId,
+      });
+    }
+    onEventClick?.(event);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEvent || !onEventUpdate) return;
+
+    try {
+      await onEventUpdate(editingEvent.id, editFormData);
+      setEditingEvent(null);
+      setEditFormData({});
+    } catch (error) {
+      console.error('Failed to update event:', error);
+      alert('Failed to update event');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editingEvent || !onEventDelete) return;
+    if (!confirm('Are you sure you want to delete this event?')) return;
+
+    try {
+      await onEventDelete(editingEvent.id);
+      setEditingEvent(null);
+      setEditFormData({});
+    } catch (error) {
+      console.error('Failed to delete event:', error);
+      alert('Failed to delete event');
+    }
+  };
+
+  const closeModal = () => {
+    setEditingEvent(null);
+    setEditFormData({});
+  };
 
   const getTeamName = (teamId?: string) => {
     if (!teamId) return '';
@@ -274,7 +345,7 @@ export default function CalendarView({
                       <div
                         key={event.id}
                         className={`${styles.eventItem} ${styles[event.eventType]}`}
-                        onClick={() => onEventClick?.(event)}
+                        onClick={() => handleEventClick(event)}
                         title={formatEventSummary(event)}
                       >
                         {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
@@ -330,7 +401,7 @@ export default function CalendarView({
                     <div
                       key={event.id}
                       className={`${styles.weekEventItem} ${styles[event.eventType]}`}
-                      onClick={() => onEventClick?.(event)}
+                      onClick={() => handleEventClick(event)}
                       title={formatEventSummary(event)}
                       style={{
                         position: 'absolute',
@@ -397,7 +468,7 @@ export default function CalendarView({
               <div
                 key={event.id}
                 className={`${styles.dayEventItem} ${styles[event.eventType]}`}
-                onClick={() => onEventClick?.(event)}
+                onClick={() => handleEventClick(event)}
                 style={{
                   position: 'absolute',
                   top: `${top}px`,
@@ -490,6 +561,163 @@ export default function CalendarView({
         {viewType === 'week' && renderWeekView()}
         {viewType === 'day' && renderDayView()}
       </div>
+
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <div className={styles.modalOverlay} onClick={closeModal}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3>Edit {EVENT_TYPE_LABELS[editingEvent.eventType]}</h3>
+              <button className={styles.closeButton} onClick={closeModal}>
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleUpdate} className={styles.editForm}>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label>Date</label>
+                  <input
+                    type="date"
+                    value={editFormData.date || editingEvent.date}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, date: e.target.value })
+                    }
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Start Time</label>
+                  <input
+                    type="time"
+                    value={editFormData.startTime || editingEvent.startTime}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, startTime: e.target.value })
+                    }
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>End Time</label>
+                  <input
+                    type="time"
+                    value={editFormData.endTime || editingEvent.endTime}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, endTime: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* Team display for practices */}
+              {editingEvent.eventType === 'practice' && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Team</label>
+                    <span className={styles.teamDisplay}>
+                      {getTeamName(editingEvent.teamId)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Field selection for games and practices */}
+              {(editingEvent.eventType === 'game' || editingEvent.eventType === 'practice') && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Field</label>
+                    <select
+                      value={editFormData.fieldId || editingEvent.fieldId || ''}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, fieldId: e.target.value })
+                      }
+                    >
+                      <option value="">Select Field</option>
+                      {seasonFields.map((sf) => (
+                        <option key={sf.id} value={sf.fieldId}>
+                          {sf.field?.name || sf.fieldId}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Cage selection for cage events */}
+              {editingEvent.eventType === 'cage' && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Team</label>
+                    <span className={styles.teamDisplay}>
+                      {getTeamName(editingEvent.teamId)}
+                    </span>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Cage</label>
+                    <select
+                      value={editFormData.cageId || editingEvent.cageId || ''}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, cageId: e.target.value })
+                      }
+                    >
+                      <option value="">Select Cage</option>
+                      {seasonCages.map((sc) => (
+                        <option key={sc.id} value={sc.cageId}>
+                          {sc.cage?.name || sc.cageId}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Home/Away swap for games */}
+              {editingEvent.eventType === 'game' && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Home Team</label>
+                    <span className={styles.teamDisplay}>
+                      {getTeamName(editFormData.homeTeamId || editingEvent.homeTeamId)}
+                    </span>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Away Team</label>
+                    <span className={styles.teamDisplay}>
+                      {getTeamName(editFormData.awayTeamId || editingEvent.awayTeamId)}
+                    </span>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <button
+                      type="button"
+                      className={styles.swapButton}
+                      onClick={() => {
+                        const currentHome = editFormData.homeTeamId || editingEvent.homeTeamId;
+                        const currentAway = editFormData.awayTeamId || editingEvent.awayTeamId;
+                        setEditFormData({
+                          ...editFormData,
+                          homeTeamId: currentAway,
+                          awayTeamId: currentHome,
+                        });
+                      }}
+                    >
+                      ⇄ Swap Home/Away
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.saveButton}>Save</button>
+                {onEventDelete && (
+                  <button type="button" className={styles.deleteButton} onClick={handleDelete}>
+                    Delete
+                  </button>
+                )}
+                <button type="button" className={styles.cancelButton} onClick={closeModal}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -282,3 +282,26 @@
 .linkButton:hover {
   background: #e8e8e8;
 }
+
+.teamDisplay {
+  padding: 0.5rem;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 0.95em;
+}
+
+.swapButton {
+  padding: 0.5rem 1rem;
+  background: #e3f2fd;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  color: #1976d2;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.swapButton:hover {
+  background: #bbdefb;
+}
