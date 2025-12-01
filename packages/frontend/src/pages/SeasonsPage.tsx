@@ -914,9 +914,6 @@ export default function SeasonsPage() {
                                         })
                                       }
                                     />
-                                    <p className={styles.helperText}>
-                                      1.5 hours recommended for AAA/Majors, 1 hour for younger divisions
-                                    </p>
                                   </div>
                                 </div>
                                 <div className={styles.formActions}>
