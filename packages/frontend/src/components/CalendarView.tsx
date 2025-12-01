@@ -23,6 +23,7 @@ interface CalendarViewProps {
   seasonFields: SeasonField[];
   seasonCages: SeasonCage[];
   divisions: Division[];
+  initialDate?: string; // ISO date string to start the calendar on
   onEventClick?: (event: ScheduledEvent) => void;
   onEventUpdate?: (id: string, input: UpdateScheduledEventInput) => Promise<void>;
   onEventDelete?: (id: string) => Promise<void>;
@@ -40,12 +41,18 @@ export default function CalendarView({
   seasonFields,
   seasonCages,
   divisions,
+  initialDate,
   onEventClick,
   onEventUpdate,
   onEventDelete,
 }: CalendarViewProps) {
   const [viewType, setViewType] = useState<ViewType>('month');
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    if (initialDate) {
+      return new Date(initialDate + 'T00:00:00');
+    }
+    return new Date();
+  });
   const [editingEvent, setEditingEvent] = useState<ScheduledEvent | null>(null);
   const [editFormData, setEditFormData] = useState<UpdateScheduledEventInput>({});
 

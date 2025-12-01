@@ -625,6 +625,7 @@ export default function ScheduledEventsPage() {
             seasonFields={seasonFields}
             seasonCages={seasonCages}
             divisions={divisions}
+            initialDate={currentSeason?.startDate}
             onEventUpdate={handleCalendarUpdate}
             onEventDelete={handleCalendarDelete}
           />
