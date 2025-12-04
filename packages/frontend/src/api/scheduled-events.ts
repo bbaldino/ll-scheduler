@@ -12,10 +12,7 @@ export async function fetchScheduledEvents(
 ): Promise<ScheduledEvent[]> {
   const params = new URLSearchParams();
 
-  if (query.seasonPeriodId) params.append('seasonPeriodId', query.seasonPeriodId);
-  if (query.seasonPeriodIds) {
-    query.seasonPeriodIds.forEach(id => params.append('seasonPeriodIds', id));
-  }
+  if (query.seasonId) params.append('seasonId', query.seasonId);
   if (query.divisionId) params.append('divisionId', query.divisionId);
   if (query.teamId) params.append('teamId', query.teamId);
   if (query.fieldId) params.append('fieldId', query.fieldId);

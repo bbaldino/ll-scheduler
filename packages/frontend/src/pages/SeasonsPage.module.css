@@ -325,3 +325,51 @@
   border: 1px solid #ddd;
   border-radius: 4px;
 }
+
+/* Field Preferences */
+.fieldPreferences {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.fieldPrefItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}
+
+.fieldPrefItem.fieldPrefActive {
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+}
+
+.fieldPrefName {
+  flex: 1;
+}
+
+.fieldPrefRank {
+  font-weight: bold;
+  color: #1976d2;
+  margin-right: 0.25rem;
+}
+
+.fieldPrefMoveBtn {
+  padding: 0.25rem 0.5rem;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.fieldPrefMoveBtn:hover {
+  background: #f0f0f0;
+}

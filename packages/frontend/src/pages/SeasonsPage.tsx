@@ -1,12 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSeason } from '../contexts/SeasonContext';
 import { createSeason, deleteSeason, updateSeason } from '../api/seasons';
-import {
-  fetchSeasonPeriods,
-  createSeasonPeriod,
-  updateSeasonPeriod,
-  deleteSeasonPeriod,
-} from '../api/season-periods';
 import { fetchDivisions } from '../api/divisions';
 import {
   fetchDivisionConfigs,
@@ -14,17 +8,16 @@ import {
   updateDivisionConfig,
   deleteDivisionConfig,
 } from '../api/division-configs';
+import { fetchSeasonFields } from '../api/fields';
 import type {
   Season,
   CreateSeasonInput,
   SeasonStatus,
-  SeasonPeriod,
-  CreateSeasonPeriodInput,
-  EventType,
   Division,
   DivisionConfig,
   CreateDivisionConfigInput,
   GameDayPreference,
+  SeasonField,
 } from '@ll-scheduler/shared';
 import styles from './SeasonsPage.module.css';
 
@@ -38,22 +31,11 @@ export default function SeasonsPage() {
     endDate: '',
   });
   const [expandedSeasonId, setExpandedSeasonId] = useState<string | null>(null);
-  const [seasonPeriods, setSeasonPeriods] = useState<Record<string, SeasonPeriod[]>>({});
-  const [creatingPeriodForSeason, setCreatingPeriodForSeason] = useState<string | null>(null);
-  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
-  const [periodFormData, setPeriodFormData] = useState<CreateSeasonPeriodInput>({
-    seasonId: '',
-    name: '',
-    eventTypes: ['game', 'practice', 'cage'],
-    startDate: '',
-    endDate: '',
-    sortOrder: 0,
-    autoSchedule: true,
-  });
 
   // Division configs state
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [seasonDivisionConfigs, setSeasonDivisionConfigs] = useState<Record<string, DivisionConfig[]>>({});
+  const [seasonFields, setSeasonFields] = useState<Record<string, SeasonField[]>>({});
   const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
   const [configFormData, setConfigFormData] = useState<Partial<CreateDivisionConfigInput>>({
     practicesPerWeek: 1,
@@ -63,6 +45,7 @@ export default function SeasonsPage() {
     gameDayPreferences: undefined,
     cageSessionsPerWeek: undefined,
     cageSessionDurationHours: undefined,
+    fieldPreferences: undefined,
   });
 
   // Load divisions on mount
@@ -79,15 +62,6 @@ export default function SeasonsPage() {
     }
   };
 
-  const loadSeasonPeriodsForSeason = async (seasonId: string) => {
-    try {
-      const periods = await fetchSeasonPeriods(seasonId);
-      setSeasonPeriods((prev) => ({ ...prev, [seasonId]: periods }));
-    } catch (error) {
-      console.error('Failed to load season periods:', error);
-    }
-  };
-
   const loadDivisionConfigsForSeason = async (seasonId: string) => {
     try {
       const configs = await fetchDivisionConfigs(seasonId);
@@ -97,35 +71,27 @@ export default function SeasonsPage() {
     }
   };
 
+  const loadSeasonFieldsForSeason = async (seasonId: string) => {
+    try {
+      const fields = await fetchSeasonFields(seasonId);
+      setSeasonFields((prev) => ({ ...prev, [seasonId]: fields }));
+    } catch (error) {
+      console.error('Failed to load season fields:', error);
+    }
+  };
+
   const toggleSeasonExpanded = async (seasonId: string) => {
     if (expandedSeasonId === seasonId) {
       setExpandedSeasonId(null);
     } else {
       setExpandedSeasonId(seasonId);
-      if (!seasonPeriods[seasonId]) {
-        await loadSeasonPeriodsForSeason(seasonId);
-      }
       if (!seasonDivisionConfigs[seasonId]) {
         await loadDivisionConfigsForSeason(seasonId);
       }
+      if (!seasonFields[seasonId]) {
+        await loadSeasonFieldsForSeason(seasonId);
+      }
     }
-  };
-
-  const startCreatingSeasonPeriod = (season: Season) => {
-    const nextDay = new Date(season.startDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayStr = nextDay.toISOString().split('T')[0];
-
-    setPeriodFormData({
-      seasonId: season.id,
-      name: '',
-      eventTypes: ['game', 'practice', 'cage'],
-      startDate: season.startDate,
-      endDate: nextDayStr,
-      sortOrder: 0,
-      autoSchedule: true,
-    });
-    setCreatingPeriodForSeason(season.id);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -172,99 +138,6 @@ export default function SeasonsPage() {
     }
   };
 
-  const handleCreateSeasonPeriod = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!creatingPeriodForSeason) return;
-
-    if (!periodFormData.name) {
-      alert('Please enter a name for the period');
-      return;
-    }
-
-    if (periodFormData.eventTypes.length === 0) {
-      alert('Please select at least one event type');
-      return;
-    }
-
-    try {
-      await createSeasonPeriod({ ...periodFormData, seasonId: creatingPeriodForSeason });
-      await loadSeasonPeriodsForSeason(creatingPeriodForSeason);
-      setCreatingPeriodForSeason(null);
-      setPeriodFormData({
-        seasonId: '',
-        name: '',
-        eventTypes: ['game', 'practice', 'cage'],
-        startDate: '',
-        endDate: '',
-        sortOrder: 0,
-        autoSchedule: true,
-      });
-    } catch (error) {
-      console.error('Failed to create season period:', error);
-      alert('Failed to create season period');
-    }
-  };
-
-  const handleDeleteSeasonPeriod = async (seasonId: string, periodId: string) => {
-    if (!confirm('Are you sure you want to delete this season period?')) {
-      return;
-    }
-    try {
-      await deleteSeasonPeriod(periodId);
-      await loadSeasonPeriodsForSeason(seasonId);
-    } catch (error) {
-      console.error('Failed to delete season period:', error);
-      alert('Failed to delete season period');
-    }
-  };
-
-  const startEditingSeasonPeriod = (period: SeasonPeriod) => {
-    setPeriodFormData({
-      seasonId: period.seasonId,
-      name: period.name,
-      eventTypes: period.eventTypes,
-      startDate: period.startDate,
-      endDate: period.endDate,
-      sortOrder: period.sortOrder,
-      autoSchedule: period.autoSchedule,
-    });
-    setEditingPeriodId(period.id);
-  };
-
-  const handleUpdateSeasonPeriod = async (e: React.FormEvent, seasonId: string, periodId: string) => {
-    e.preventDefault();
-    try {
-      await updateSeasonPeriod(periodId, {
-        name: periodFormData.name,
-        eventTypes: periodFormData.eventTypes,
-        startDate: periodFormData.startDate,
-        endDate: periodFormData.endDate,
-        sortOrder: periodFormData.sortOrder,
-        autoSchedule: periodFormData.autoSchedule,
-      });
-      await loadSeasonPeriodsForSeason(seasonId);
-      setEditingPeriodId(null);
-    } catch (error) {
-      console.error('Failed to update season period:', error);
-      alert('Failed to update season period');
-    }
-  };
-
-  const toggleEventType = (eventType: EventType) => {
-    const current = periodFormData.eventTypes;
-    if (current.includes(eventType)) {
-      setPeriodFormData({
-        ...periodFormData,
-        eventTypes: current.filter((t) => t !== eventType),
-      });
-    } else {
-      setPeriodFormData({
-        ...periodFormData,
-        eventTypes: [...current, eventType],
-      });
-    }
-  };
-
   const startCreatingConfig = (seasonId: string, divisionId: string) => {
     setConfigFormData({
       seasonId,
@@ -291,6 +164,7 @@ export default function SeasonsPage() {
       gameDayPreferences: config.gameDayPreferences,
       cageSessionsPerWeek: config.cageSessionsPerWeek,
       cageSessionDurationHours: config.cageSessionDurationHours,
+      fieldPreferences: config.fieldPreferences,
     });
     setEditingConfigId(config.id);
   };
@@ -326,6 +200,7 @@ export default function SeasonsPage() {
         gameDayPreferences: configFormData.gameDayPreferences,
         cageSessionsPerWeek: configFormData.cageSessionsPerWeek,
         cageSessionDurationHours: configFormData.cageSessionDurationHours,
+        fieldPreferences: configFormData.fieldPreferences,
       });
       await loadDivisionConfigsForSeason(configFormData.seasonId);
       setEditingConfigId(null);
@@ -430,6 +305,20 @@ export default function SeasonsPage() {
               />
             </div>
           </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="gamesStartDate">Games Start Date (optional)</label>
+            <input
+              id="gamesStartDate"
+              type="date"
+              value={formData.gamesStartDate || ''}
+              onChange={(e) => setFormData({ ...formData, gamesStartDate: e.target.value || undefined })}
+              min={formData.startDate || undefined}
+              max={formData.endDate || undefined}
+            />
+            <p className={styles.helperText}>
+              Leave blank to start games on the season start date. Set a later date to allow practices/cages to be scheduled before games begin.
+            </p>
+          </div>
           <div className={styles.formActions}>
             <button type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Creating...' : 'Create'}
@@ -457,8 +346,13 @@ export default function SeasonsPage() {
             </div>
             <div className={styles.seasonDetails}>
               <p>
-                <strong>Period:</strong> {season.startDate} to {season.endDate}
+                <strong>Season:</strong> {season.startDate} to {season.endDate}
               </p>
+              {season.gamesStartDate && season.gamesStartDate !== season.startDate && (
+                <p>
+                  <strong>Games Start:</strong> {season.gamesStartDate}
+                </p>
+              )}
               <p>
                 <strong>Status:</strong>
                 <select
@@ -476,237 +370,6 @@ export default function SeasonsPage() {
 
             {expandedSeasonId === season.id && (
               <>
-                <div className={styles.phasesSection}>
-                  <div className={styles.phasesSectionHeader}>
-                    <h4>Season Periods</h4>
-                    <button onClick={() => startCreatingSeasonPeriod(season)}>Add Period</button>
-                  </div>
-
-                  {creatingPeriodForSeason === season.id && (
-                    <form onSubmit={handleCreateSeasonPeriod} className={styles.phaseForm}>
-                      <div className={styles.formGroup}>
-                        <label>Name</label>
-                        <input
-                          type="text"
-                          value={periodFormData.name}
-                          onChange={(e) =>
-                            setPeriodFormData({ ...periodFormData, name: e.target.value })
-                          }
-                          placeholder="e.g., Regular Season, Preseason Practices"
-                          required
-                        />
-                      </div>
-                      <div className={styles.formRow}>
-                        <div className={styles.formGroup}>
-                          <label>Start Date</label>
-                          <input
-                            type="date"
-                            value={periodFormData.startDate}
-                            onChange={(e) => {
-                              const newStartDate = e.target.value;
-                              const nextDay = new Date(newStartDate);
-                              nextDay.setDate(nextDay.getDate() + 1);
-                              const nextDayStr = nextDay.toISOString().split('T')[0];
-
-                              setPeriodFormData({
-                                ...periodFormData,
-                                startDate: newStartDate,
-                                endDate: !periodFormData.endDate || periodFormData.endDate < newStartDate ? nextDayStr : periodFormData.endDate
-                              });
-                            }}
-                            min={season.startDate}
-                            max={season.endDate}
-                            required
-                          />
-                        </div>
-                        <div className={styles.formGroup}>
-                          <label>End Date</label>
-                          <input
-                            type="date"
-                            value={periodFormData.endDate}
-                            onChange={(e) =>
-                              setPeriodFormData({ ...periodFormData, endDate: e.target.value })
-                            }
-                            min={periodFormData.startDate || season.startDate}
-                            max={season.endDate}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className={styles.formGroup}>
-                        <label>Event Types</label>
-                        <div className={styles.eventTypeCheckboxes}>
-                          <label className={styles.checkboxLabel}>
-                            <input
-                              type="checkbox"
-                              checked={periodFormData.eventTypes.includes('game')}
-                              onChange={() => toggleEventType('game')}
-                            />
-                            Games
-                          </label>
-                          <label className={styles.checkboxLabel}>
-                            <input
-                              type="checkbox"
-                              checked={periodFormData.eventTypes.includes('practice')}
-                              onChange={() => toggleEventType('practice')}
-                            />
-                            Practices
-                          </label>
-                          <label className={styles.checkboxLabel}>
-                            <input
-                              type="checkbox"
-                              checked={periodFormData.eventTypes.includes('cage')}
-                              onChange={() => toggleEventType('cage')}
-                            />
-                            Batting Cages
-                          </label>
-                        </div>
-                        <p className={styles.helperText}>
-                          Select which event types can be scheduled during this period.
-                        </p>
-                      </div>
-                      <div className={styles.formGroup}>
-                        <label className={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={periodFormData.autoSchedule}
-                            onChange={(e) =>
-                              setPeriodFormData({ ...periodFormData, autoSchedule: e.target.checked })
-                            }
-                          />
-                          Auto-schedule events for this period
-                        </label>
-                        <p className={styles.helperText}>
-                          Uncheck for periods like "Makeup Games" where events should be manually scheduled.
-                        </p>
-                      </div>
-                      <div className={styles.formActions}>
-                        <button type="submit">Add</button>
-                        <button type="button" onClick={() => setCreatingPeriodForSeason(null)}>
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {seasonPeriods[season.id] && seasonPeriods[season.id].length > 0 ? (
-                    <div className={styles.phasesList}>
-                      {seasonPeriods[season.id].map((period) => {
-                        const isEditing = editingPeriodId === period.id;
-                        return (
-                          <div key={period.id} className={styles.phaseItem}>
-                            {isEditing ? (
-                              <form onSubmit={(e) => handleUpdateSeasonPeriod(e, season.id, period.id)} className={styles.inlineEditForm}>
-                                <div className={styles.formGroup}>
-                                  <label>Name</label>
-                                  <input
-                                    type="text"
-                                    value={periodFormData.name}
-                                    onChange={(e) =>
-                                      setPeriodFormData({ ...periodFormData, name: e.target.value })
-                                    }
-                                    required
-                                  />
-                                </div>
-                                <div className={styles.formRow}>
-                                  <div className={styles.formGroup}>
-                                    <label>Start Date</label>
-                                    <input
-                                      type="date"
-                                      value={periodFormData.startDate}
-                                      onChange={(e) => setPeriodFormData({ ...periodFormData, startDate: e.target.value })}
-                                      min={season.startDate}
-                                      max={season.endDate}
-                                      required
-                                    />
-                                  </div>
-                                  <div className={styles.formGroup}>
-                                    <label>End Date</label>
-                                    <input
-                                      type="date"
-                                      value={periodFormData.endDate}
-                                      onChange={(e) => setPeriodFormData({ ...periodFormData, endDate: e.target.value })}
-                                      min={periodFormData.startDate || season.startDate}
-                                      max={season.endDate}
-                                      required
-                                    />
-                                  </div>
-                                </div>
-                                <div className={styles.formGroup}>
-                                  <label>Event Types</label>
-                                  <div className={styles.eventTypeCheckboxes}>
-                                    <label className={styles.checkboxLabel}>
-                                      <input
-                                        type="checkbox"
-                                        checked={periodFormData.eventTypes.includes('game')}
-                                        onChange={() => toggleEventType('game')}
-                                      />
-                                      Games
-                                    </label>
-                                    <label className={styles.checkboxLabel}>
-                                      <input
-                                        type="checkbox"
-                                        checked={periodFormData.eventTypes.includes('practice')}
-                                        onChange={() => toggleEventType('practice')}
-                                      />
-                                      Practices
-                                    </label>
-                                    <label className={styles.checkboxLabel}>
-                                      <input
-                                        type="checkbox"
-                                        checked={periodFormData.eventTypes.includes('cage')}
-                                        onChange={() => toggleEventType('cage')}
-                                      />
-                                      Batting Cages
-                                    </label>
-                                  </div>
-                                </div>
-                                <div className={styles.formGroup}>
-                                  <label className={styles.checkboxLabel}>
-                                    <input
-                                      type="checkbox"
-                                      checked={periodFormData.autoSchedule}
-                                      onChange={(e) => setPeriodFormData({ ...periodFormData, autoSchedule: e.target.checked })}
-                                    />
-                                    Auto-schedule events
-                                  </label>
-                                </div>
-                                <div className={styles.formActions}>
-                                  <button type="submit">Save</button>
-                                  <button type="button" onClick={() => setEditingPeriodId(null)}>Cancel</button>
-                                </div>
-                              </form>
-                            ) : (
-                              <>
-                                <div className={styles.phaseInfo}>
-                                  <strong>{period.name}</strong>
-                                  <span className={styles.phaseType}>
-                                    ({period.eventTypes.join(', ')})
-                                  </span>
-                                  <span className={styles.phaseDates}>
-                                    {period.startDate} to {period.endDate}
-                                  </span>
-                                  <span className={styles.phaseEventTypes}>
-                                    Auto-schedule: {period.autoSchedule ? 'Yes' : 'No'}
-                                  </span>
-                                </div>
-                                <div className={styles.phaseActions}>
-                                  <button onClick={() => startEditingSeasonPeriod(period)}>Edit</button>
-                                  <button onClick={() => handleDeleteSeasonPeriod(season.id, period.id)}>Delete</button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className={styles.emptyPhases}>
-                      No season periods defined yet. Add one to get started!
-                    </p>
-                  )}
-                </div>
-
                 <div className={styles.divisionsSection}>
                   <div className={styles.phasesSectionHeader}>
                     <h4>Division Configurations</h4>
@@ -834,9 +497,6 @@ export default function SeasonsPage() {
                                 </div>
                                 <div className={styles.formGroup}>
                                   <label>Game Day Preferences (optional)</label>
-                                  <p className={styles.helperText}>
-                                    Define preferred days for game scheduling (e.g., "1 weekday + 1 Saturday" or "prefer Saturdays, accept mid-week")
-                                  </p>
                                   {configFormData.gameDayPreferences && configFormData.gameDayPreferences.length > 0 && (
                                     <div className={styles.preferencesList}>
                                       {configFormData.gameDayPreferences.map((pref, index) => (
@@ -916,6 +576,83 @@ export default function SeasonsPage() {
                                     />
                                   </div>
                                 </div>
+                                {/* Field Preferences */}
+                                <div className={styles.formRow}>
+                                  <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                                    <label>Field Preferences (drag to reorder, first = most preferred)</label>
+                                    <div className={styles.fieldPreferences}>
+                                      {(() => {
+                                        const fields = seasonFields[season.id] || [];
+                                        const currentPrefs = configFormData.fieldPreferences || [];
+                                        // Fields in preference order, then remaining fields
+                                        const orderedFields = [
+                                          ...currentPrefs.map(id => fields.find(f => f.fieldId === id)).filter(Boolean),
+                                          ...fields.filter(f => !currentPrefs.includes(f.fieldId))
+                                        ] as SeasonField[];
+
+                                        return orderedFields.map((field, index) => {
+                                          const isInPrefs = currentPrefs.includes(field.fieldId);
+                                          return (
+                                            <div
+                                              key={field.fieldId}
+                                              className={`${styles.fieldPrefItem} ${isInPrefs ? styles.fieldPrefActive : ''}`}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={isInPrefs}
+                                                onChange={(e) => {
+                                                  if (e.target.checked) {
+                                                    setConfigFormData({
+                                                      ...configFormData,
+                                                      fieldPreferences: [...currentPrefs, field.fieldId],
+                                                    });
+                                                  } else {
+                                                    setConfigFormData({
+                                                      ...configFormData,
+                                                      fieldPreferences: currentPrefs.filter(id => id !== field.fieldId),
+                                                    });
+                                                  }
+                                                }}
+                                              />
+                                              <span className={styles.fieldPrefName}>
+                                                {isInPrefs && <span className={styles.fieldPrefRank}>{currentPrefs.indexOf(field.fieldId) + 1}.</span>}
+                                                {field.field?.name || field.fieldId}
+                                              </span>
+                                              {isInPrefs && index > 0 && currentPrefs.indexOf(field.fieldId) > 0 && (
+                                                <button
+                                                  type="button"
+                                                  className={styles.fieldPrefMoveBtn}
+                                                  onClick={() => {
+                                                    const idx = currentPrefs.indexOf(field.fieldId);
+                                                    const newPrefs = [...currentPrefs];
+                                                    [newPrefs[idx - 1], newPrefs[idx]] = [newPrefs[idx], newPrefs[idx - 1]];
+                                                    setConfigFormData({ ...configFormData, fieldPreferences: newPrefs });
+                                                  }}
+                                                >
+                                                  ↑
+                                                </button>
+                                              )}
+                                              {isInPrefs && currentPrefs.indexOf(field.fieldId) < currentPrefs.length - 1 && (
+                                                <button
+                                                  type="button"
+                                                  className={styles.fieldPrefMoveBtn}
+                                                  onClick={() => {
+                                                    const idx = currentPrefs.indexOf(field.fieldId);
+                                                    const newPrefs = [...currentPrefs];
+                                                    [newPrefs[idx], newPrefs[idx + 1]] = [newPrefs[idx + 1], newPrefs[idx]];
+                                                    setConfigFormData({ ...configFormData, fieldPreferences: newPrefs });
+                                                  }}
+                                                >
+                                                  ↓
+                                                </button>
+                                              )}
+                                            </div>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  </div>
+                                </div>
                                 <div className={styles.formActions}>
                                   <button type="submit">{existingConfig ? 'Save' : 'Create'}</button>
                                   <button type="button" onClick={() => setEditingConfigId(null)}>
@@ -955,6 +692,14 @@ export default function SeasonsPage() {
                                     {existingConfig.cageSessionDurationHours && (
                                       <span>Cage duration: {existingConfig.cageSessionDurationHours}h</span>
                                     )}
+                                  </div>
+                                )}
+                                {existingConfig.fieldPreferences && existingConfig.fieldPreferences.length > 0 && (
+                                  <div className={styles.configDetailRow}>
+                                    <span>Field preferences: {existingConfig.fieldPreferences.map((fieldId, idx) => {
+                                      const field = (seasonFields[season.id] || []).find(f => f.fieldId === fieldId);
+                                      return `${idx + 1}. ${field?.field?.name || fieldId}`;
+                                    }).join(', ')}</span>
                                   </div>
                                 )}
                               </div>

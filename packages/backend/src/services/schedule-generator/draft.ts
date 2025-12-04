@@ -123,6 +123,7 @@ export function initializeTeamState(
   teamId: string,
   teamName: string,
   divisionId: string,
+  divisionName: string,
   requirements: {
     totalGamesNeeded: number;
     totalPracticesNeeded: number;
@@ -134,6 +135,7 @@ export function initializeTeamState(
     teamId,
     teamName,
     divisionId,
+    divisionName,
     totalGamesNeeded: requirements.totalGamesNeeded,
     totalPracticesNeeded: requirements.totalPracticesNeeded,
     totalCagesNeeded: requirements.totalCagesNeeded,
@@ -243,7 +245,7 @@ export function generateCandidatesForTeamEvent(
   resourceSlots: ResourceSlot[],
   week: WeekDefinition,
   durationHours: number,
-  seasonPeriodId: string,
+  seasonId: string,
   context: ScoringContext,
   enableLogging: boolean = false
 ): PlacementCandidate[] {
@@ -332,7 +334,7 @@ export function generateCandidatesForTeamEvent(
         resourceId: slot.resourceId,
         resourceName: slot.resourceName,
         resourceType: slot.resourceType,
-        seasonPeriodId,
+        seasonId,
         teamId: teamState.teamId,
       });
     }
@@ -363,7 +365,7 @@ export function generateCandidatesForGame(
   resourceSlots: ResourceSlot[],
   week: WeekDefinition,
   durationHours: number,
-  seasonPeriodId: string,
+  seasonId: string,
   context: ScoringContext
 ): PlacementCandidate[] {
   const candidates: PlacementCandidate[] = [];
@@ -404,7 +406,7 @@ export function generateCandidatesForGame(
         resourceId: slot.resourceId,
         resourceName: slot.resourceName,
         resourceType: 'field',
-        seasonPeriodId,
+        seasonId,
         homeTeamId: matchup.homeTeamId,
         awayTeamId: matchup.awayTeamId,
       });
@@ -419,7 +421,7 @@ export function generateCandidatesForGame(
         resourceId: slot.resourceId,
         resourceName: slot.resourceName,
         resourceType: 'field',
-        seasonPeriodId,
+        seasonId,
         homeTeamId: matchup.awayTeamId,
         awayTeamId: matchup.homeTeamId,
       });
@@ -526,7 +528,7 @@ export function candidateToEventDraft(
   divisionId: string
 ): ScheduledEventDraft {
   return {
-    seasonPeriodId: candidate.seasonPeriodId,
+    seasonId: candidate.seasonId,
     divisionId,
     eventType: candidate.eventType,
     date: candidate.date,

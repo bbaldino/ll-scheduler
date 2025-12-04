@@ -3,7 +3,6 @@ import type { Env } from '../index.js';
 import type { GenerateScheduleRequest, EvaluateScheduleRequest } from '@ll-scheduler/shared';
 import { generateSchedule } from '../services/schedule-generator/index.js';
 import { evaluateSchedule } from '../services/schedule-evaluator.js';
-import { getSeasonPeriodsByIds } from '../services/season-periods.js';
 import {
   saveScheduleGenerationLog,
   getLatestScheduleGenerationLog,
@@ -12,30 +11,26 @@ import {
 
 const router = new Hono<{ Bindings: Env }>();
 
-// POST /api/schedule-generator/generate - Generate a schedule for selected season periods
+// POST /api/schedule-generator/generate - Generate a schedule for a season
 router.post('/generate', async (c) => {
   try {
     console.log('=== SCHEDULE GENERATION REQUEST RECEIVED ===');
     const request: GenerateScheduleRequest = await c.req.json();
     console.log('Request body:', JSON.stringify(request, null, 2));
 
-    if (!request.periodIds || request.periodIds.length === 0) {
-      console.log('ERROR: periodIds is missing or empty');
-      return c.json({ error: 'periodIds array is required and must not be empty' }, 400);
+    if (!request.seasonId) {
+      console.log('ERROR: seasonId is missing');
+      return c.json({ error: 'seasonId is required' }, 400);
     }
 
-    console.log('Calling generateSchedule with periodIds:', request.periodIds);
+    console.log('Calling generateSchedule with seasonId:', request.seasonId);
     const result = await generateSchedule(c.env.DB, request);
     console.log('generateSchedule result:', JSON.stringify(result, null, 2));
 
     // Save the generation log
     try {
-      const periods = await getSeasonPeriodsByIds(c.env.DB, request.periodIds);
-      if (periods.length > 0) {
-        const seasonId = periods[0].seasonId;
-        await saveScheduleGenerationLog(c.env.DB, seasonId, request.periodIds, result);
-        console.log('Schedule generation log saved');
-      }
+      await saveScheduleGenerationLog(c.env.DB, request.seasonId, result);
+      console.log('Schedule generation log saved');
     } catch (logError) {
       console.error('Failed to save schedule generation log:', logError);
       // Don't fail the request if logging fails
@@ -53,11 +48,11 @@ router.post('/evaluate', async (c) => {
   try {
     const request: EvaluateScheduleRequest = await c.req.json();
 
-    if (!request.periodIds || request.periodIds.length === 0) {
-      return c.json({ error: 'periodIds array is required and must not be empty' }, 400);
+    if (!request.seasonId) {
+      return c.json({ error: 'seasonId is required' }, 400);
     }
 
-    const result = await evaluateSchedule(c.env.DB, request.periodIds);
+    const result = await evaluateSchedule(c.env.DB, request.seasonId);
     return c.json(result);
   } catch (error) {
     console.error('Error evaluating schedule:', error);

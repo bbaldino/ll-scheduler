@@ -9,7 +9,7 @@ import type { GameDayPreference } from './division.js';
 export interface ScheduleEvaluationResult {
   overallScore: number; // 0-100 percentage of checks passed
   timestamp: string;
-  periodIds: string[]; // Which periods were evaluated
+  seasonId: string; // Which season was evaluated
 
   weeklyRequirements: WeeklyRequirementsReport;
   homeAwayBalance: HomeAwayBalanceReport;
@@ -170,5 +170,5 @@ export interface OpponentMatchup {
 
 // Request type for evaluate endpoint
 export interface EvaluateScheduleRequest {
-  periodIds: string[];
+  seasonId: string;
 }

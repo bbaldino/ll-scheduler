@@ -20,11 +20,11 @@ import type {
   Team,
   Division,
   DivisionConfig,
-  SeasonPeriod,
+  Season,
   GameDayPreference,
 } from '@ll-scheduler/shared';
 import { listScheduledEvents } from './scheduled-events.js';
-import { getSeasonPeriodsByIds } from './season-periods.js';
+import { getSeasonById } from './seasons.js';
 import { listTeams } from './teams.js';
 import { listDivisions } from './divisions.js';
 import { listDivisionConfigsBySeasonId } from './division-configs.js';
@@ -34,19 +34,16 @@ import { listDivisionConfigsBySeasonId } from './division-configs.js';
  */
 export async function evaluateSchedule(
   db: D1Database,
-  periodIds: string[]
+  seasonId: string
 ): Promise<ScheduleEvaluationResult> {
-  // Fetch all required data
-  const periods = await getSeasonPeriodsByIds(db, periodIds);
-  if (periods.length === 0) {
-    throw new Error('No valid season periods found');
+  // Fetch season
+  const season = await getSeasonById(db, seasonId);
+  if (!season) {
+    throw new Error('Season not found');
   }
 
-  // All periods should be from the same season
-  const seasonId = periods[0].seasonId;
-
   const [events, teams, divisions, divisionConfigs] = await Promise.all([
-    listScheduledEvents(db, { seasonPeriodIds: periodIds }),
+    listScheduledEvents(db, { seasonId }),
     listTeams(db, seasonId),
     listDivisions(db),
     listDivisionConfigsBySeasonId(db, seasonId),
@@ -56,7 +53,6 @@ export async function evaluateSchedule(
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const divisionMap = new Map(divisions.map((d) => [d.id, d]));
   const configByDivision = new Map(divisionConfigs.map((c) => [c.divisionId, c]));
-  const periodMap = new Map(periods.map((p) => [p.id, p]));
 
   // Run all evaluations
   const weeklyRequirements = evaluateWeeklyRequirements(
@@ -64,7 +60,7 @@ export async function evaluateSchedule(
     teams,
     divisionMap,
     configByDivision,
-    periods
+    season
   );
   const homeAwayBalance = evaluateHomeAwayBalance(events, teams, divisionMap);
   const constraintViolations = evaluateConstraintViolations(
@@ -72,7 +68,7 @@ export async function evaluateSchedule(
     teamMap,
     divisionMap,
     configByDivision,
-    periodMap
+    season
   );
   const gameDayPreferences = evaluateGameDayPreferences(
     events,
@@ -81,7 +77,7 @@ export async function evaluateSchedule(
     configByDivision
   );
   const gameSpacing = evaluateGameSpacing(events, teams, divisionMap);
-  const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, periods);
+  const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, season);
 
   // Calculate overall score
   const checks = [
@@ -98,7 +94,7 @@ export async function evaluateSchedule(
   return {
     overallScore,
     timestamp: new Date().toISOString(),
-    periodIds,
+    seasonId,
     weeklyRequirements,
     homeAwayBalance,
     constraintViolations,
@@ -131,22 +127,28 @@ function getWeekEnd(dateStr: string): string {
 }
 
 /**
- * Get allowed event types for a week based on overlapping periods
+ * Get allowed event types for a week based on season dates
  */
 function getAllowedEventTypesForWeek(
   weekStart: string,
   weekEnd: string,
-  periods: SeasonPeriod[]
+  season: Season
 ): Set<string> {
   const allowed = new Set<string>();
 
-  for (const period of periods) {
-    // Check if period overlaps with this week
-    if (period.startDate <= weekEnd && period.endDate >= weekStart) {
-      for (const eventType of period.eventTypes) {
-        allowed.add(eventType);
-      }
-    }
+  // Check if week overlaps with season
+  if (weekStart > season.endDate || weekEnd < season.startDate) {
+    return allowed;
+  }
+
+  // Practices and cages are allowed for the full season
+  allowed.add('practice');
+  allowed.add('cage');
+
+  // Games are only allowed from gamesStartDate onwards
+  const gamesStart = season.gamesStartDate || season.startDate;
+  if (weekEnd >= gamesStart) {
+    allowed.add('game');
   }
 
   return allowed;
@@ -160,15 +162,13 @@ function evaluateWeeklyRequirements(
   teams: Team[],
   divisionMap: Map<string, Division>,
   configByDivision: Map<string, DivisionConfig>,
-  periods: SeasonPeriod[]
+  season: Season
 ): WeeklyRequirementsReport {
   const teamReports: TeamWeeklyReport[] = [];
 
-  // Get date range from periods
-  const startDates = periods.map((p) => p.startDate).sort();
-  const endDates = periods.map((p) => p.endDate).sort().reverse();
-  const scheduleStart = startDates[0];
-  const scheduleEnd = endDates[0];
+  // Get date range from season
+  const scheduleStart = season.startDate;
+  const scheduleEnd = season.endDate;
 
   // Generate all weeks in the schedule range
   const allWeeks: { start: string; end: string }[] = [];
@@ -209,8 +209,8 @@ function evaluateWeeklyRequirements(
       const practicesScheduled = weekEvents.filter((e) => e.eventType === 'practice').length;
       const cagesScheduled = weekEvents.filter((e) => e.eventType === 'cage').length;
 
-      // Determine which event types are allowed for this week based on periods
-      const allowedTypes = getAllowedEventTypesForWeek(week.start, week.end, periods);
+      // Determine which event types are allowed for this week based on season
+      const allowedTypes = getAllowedEventTypesForWeek(week.start, week.end, season);
 
       // Only require events that are allowed in this week's periods
       const gamesRequired = allowedTypes.has('game') ? config.gamesPerWeek : 0;
@@ -329,7 +329,7 @@ function evaluateConstraintViolations(
   teamMap: Map<string, Team>,
   divisionMap: Map<string, Division>,
   configByDivision: Map<string, DivisionConfig>,
-  periodMap: Map<string, SeasonPeriod>
+  season: Season
 ): ConstraintViolationsReport {
   const violations: ConstraintViolation[] = [];
 
@@ -470,15 +470,13 @@ function evaluateConstraintViolations(
     }
   }
 
-  // Check invalid event types for periods
+  // Check if games are scheduled before gamesStartDate
+  const gamesStartDate = season.gamesStartDate || season.startDate;
   for (const event of events) {
-    const period = periodMap.get(event.seasonPeriodId);
-    if (period && !period.eventTypes.includes(event.eventType)) {
-      const team = event.teamId
-        ? teamMap.get(event.teamId)
-        : event.homeTeamId
-          ? teamMap.get(event.homeTeamId)
-          : undefined;
+    if (event.eventType === 'game' && event.date < gamesStartDate) {
+      const team = event.homeTeamId
+        ? teamMap.get(event.homeTeamId)
+        : undefined;
       const division = team ? divisionMap.get(team.divisionId) : undefined;
 
       violations.push({
@@ -489,7 +487,7 @@ function evaluateConstraintViolations(
         divisionId: division?.id,
         divisionName: division?.name,
         date: event.date,
-        description: `${event.eventType} event not allowed in period "${period.name}" (allowed: ${period.eventTypes.join(', ')})`,
+        description: `Game scheduled on ${event.date} but games are only allowed from ${gamesStartDate}`,
         eventIds: [event.id],
       });
     }
@@ -753,7 +751,7 @@ function evaluateMatchupBalance(
   teams: Team[],
   divisionMap: Map<string, Division>,
   configByDivision: Map<string, DivisionConfig>,
-  periods: SeasonPeriod[]
+  season: Season
 ): MatchupBalanceReport {
   const divisionReports: DivisionMatchupReport[] = [];
   const IMBALANCE_THRESHOLD = 2; // Allow up to 2 games difference from ideal
@@ -778,14 +776,10 @@ function evaluateMatchupBalance(
     const teamCount = divisionTeams.length;
     if (teamCount < 2) continue;
 
-    // Calculate number of weeks from periods
-    const startDates = periods.map((p) => p.startDate).sort();
-    const endDates = periods.map((p) => p.endDate).sort().reverse();
-    const scheduleStart = startDates[0];
-    const scheduleEnd = endDates[0];
-
-    const startDate = new Date(scheduleStart + 'T00:00:00');
-    const endDate = new Date(scheduleEnd + 'T00:00:00');
+    // Calculate number of weeks from season dates
+    const gamesStartDate = season.gamesStartDate || season.startDate;
+    const startDate = new Date(gamesStartDate + 'T00:00:00');
+    const endDate = new Date(season.endDate + 'T00:00:00');
     const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const numWeeks = Math.ceil(totalDays / 7);
 

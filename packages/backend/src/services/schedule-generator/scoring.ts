@@ -23,6 +23,8 @@ export interface ScoringContext {
   resourceCapacity: Map<string, number>;
   // Division game day preferences: divisionId -> preferences
   gameDayPreferences: Map<string, GameDayPreference[]>;
+  // Division field preferences: divisionId -> ordered list of field IDs (first = most preferred)
+  fieldPreferences: Map<string, string[]>;
   // Week definitions for week number lookup
   weekDefinitions: Array<{ weekNumber: number; startDate: string; endDate: string }>;
   // Scheduled events for conflict checking
@@ -47,6 +49,7 @@ export interface ScoreBreakdown {
   dayGap: number;
   timeAdjacency: number;
   earliestTime: number;
+  fieldPreference: number;
   sameDayEvent: number;
   scarcity: number;
   sameDayCageFieldGap: number;
@@ -79,6 +82,7 @@ export function calculatePlacementScore(
     dayGap: 0,
     timeAdjacency: 0,
     earliestTime: 0,
+    fieldPreference: 0,
     sameDayEvent: 0,
     scarcity: 0,
     sameDayCageFieldGap: 0,
@@ -102,6 +106,11 @@ export function calculatePlacementScore(
       breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
       breakdown.matchupHomeAwayBalance = calculateMatchupHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.matchupHomeAwayBalance;
     }
+  }
+
+  // Field preference for games and practices (not cage events)
+  if (candidate.resourceType === 'field') {
+    breakdown.fieldPreference = calculateFieldPreferenceRaw(candidate.resourceId, teamState.divisionId, context) * weights.fieldPreference;
   }
 
   // Practice-specific penalties
@@ -264,6 +273,31 @@ export function calculateGameDayPreferenceRaw(
 }
 
 /**
+ * Calculate field preference raw score
+ * Returns 0-1 where 1 = most preferred field, decreasing for lower preferences, 0.5 = not in list
+ */
+export function calculateFieldPreferenceRaw(
+  fieldId: string,
+  divisionId: string,
+  context: ScoringContext
+): number {
+  const preferences = context.fieldPreferences.get(divisionId) || [];
+
+  if (preferences.length === 0) {
+    return 0.5; // No preferences configured, neutral
+  }
+
+  const index = preferences.indexOf(fieldId);
+  if (index === -1) {
+    return 0.3; // Field not in preferences list - less preferred than any listed field
+  }
+
+  // Score from 1.0 (first preference) down to 0.5 (last preference)
+  // This ensures any preferred field scores higher than non-preferred
+  return 1.0 - (index / preferences.length) * 0.5;
+}
+
+/**
  * Calculate time quality raw score
  * Returns 0-1 where 1 = ideal time (3-6pm), ~0.4 = far from ideal
  */
@@ -296,50 +330,19 @@ export function calculateTimeQualityRaw(startTime: string): number {
 /**
  * Calculate earliest time raw score (for games)
  *
- * This score should ONLY influence which time slot is picked WITHIN a given day,
- * not which day is selected. To achieve this:
- * - First slot of any day gets a consistent score (1.0)
- * - Subsequent slots on the same day/resource are scored based on packing efficiency
- *
- * This way, a Tuesday 6pm game and a Sunday 9am game both score 1.0 for earliestTime
- * if they're each the first game on that day/resource.
+ * Simply prefers earlier start times - earlier is always better.
+ * Score decreases linearly based on start time.
  */
 export function calculateEarliestTimeRaw(
   candidate: PlacementCandidate,
-  context: ScoringContext
+  _context: ScoringContext
 ): number {
-  // Find all scheduled events on this resource and date
-  const eventsOnSameResourceDate = context.scheduledEvents.filter(
-    (e) =>
-      e.date === candidate.date &&
-      ((e.fieldId && e.fieldId === candidate.resourceId) ||
-        (e.cageId && e.cageId === candidate.resourceId))
-  );
-
-  if (eventsOnSameResourceDate.length === 0) {
-    // First event on this resource/date - all first slots are equal
-    // This ensures day selection isn't influenced by absolute time
-    return 1.0;
-  }
-
-  // Find the latest end time of existing events
-  const latestEndTime = eventsOnSameResourceDate.reduce((latest, e) => {
-    return e.endTime > latest ? e.endTime : latest;
-  }, '00:00');
-
-  // Prefer slots that pack tightly after existing events
   const candidateStartMinutes = timeToMinutes(candidate.startTime);
-  const latestEndMinutes = timeToMinutes(latestEndTime);
 
-  if (candidateStartMinutes >= latestEndMinutes) {
-    // This slot is after existing events - prefer tighter packing
-    const gap = candidateStartMinutes - latestEndMinutes;
-    // 0 gap = 1.0, 2+ hours gap = 0.3
-    return Math.max(0.3, 1 - gap / 120);
-  }
-
-  // Slot overlaps or is before existing events - less ideal
-  return 0.5;
+  // Score from 1.0 (midnight) down to 0.0 (midnight next day)
+  // Earlier times always score higher
+  const maxMinutes = 24 * 60;
+  return 1.0 - candidateStartMinutes / maxMinutes;
 }
 
 /**
@@ -684,6 +687,7 @@ export function createScoringContext(): ScoringContext {
     resourceUsage: new Map(),
     resourceCapacity: new Map(),
     gameDayPreferences: new Map(),
+    fieldPreferences: new Map(),
     weekDefinitions: [],
     scheduledEvents: [],
     divisionConfigs: new Map(),

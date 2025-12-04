@@ -5,8 +5,8 @@ import type {
   ScheduledEventDraft,
 } from '@ll-scheduler/shared';
 import { ScheduleGenerator } from './generator.js';
-import { getSeasonPeriodsByIds } from '../season-periods.js';
 import { getSeasonById } from '../seasons.js';
+import { listDivisions } from '../divisions.js';
 import { listDivisionConfigsBySeasonId } from '../division-configs.js';
 import { listTeams } from '../teams.js';
 import { listSeasonFields } from '../season-fields.js';
@@ -31,45 +31,19 @@ export async function generateSchedule(
   try {
     console.log('generateSchedule: Starting with request:', JSON.stringify(request, null, 2));
 
-    // Validate period IDs
-    if (!request.periodIds || request.periodIds.length === 0) {
+    // Validate season ID
+    if (!request.seasonId) {
       return {
         success: false,
         eventsCreated: 0,
-        message: 'No season periods specified',
-        errors: [{ type: 'invalid_config', message: 'At least one season period must be selected' }],
+        message: 'No season specified',
+        errors: [{ type: 'invalid_config', message: 'A season ID must be provided' }],
       };
     }
-
-    // Fetch the season periods
-    console.log('generateSchedule: Fetching season periods:', request.periodIds);
-    const periods = await getSeasonPeriodsByIds(db, request.periodIds);
-    if (periods.length === 0) {
-      console.log('generateSchedule: No season periods found');
-      return {
-        success: false,
-        eventsCreated: 0,
-        message: 'Season periods not found',
-        errors: [{ type: 'invalid_config', message: 'Season periods not found' }],
-      };
-    }
-    console.log('generateSchedule: Found', periods.length, 'season periods');
-
-    // All periods must belong to the same season
-    const seasonIds = new Set(periods.map(p => p.seasonId));
-    if (seasonIds.size > 1) {
-      return {
-        success: false,
-        eventsCreated: 0,
-        message: 'All periods must belong to the same season',
-        errors: [{ type: 'invalid_config', message: 'Cannot generate schedule across multiple seasons' }],
-      };
-    }
-
-    const seasonId = periods[0].seasonId;
 
     // Fetch the season
-    const season = await getSeasonById(db, seasonId);
+    console.log('generateSchedule: Fetching season:', request.seasonId);
+    const season = await getSeasonById(db, request.seasonId);
     if (!season) {
       console.log('generateSchedule: Season not found');
       return {
@@ -83,6 +57,7 @@ export async function generateSchedule(
 
     // Fetch all necessary data
     const [
+      divisions,
       divisionConfigs,
       teams,
       seasonFields,
@@ -92,14 +67,15 @@ export async function generateSchedule(
       fieldOverrides,
       cageOverrides,
     ] = await Promise.all([
-      listDivisionConfigsBySeasonId(db, seasonId),
-      listTeams(db, seasonId),
-      listSeasonFields(db, seasonId),
-      listSeasonCages(db, seasonId),
-      listFieldAvailabilitiesForSeason(db, seasonId),
-      listCageAvailabilitiesForSeason(db, seasonId),
-      listFieldDateOverridesForSeason(db, seasonId),
-      listCageDateOverridesForSeason(db, seasonId),
+      listDivisions(db),
+      listDivisionConfigsBySeasonId(db, request.seasonId),
+      listTeams(db, request.seasonId),
+      listSeasonFields(db, request.seasonId),
+      listSeasonCages(db, request.seasonId),
+      listFieldAvailabilitiesForSeason(db, request.seasonId),
+      listCageAvailabilitiesForSeason(db, request.seasonId),
+      listFieldDateOverridesForSeason(db, request.seasonId),
+      listCageDateOverridesForSeason(db, request.seasonId),
     ]);
 
     // Filter teams by division if specified
@@ -116,7 +92,7 @@ export async function generateSchedule(
     // Clear existing events if requested
     if (request.clearExisting) {
       const existingEvents = await listScheduledEvents(db, {
-        seasonPeriodIds: request.periodIds,
+        seasonId: request.seasonId,
       });
 
       for (const event of existingEvents) {
@@ -124,10 +100,10 @@ export async function generateSchedule(
       }
     }
 
-    // Create the generator with the selected periods
+    // Create the generator
     const generator = new ScheduleGenerator(
-      periods,
       season,
+      divisions,
       filteredConfigs,
       filteredTeams,
       seasonFields,
@@ -180,7 +156,7 @@ async function saveScheduledEvents(
 ): Promise<void> {
   for (const event of events) {
     const input = {
-      seasonPeriodId: event.seasonPeriodId,
+      seasonId: event.seasonId,
       divisionId: event.divisionId,
       eventType: event.eventType,
       date: event.date,

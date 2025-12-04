@@ -9,8 +9,8 @@ import type {
   ScheduleError,
   ScheduleWarning,
   SchedulingLogEntry,
-  SeasonPeriod,
   Season,
+  Division,
   DivisionConfig,
   Team,
   SeasonField,
@@ -65,12 +65,13 @@ import {
 /**
  * Main schedule generator
  * Generates optimal schedules for games, practices, and cage sessions
- * Now supports multiple overlapping SeasonPeriods with different event types
+ * Uses season.gamesStartDate to determine when games can be scheduled
+ * Practices and cages can be scheduled from season.startDate to season.endDate
  */
 export class ScheduleGenerator {
-  private periods: SeasonPeriod[];
   private season: Season;
   private divisionConfigs: Map<string, DivisionConfig>;
+  private divisionNames: Map<string, string>; // divisionId -> divisionName
   private teams: Team[];
   private seasonFields: SeasonField[];
   private seasonCages: SeasonCage[];
@@ -87,10 +88,7 @@ export class ScheduleGenerator {
   private fieldDivisionCompatibility: Map<string, string[]> = new Map();
   private cageDivisionCompatibility: Map<string, string[]> = new Map();
 
-  // Date -> allowed event types mapping (built from overlapping periods)
-  private dateEventTypes: Map<string, { eventTypes: Set<EventType>; periodId: string }[]> = new Map();
-
-  // Resource slots (built once across all periods)
+  // Resource slots
   private gameFieldSlots: ResourceSlot[] = [];
   private practiceFieldSlots: ResourceSlot[] = [];
   private cageSlots: ResourceSlot[] = [];
@@ -112,8 +110,8 @@ export class ScheduleGenerator {
   private static readonly DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   constructor(
-    periods: SeasonPeriod[],
     season: Season,
+    divisions: Division[],
     divisionConfigs: DivisionConfig[],
     teams: Team[],
     seasonFields: SeasonField[],
@@ -123,9 +121,9 @@ export class ScheduleGenerator {
     fieldOverrides: FieldDateOverride[],
     cageOverrides: CageDateOverride[]
   ) {
-    this.periods = periods;
     this.season = season;
     this.divisionConfigs = new Map(divisionConfigs.map((dc) => [dc.divisionId, dc]));
+    this.divisionNames = new Map(divisions.map((d) => [d.id, d.name]));
     this.teams = teams;
     this.seasonFields = seasonFields;
     this.seasonCages = seasonCages;
@@ -145,28 +143,14 @@ export class ScheduleGenerator {
       // Store division compatibility (from the joined Cage data)
       this.cageDivisionCompatibility.set(sc.cageId, sc.divisionCompatibility || []);
     }
-
-    // Build date -> event types mapping from overlapping periods
-    this.buildDateEventTypesMap();
   }
 
   /**
-   * Build a map of date -> allowed event types from all selected periods
-   * This handles overlapping periods correctly
+   * Get the effective games start date for the season
+   * Falls back to season start date if gamesStartDate is not set
    */
-  private buildDateEventTypesMap(): void {
-    for (const period of this.periods) {
-      const dates = getDateRange(period.startDate, period.endDate);
-      for (const date of dates) {
-        if (!this.dateEventTypes.has(date)) {
-          this.dateEventTypes.set(date, []);
-        }
-        this.dateEventTypes.get(date)!.push({
-          eventTypes: new Set(period.eventTypes),
-          periodId: period.id,
-        });
-      }
-    }
+  private getGamesStartDate(): string {
+    return this.season.gamesStartDate || this.season.startDate;
   }
 
   /**
@@ -191,38 +175,17 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Check if an event type is allowed on a specific date
-   * Returns the period ID to use for scheduling, or null if not allowed
+   * Check if a date is within the games period
    */
-  private getEventTypeAllowedOnDate(date: string, eventType: EventType): string | null {
-    const dateInfo = this.dateEventTypes.get(date);
-    if (!dateInfo) return null;
-
-    for (const info of dateInfo) {
-      if (info.eventTypes.has(eventType)) {
-        return info.periodId;
-      }
-    }
-    return null;
+  private isGameDateAllowed(date: string): boolean {
+    return date >= this.getGamesStartDate() && date <= this.season.endDate;
   }
 
   /**
-   * Get the merged date range across all periods
+   * Check if a date is within the practice/cage period (full season)
    */
-  private getMergedDateRange(): { startDate: string; endDate: string } {
-    if (this.periods.length === 0) {
-      return { startDate: this.season.startDate, endDate: this.season.endDate };
-    }
-
-    let minDate = this.periods[0].startDate;
-    let maxDate = this.periods[0].endDate;
-
-    for (const period of this.periods) {
-      if (period.startDate < minDate) minDate = period.startDate;
-      if (period.endDate > maxDate) maxDate = period.endDate;
-    }
-
-    return { startDate: minDate, endDate: maxDate };
+  private isPracticeDateAllowed(date: string): boolean {
+    return date >= this.season.startDate && date <= this.season.endDate;
   }
 
   /**
@@ -230,12 +193,11 @@ export class ScheduleGenerator {
    */
   async generate(): Promise<GenerateScheduleResult> {
     try {
-      const dateRange = this.getMergedDateRange();
       console.log('='.repeat(80));
       console.log('SCHEDULE GENERATION STARTED');
-      console.log(`Periods: ${this.periods.map(p => `${p.name} (${p.eventTypes.join(', ')})`).join(', ')}`);
-      console.log(`Merged date range: ${dateRange.startDate} to ${dateRange.endDate}`);
-      console.log(`Season: ${this.season.name} (${this.season.startDate} to ${this.season.endDate})`);
+      console.log(`Season: ${this.season.name}`);
+      console.log(`  Full season: ${this.season.startDate} to ${this.season.endDate}`);
+      console.log(`  Games period: ${this.getGamesStartDate()} to ${this.season.endDate}`);
       console.log(`Teams: ${this.teams.length}, Season Fields: ${this.seasonFields.length}, Season Cages: ${this.seasonCages.length}`);
       console.log('Division Configs:', Array.from(this.divisionConfigs.entries()).map(([id, config]) => ({
         divisionId: id,
@@ -340,25 +302,25 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Build all available resource slots based on overlapping periods
-   * Resource slots are built for dates where the event type is allowed
+   * Build all available resource slots based on season dates
+   * Games can only be scheduled from gamesStartDate
+   * Practices and cages can be scheduled for the full season
    */
   private buildResourceSlots(): void {
     this.log('info', 'general', 'Building resource slots');
 
-    const dateRange = this.getMergedDateRange();
-    const allDates = getDateRange(dateRange.startDate, dateRange.endDate);
+    const allDates = getDateRange(this.season.startDate, this.season.endDate);
 
-    // Build game field slots for dates where games are allowed
-    const gameDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'game'));
+    // Build game field slots for dates from gamesStartDate onwards
+    const gameDates = allDates.filter(date => this.isGameDateAllowed(date));
     this.buildFieldSlotsForDates(gameDates, this.gameFieldSlots);
 
-    // Build practice field slots for dates where practices are allowed
-    const practiceDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'practice'));
+    // Build practice field slots for all season dates
+    const practiceDates = allDates.filter(date => this.isPracticeDateAllowed(date));
     this.buildFieldSlotsForDates(practiceDates, this.practiceFieldSlots);
 
-    // Build cage slots for dates where cages are allowed
-    const cageDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'cage'));
+    // Build cage slots for all season dates
+    const cageDates = allDates.filter(date => this.isPracticeDateAllowed(date));
     this.buildCageSlotsForDates(cageDates);
 
     // Log summary of slots by day of week
@@ -491,14 +453,13 @@ export class ScheduleGenerator {
    * Calculate requirements based on the merged period date range
    */
   private buildTeamConstraints(): void {
-    const dateRange = this.getMergedDateRange();
-    const totalWeeks = this.calculateDurationWeeks(dateRange.startDate, dateRange.endDate);
+    const totalWeeks = this.calculateDurationWeeks(this.season.startDate, this.season.endDate);
 
     // Calculate weeks where each event type is allowed
-    const allDates = getDateRange(dateRange.startDate, dateRange.endDate);
-    const gameDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'game'));
-    const practiceDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'practice'));
-    const cageDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, 'cage'));
+    const allDates = getDateRange(this.season.startDate, this.season.endDate);
+    const gameDates = allDates.filter(date => this.isGameDateAllowed(date));
+    const practiceDates = allDates.filter(date => this.isPracticeDateAllowed(date));
+    const cageDates = allDates.filter(date => this.isPracticeDateAllowed(date));
 
     const gameWeeks = Math.max(1, Math.ceil(gameDates.length / 7));
     const practiceWeeks = Math.max(1, Math.ceil(practiceDates.length / 7));
@@ -529,10 +490,8 @@ export class ScheduleGenerator {
    * Initialize draft-based scheduling structures
    */
   private initializeDraftScheduling(): void {
-    const dateRange = this.getMergedDateRange();
-
     // Build week definitions
-    this.weekDefinitions = generateWeekDefinitions(dateRange.startDate, dateRange.endDate);
+    this.weekDefinitions = generateWeekDefinitions(this.season.startDate, this.season.endDate);
 
     // Initialize team scheduling states
     for (const team of this.teams) {
@@ -542,7 +501,8 @@ export class ScheduleGenerator {
       const constraint = this.teamConstraints.get(team.id);
       if (!constraint) continue;
 
-      const state = initializeTeamState(team.id, team.name, team.divisionId, {
+      const divisionName = this.divisionNames.get(team.divisionId) || 'Unknown';
+      const state = initializeTeamState(team.id, team.name, team.divisionId, divisionName, {
         totalGamesNeeded: constraint.requiredGames || 0,
         totalPracticesNeeded: constraint.requiredPractices || 0,
         totalCagesNeeded: constraint.requiredCageSessions || 0,
@@ -574,6 +534,11 @@ export class ScheduleGenerator {
       if (config.gameDayPreferences) {
         this.scoringContext.gameDayPreferences.set(divisionId, config.gameDayPreferences);
       }
+
+      // Set up field preferences
+      if (config.fieldPreferences) {
+        this.scoringContext.fieldPreferences.set(divisionId, config.fieldPreferences);
+      }
     }
 
     // Set up resource capacities (approximate based on availability hours)
@@ -602,26 +567,23 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Get all weeks within the merged period date range
+   * Get all weeks within the season date range
    */
-  private getWeeksInPeriods(): Array<{ startDate: string; endDate: string }> {
-    const dateRange = this.getMergedDateRange();
-    return this.getWeeksInRange(dateRange.startDate, dateRange.endDate);
+  private getWeeksInSeason(): Array<{ startDate: string; endDate: string }> {
+    return this.getWeeksInRange(this.season.startDate, this.season.endDate);
   }
 
   /**
    * Get weeks where a specific event type is allowed
    */
   private getWeeksForEventType(eventType: EventType): Array<{ startDate: string; endDate: string }> {
-    const dateRange = this.getMergedDateRange();
-    const allDates = getDateRange(dateRange.startDate, dateRange.endDate);
-    const allowedDates = allDates.filter(date => this.getEventTypeAllowedOnDate(date, eventType));
-
-    if (allowedDates.length === 0) return [];
-
-    const minDate = allowedDates[0];
-    const maxDate = allowedDates[allowedDates.length - 1];
-    return this.getWeeksInRange(minDate, maxDate);
+    if (eventType === 'game') {
+      // Games can only be scheduled from gamesStartDate onwards
+      return this.getWeeksInRange(this.getGamesStartDate(), this.season.endDate);
+    } else {
+      // Practices and cages can be scheduled for the full season
+      return this.getWeeksInRange(this.season.startDate, this.season.endDate);
+    }
   }
 
   /**
@@ -680,9 +642,9 @@ export class ScheduleGenerator {
     console.log(`Total divisions: ${teamsByDivision.size}`);
     this.log('info', 'game', `Found ${teamsByDivision.size} divisions with teams to schedule games for`);
 
-    // Get weeks where games are allowed
+    // Get weeks where games are allowed (any date >= gamesStartDate)
     const gameWeeks = this.weekDefinitions.filter((week) =>
-      week.dates.some((date) => this.getEventTypeAllowedOnDate(date, 'game'))
+      week.dates.some((date) => this.isGameDateAllowed(date))
     );
     console.log(`Total weeks for games: ${gameWeeks.length}`);
 
@@ -755,14 +717,16 @@ export class ScheduleGenerator {
         this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
       );
 
-      if (weekFieldSlots.length === 0) return false;
-
-      // Get period ID for games on these dates
-      const periodId = week.dates
-        .map((d) => this.getEventTypeAllowedOnDate(d, 'game'))
-        .find((id) => id !== null);
-
-      if (!periodId) return false;
+      if (weekFieldSlots.length === 0) {
+        this.log('warning', 'game', `No compatible field slots for ${team.name} vs ${opponent.name} in week ${week.weekNumber}`, {
+          teamName: team.name,
+          opponentName: opponent.name,
+          divisionId,
+          weekNumber: week.weekNumber,
+          reason: 'no_compatible_field_slots',
+        });
+        return false;
+      }
 
       // Create a matchup object
       const matchup: GameMatchup = {
@@ -777,11 +741,20 @@ export class ScheduleGenerator {
         weekFieldSlots,
         week,
         config.gameDurationHours,
-        periodId,
+        this.season.id,
         this.scoringContext!
       );
 
-      if (candidates.length === 0) return false;
+      if (candidates.length === 0) {
+        this.log('warning', 'game', `No valid time slots for ${team.name} vs ${opponent.name} in week ${week.weekNumber}`, {
+          teamName: team.name,
+          opponentName: opponent.name,
+          weekNumber: week.weekNumber,
+          availableFieldSlots: weekFieldSlots.length,
+          reason: 'all_slots_have_conflicts',
+        });
+        return false;
+      }
 
       // Score all candidates
       const scoredCandidates = candidates.map((c) =>
@@ -791,6 +764,23 @@ export class ScheduleGenerator {
       const bestCandidate = scoredCandidates[0];
 
       if (!bestCandidate) return false;
+
+      // Check if best candidate has severe penalty (sameDayEvent)
+      // Score below -500000 means both teams already have field events that day
+      if (bestCandidate.score < -500000) {
+        const teamFieldDates = Array.from(teamState.fieldDatesUsed);
+        const opponentFieldDates = Array.from(opponentState.fieldDatesUsed);
+        this.log('warning', 'game', `All slots have same-day conflicts for ${team.name} vs ${opponent.name} in week ${week.weekNumber}`, {
+          teamName: team.name,
+          opponentName: opponent.name,
+          weekNumber: week.weekNumber,
+          teamFieldDates: teamFieldDates.filter(d => week.dates.includes(d)),
+          opponentFieldDates: opponentFieldDates.filter(d => week.dates.includes(d)),
+          bestScore: bestCandidate.score,
+          reason: 'same_day_conflicts',
+        });
+        return false;
+      }
 
       // Create the event draft
       const eventDraft = candidateToEventDraft(bestCandidate, divisionId);
@@ -1021,9 +1011,9 @@ export class ScheduleGenerator {
       throw new Error('Scoring context not initialized');
     }
 
-    // Get the WeekDefinitions that have practice dates
+    // Get the WeekDefinitions that have practice dates (all season dates are practice dates)
     const practiceWeeks = this.weekDefinitions.filter((week) =>
-      week.dates.some((date) => this.getEventTypeAllowedOnDate(date, 'practice'))
+      week.dates.some((date) => this.isPracticeDateAllowed(date))
     );
     console.log(`Total weeks for practices: ${practiceWeeks.length}`);
     this.log('info', 'practice', `Scheduling practices across ${practiceWeeks.length} weeks using draft allocation`, {
@@ -1135,15 +1125,6 @@ export class ScheduleGenerator {
             this.isFieldCompatibleWithDivision(rs.resourceId, teamState.divisionId)
           );
 
-          // Get period ID for practices on these dates
-          const periodId = week.dates
-            .map((d) => this.getEventTypeAllowedOnDate(d, 'practice'))
-            .find((id) => id !== null);
-
-          if (!periodId) {
-            continue;
-          }
-
           // Generate placement candidates - enable logging when no candidates found
           let candidates = generateCandidatesForTeamEvent(
             teamState,
@@ -1151,7 +1132,7 @@ export class ScheduleGenerator {
             weekSlots,
             week,
             config.practiceDurationHours,
-            periodId,
+            this.season.id,
             this.scoringContext,
             false // Initial call without logging
           );
@@ -1169,7 +1150,7 @@ export class ScheduleGenerator {
               weekSlots,
               week,
               config.practiceDurationHours,
-              periodId,
+              this.season.id,
               this.scoringContext,
               true // Enable detailed logging
             );
@@ -1302,19 +1283,21 @@ export class ScheduleGenerator {
       if (teamState.practicesScheduled < totalNeeded) {
         this.warnings.push({
           type: 'insufficient_resources',
-          message: `Team ${teamState.teamName} only got ${teamState.practicesScheduled}/${totalNeeded} practices`,
+          message: `Team ${teamState.teamName} (${teamState.divisionName}) only got ${teamState.practicesScheduled}/${totalNeeded} practices`,
           details: {
             teamId: teamState.teamId,
+            divisionName: teamState.divisionName,
             scheduled: teamState.practicesScheduled,
             needed: totalNeeded,
           },
         });
 
         // Log at error level for easy filtering - summary of total shortfall
-        this.log('error', 'practice', `Practice requirement not met for ${teamState.teamName}: ${teamState.practicesScheduled}/${totalNeeded} practices scheduled`, {
+        this.log('error', 'practice', `Practice requirement not met for ${teamState.teamName} (${teamState.divisionName}): ${teamState.practicesScheduled}/${totalNeeded} practices scheduled`, {
           teamId: teamState.teamId,
           teamName: teamState.teamName,
           divisionId: teamState.divisionId,
+          divisionName: teamState.divisionName,
           practicesScheduled: teamState.practicesScheduled,
           practicesNeeded: totalNeeded,
           practicesPerWeek: config.practicesPerWeek,
@@ -1393,13 +1376,10 @@ export class ScheduleGenerator {
       );
 
       if (availableTime) {
-        const periodId = this.getEventTypeAllowedOnDate(rs.slot.date, 'practice');
-        if (!periodId) continue;
-
         console.log(`      ✅ Chose slot: ${rs.slot.date} ${availableTime.startTime}-${availableTime.endTime} at field ${rs.resourceId}`);
 
         this.scheduledEvents.push({
-          seasonPeriodId: periodId,
+          seasonId: this.season.id,
           divisionId,
           eventType: 'practice',
           date: rs.slot.date,
@@ -1507,13 +1487,9 @@ export class ScheduleGenerator {
         const cageConflict = this.hasResourceConflict(cageSlot.resourceId, 'cage', date, cageStart, cageEnd);
 
         if (!fieldConflict && !cageConflict) {
-          const practicePeriodId = this.getEventTypeAllowedOnDate(date, 'practice');
-          const cagePeriodId = this.getEventTypeAllowedOnDate(date, 'cage');
-          if (!practicePeriodId || !cagePeriodId) continue;
-
           // Schedule both events
           this.scheduledEvents.push({
-            seasonPeriodId: practicePeriodId,
+            seasonId: this.season.id,
             divisionId,
             eventType: 'practice',
             date,
@@ -1524,7 +1500,7 @@ export class ScheduleGenerator {
           });
 
           this.scheduledEvents.push({
-            seasonPeriodId: cagePeriodId,
+            seasonId: this.season.id,
             divisionId,
             eventType: 'cage',
             date,
@@ -1547,13 +1523,9 @@ export class ScheduleGenerator {
         const cageConflictAlt = this.hasResourceConflict(cageSlot.resourceId, 'cage', date, cageStartAlt, cageEndAlt);
 
         if (!fieldConflictAlt && !cageConflictAlt) {
-          const practicePeriodId = this.getEventTypeAllowedOnDate(date, 'practice');
-          const cagePeriodId = this.getEventTypeAllowedOnDate(date, 'cage');
-          if (!practicePeriodId || !cagePeriodId) continue;
-
           // Schedule both events (cage first)
           this.scheduledEvents.push({
-            seasonPeriodId: cagePeriodId,
+            seasonId: this.season.id,
             divisionId,
             eventType: 'cage',
             date,
@@ -1564,7 +1536,7 @@ export class ScheduleGenerator {
           });
 
           this.scheduledEvents.push({
-            seasonPeriodId: practicePeriodId,
+            seasonId: this.season.id,
             divisionId,
             eventType: 'practice',
             date,
@@ -1613,9 +1585,9 @@ export class ScheduleGenerator {
       throw new Error('Scoring context not initialized');
     }
 
-    // Get the WeekDefinitions that have cage dates
+    // Get the WeekDefinitions that have cage dates (all season dates allow cages)
     const cageWeeks = this.weekDefinitions.filter((week) =>
-      week.dates.some((date) => this.getEventTypeAllowedOnDate(date, 'cage'))
+      week.dates.some((date) => this.isPracticeDateAllowed(date))
     );
     console.log(`Total weeks for cages: ${cageWeeks.length}`);
     this.log('info', 'cage', `Scheduling cage sessions across ${cageWeeks.length} weeks using draft allocation`, {
@@ -1695,15 +1667,6 @@ export class ScheduleGenerator {
               resourceType: 'cage' as const,
             }));
 
-          // Get period ID for cages on these dates
-          const periodId = week.dates
-            .map((d) => this.getEventTypeAllowedOnDate(d, 'cage'))
-            .find((id) => id !== null);
-
-          if (!periodId) {
-            continue;
-          }
-
           const cageSessionDuration = config.cageSessionDurationHours ?? 1;
 
           // Generate placement candidates
@@ -1713,7 +1676,7 @@ export class ScheduleGenerator {
             weekSlots,
             week,
             cageSessionDuration,
-            periodId,
+            this.season.id,
             this.scoringContext
           );
 
@@ -1829,19 +1792,21 @@ export class ScheduleGenerator {
       if (teamState.cagesScheduled < totalNeeded) {
         this.warnings.push({
           type: 'insufficient_resources',
-          message: `Team ${teamState.teamName} only got ${teamState.cagesScheduled}/${totalNeeded} cage sessions`,
+          message: `Team ${teamState.teamName} (${teamState.divisionName}) only got ${teamState.cagesScheduled}/${totalNeeded} cage sessions`,
           details: {
             teamId: teamState.teamId,
+            divisionName: teamState.divisionName,
             scheduled: teamState.cagesScheduled,
             needed: totalNeeded,
           },
         });
 
         // Log at error level for easy filtering - summary of total shortfall
-        this.log('error', 'cage', `Cage requirement not met for ${teamState.teamName}: ${teamState.cagesScheduled}/${totalNeeded} cage sessions scheduled`, {
+        this.log('error', 'cage', `Cage requirement not met for ${teamState.teamName} (${teamState.divisionName}): ${teamState.cagesScheduled}/${totalNeeded} cage sessions scheduled`, {
           teamId: teamState.teamId,
           teamName: teamState.teamName,
           divisionId: teamState.divisionId,
+          divisionName: teamState.divisionName,
           cagesScheduled: teamState.cagesScheduled,
           cagesNeeded: totalNeeded,
           cagesPerWeek: config.cageSessionsPerWeek,
@@ -1923,13 +1888,10 @@ export class ScheduleGenerator {
       );
 
       if (result.time) {
-        const periodId = this.getEventTypeAllowedOnDate(rs.slot.date, 'cage');
-        if (!periodId) continue;
-
         console.log(`      ✅ Chose slot: ${rs.slot.date} ${result.time.startTime}-${result.time.endTime} at cage ${rs.resourceId}`);
 
         this.scheduledEvents.push({
-          seasonPeriodId: periodId,
+          seasonId: this.season.id,
           divisionId,
           eventType: 'cage',
           date: rs.slot.date,

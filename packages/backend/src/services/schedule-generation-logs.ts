@@ -7,7 +7,6 @@ import { generateId } from '../utils/id.js';
 interface ScheduleGenerationLogRow {
   id: string;
   season_id: string;
-  period_ids: string;
   success: number;
   events_created: number;
   message: string | null;
@@ -22,7 +21,6 @@ function rowToScheduleGenerationLog(row: ScheduleGenerationLogRow): ScheduleGene
   return {
     id: row.id,
     seasonId: row.season_id,
-    periodIds: JSON.parse(row.period_ids),
     success: row.success === 1,
     eventsCreated: row.events_created,
     message: row.message || undefined,
@@ -37,7 +35,6 @@ function rowToScheduleGenerationLog(row: ScheduleGenerationLogRow): ScheduleGene
 export async function saveScheduleGenerationLog(
   db: D1Database,
   seasonId: string,
-  periodIds: string[],
   result: GenerateScheduleResult
 ): Promise<ScheduleGenerationLog> {
   const id = generateId();
@@ -46,14 +43,13 @@ export async function saveScheduleGenerationLog(
   await db
     .prepare(
       `INSERT INTO schedule_generation_logs (
-        id, season_id, period_ids, success, events_created, message,
+        id, season_id, success, events_created, message,
         statistics, log, errors, warnings, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
       seasonId,
-      JSON.stringify(periodIds),
       result.success ? 1 : 0,
       result.eventsCreated,
       result.message || null,

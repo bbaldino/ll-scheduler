@@ -42,6 +42,7 @@ export interface DivisionConfig {
   minConsecutiveDayGap?: number; // Minimum days between practices/games for a team
   cageSessionsPerWeek?: number; // Batting cage sessions per week (null = no cage time)
   cageSessionDurationHours?: number; // Duration of cage sessions in hours (default 1)
+  fieldPreferences?: string[]; // Ordered list of field IDs, first = most preferred
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +58,7 @@ export interface CreateDivisionConfigInput {
   minConsecutiveDayGap?: number;
   cageSessionsPerWeek?: number;
   cageSessionDurationHours?: number;
+  fieldPreferences?: string[];
 }
 
 export interface UpdateDivisionConfigInput {
@@ -68,4 +70,5 @@ export interface UpdateDivisionConfigInput {
   minConsecutiveDayGap?: number;
   cageSessionsPerWeek?: number;
   cageSessionDurationHours?: number;
+  fieldPreferences?: string[];
 }

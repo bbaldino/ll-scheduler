@@ -9,7 +9,6 @@ import {
   updateScheduledEvent,
   deleteScheduledEvent,
 } from '../api/scheduled-events';
-import { fetchSeasonPeriods } from '../api/season-periods';
 import { fetchDivisions } from '../api/divisions';
 import { fetchTeams } from '../api/teams';
 import { fetchSeasonFields } from '../api/fields';
@@ -19,7 +18,6 @@ import type {
   ScheduledEvent,
   CreateScheduledEventInput,
   UpdateScheduledEventInput,
-  SeasonPeriod,
   Division,
   Team,
   SeasonField,
@@ -46,7 +44,6 @@ const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
 export default function ScheduledEventsPage() {
   const { currentSeason } = useSeason();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
-  const [seasonPeriods, setSeasonPeriods] = useState<SeasonPeriod[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [seasonFields, setSeasonFields] = useState<SeasonField[]>([]);
@@ -56,7 +53,6 @@ export default function ScheduledEventsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Filter state
-  const [filterPeriod, setFilterPeriod] = useState<string>('');
   const [filterDivision, setFilterDivision] = useState<string>('');
   const [filterType, setFilterType] = useState<EventType | ''>('');
   const [filterTeam, setFilterTeam] = useState<string>('');
@@ -69,7 +65,7 @@ export default function ScheduledEventsPage() {
   const [isEvaluating, setIsEvaluating] = useState(false);
 
   const [formData, setFormData] = useState<CreateScheduledEventInput>({
-    seasonPeriodId: '',
+    seasonId: '',
     divisionId: '',
     eventType: 'practice',
     date: '',
@@ -90,19 +86,17 @@ export default function ScheduledEventsPage() {
     if (currentSeason) {
       loadEvents();
     }
-  }, [currentSeason, filterPeriod, filterDivision, filterType]);
+  }, [currentSeason, filterDivision, filterType]);
 
   const loadData = async () => {
     if (!currentSeason) return;
     try {
-      const [periodsData, divisionsData, teamsData, fieldsData, cagesData] = await Promise.all([
-        fetchSeasonPeriods(currentSeason.id),
+      const [divisionsData, teamsData, fieldsData, cagesData] = await Promise.all([
         fetchDivisions(),
         fetchTeams(currentSeason.id),
         fetchSeasonFields(currentSeason.id),
         fetchSeasonCages(currentSeason.id),
       ]);
-      setSeasonPeriods(periodsData);
       setDivisions(divisionsData);
       setTeams(teamsData);
       setSeasonFields(fieldsData);
@@ -116,7 +110,7 @@ export default function ScheduledEventsPage() {
     if (!currentSeason) return;
     try {
       const data = await fetchScheduledEvents({
-        seasonPeriodId: filterPeriod || undefined,
+        seasonId: currentSeason.id,
         divisionId: filterDivision || undefined,
         eventType: filterType || undefined,
       });
@@ -195,7 +189,7 @@ export default function ScheduledEventsPage() {
 
   const resetForm = () => {
     setFormData({
-      seasonPeriodId: '',
+      seasonId: currentSeason?.id || '',
       divisionId: '',
       eventType: 'practice',
       date: '',
@@ -206,15 +200,14 @@ export default function ScheduledEventsPage() {
   };
 
   const handleEvaluate = async () => {
-    if (seasonPeriods.length === 0) {
-      alert('No season periods available to evaluate');
+    if (!currentSeason) {
+      alert('No season selected');
       return;
     }
 
     setIsEvaluating(true);
     try {
-      const periodIds = seasonPeriods.map((p) => p.id);
-      const result = await evaluateSchedule(periodIds);
+      const result = await evaluateSchedule(currentSeason.id);
       setEvaluationResult(result);
     } catch (error) {
       console.error('Failed to evaluate schedule:', error);
@@ -245,9 +238,6 @@ export default function ScheduledEventsPage() {
     return divisions.find((d) => d.id === divisionId)?.name || 'Unknown';
   };
 
-  const getPeriodName = (periodId: string) => {
-    return seasonPeriods.find((p) => p.id === periodId)?.name || 'Unknown';
-  };
 
   if (!currentSeason) {
     return (
@@ -308,17 +298,6 @@ export default function ScheduledEventsPage() {
       </div>
 
       <div className={styles.filters}>
-        <div className={styles.filterGroup}>
-          <label>Period:</label>
-          <select value={filterPeriod} onChange={(e) => setFilterPeriod(e.target.value)}>
-            <option value="">All Periods</option>
-            {seasonPeriods.map((period) => (
-              <option key={period.id} value={period.id}>
-                {period.name}
-              </option>
-            ))}
-          </select>
-        </div>
         <div className={styles.filterGroup}>
           <label>Division:</label>
           <select value={filterDivision} onChange={(e) => setFilterDivision(e.target.value)}>
@@ -388,21 +367,6 @@ export default function ScheduledEventsPage() {
                 <option value="practice">Practice</option>
                 <option value="game">Game</option>
                 <option value="cage">Cage Time</option>
-              </select>
-            </div>
-            <div className={styles.formGroup}>
-              <label>Season Period *</label>
-              <select
-                value={formData.seasonPeriodId}
-                onChange={(e) => setFormData({ ...formData, seasonPeriodId: e.target.value })}
-                required
-              >
-                <option value="">Select Period</option>
-                {seasonPeriods.map((period) => (
-                  <option key={period.id} value={period.id}>
-                    {period.name}
-                  </option>
-                ))}
               </select>
             </div>
             <div className={styles.formGroup}>
@@ -802,9 +766,6 @@ export default function ScheduledEventsPage() {
                         <div className={styles.eventDetails}>
                           <p>
                             <strong>Division:</strong> {getDivisionName(event.divisionId)}
-                          </p>
-                          <p>
-                            <strong>Period:</strong> {getPeriodName(event.seasonPeriodId)}
                           </p>
                           {event.eventType === 'game' && (
                             <>

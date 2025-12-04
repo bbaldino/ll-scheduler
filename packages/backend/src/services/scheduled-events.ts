@@ -10,7 +10,7 @@ import { generateId } from '../utils/id.js';
 
 interface ScheduledEventRow {
   id: string;
-  season_period_id: string;
+  season_id: string;
   division_id: string;
   event_type: EventType;
   date: string;
@@ -30,7 +30,7 @@ interface ScheduledEventRow {
 function rowToScheduledEvent(row: ScheduledEventRow): ScheduledEvent {
   return {
     id: row.id,
-    seasonPeriodId: row.season_period_id,
+    seasonId: row.season_id,
     divisionId: row.division_id,
     eventType: row.event_type,
     date: row.date,
@@ -55,14 +55,9 @@ export async function listScheduledEvents(
   const conditions: string[] = [];
   const params: any[] = [];
 
-  if (query.seasonPeriodId) {
-    conditions.push('season_period_id = ?');
-    params.push(query.seasonPeriodId);
-  }
-  if (query.seasonPeriodIds && query.seasonPeriodIds.length > 0) {
-    const placeholders = query.seasonPeriodIds.map(() => '?').join(',');
-    conditions.push(`season_period_id IN (${placeholders})`);
-    params.push(...query.seasonPeriodIds);
+  if (query.seasonId) {
+    conditions.push('season_id = ?');
+    params.push(query.seasonId);
   }
   if (query.divisionId) {
     conditions.push('division_id = ?');
@@ -131,7 +126,7 @@ export async function createScheduledEvent(
 
   const bindValues = [
     id,
-    input.seasonPeriodId,
+    input.seasonId,
     input.divisionId,
     input.eventType,
     input.date,
@@ -151,7 +146,7 @@ export async function createScheduledEvent(
   await db
     .prepare(
       `INSERT INTO scheduled_events (
-        id, season_period_id, division_id, event_type, date, start_time, end_time,
+        id, season_id, division_id, event_type, date, start_time, end_time,
         status, notes, field_id, cage_id, home_team_id, away_team_id, team_id,
         created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`

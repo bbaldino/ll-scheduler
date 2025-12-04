@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import seasonsRouter from './routes/seasons.js';
-import seasonPeriodsRouter from './routes/season-periods.js';
 import divisionsRouter from './routes/divisions.js';
 import divisionConfigsRouter from './routes/division-configs.js';
 import fieldsRouter from './routes/fields.js';
@@ -35,7 +34,6 @@ app.get('/health', (c) => {
 
 // API routes
 app.route('/api/seasons', seasonsRouter);
-app.route('/api/season-periods', seasonPeriodsRouter);
 app.route('/api/divisions', divisionsRouter);
 app.route('/api/division-configs', divisionConfigsRouter);
 app.route('/api/fields', fieldsRouter);

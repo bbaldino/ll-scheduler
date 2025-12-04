@@ -1,10 +1,10 @@
 import type { EventType } from './season.js';
 
 /**
- * Request to generate a schedule for selected season periods
+ * Request to generate a schedule for a season
  */
 export interface GenerateScheduleRequest {
-  periodIds: string[]; // Season periods to generate schedule for
+  seasonId: string; // Season to generate schedule for
   divisionIds?: string[]; // Optional: only generate for specific divisions
   clearExisting?: boolean; // If true, delete existing events before generating
   maxAttempts?: number; // Maximum number of generation attempts (default: 10)
@@ -144,11 +144,11 @@ export interface GameMatchup {
  * Internal scheduling state used during generation
  */
 export interface SchedulingState {
-  phase: {
+  season: {
     id: string;
     startDate: string;
     endDate: string;
-    allowedEventTypes: EventType[];
+    gamesStartDate: string; // Games can only be scheduled from this date
   };
   teams: TeamConstraint[];
   resourceSlots: ResourceSlot[];
@@ -161,7 +161,7 @@ export interface SchedulingState {
  * Draft of a scheduled event (before saving to database)
  */
 export interface ScheduledEventDraft {
-  seasonPeriodId: string;
+  seasonId: string;
   divisionId: string;
   eventType: EventType;
   date: string;
@@ -180,7 +180,6 @@ export interface ScheduledEventDraft {
 export interface ScheduleGenerationLog {
   id: string;
   seasonId: string;
-  periodIds: string[];
   success: boolean;
   eventsCreated: number;
   message?: string;
@@ -215,6 +214,7 @@ export interface ScoringWeights {
   dayGap: number; // Prefer spacing events apart (1 = 2+ day gap, 0.5 = consecutive)
   timeAdjacency: number; // Prefer slots adjacent to existing events (pack events together)
   earliestTime: number; // For games: prefer earlier start times
+  fieldPreference: number; // Prefer division's preferred fields (1 = most preferred, 0 = not in list)
 
   // Binary penalty factor (rawScore 0 or 1, negative weight penalizes when true)
   sameDayEvent: number; // Penalize when team already has same-type event on this date
@@ -240,6 +240,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   dayGap: 100,
   timeAdjacency: 150, // Strong preference for packing events together
   earliestTime: 200, // Strong preference for earlier game times
+  fieldPreference: 300, // Strong preference for division's preferred fields
 
   // Penalty factors
   sameDayEvent: -1000000, // Effectively a hard constraint - teams can't have two field events on same day
@@ -260,7 +261,7 @@ export interface PlacementCandidate {
   resourceId: string;
   resourceName: string;
   resourceType: 'field' | 'cage';
-  seasonPeriodId: string;
+  seasonId: string;
   // For games
   homeTeamId?: string;
   awayTeamId?: string;
@@ -283,6 +284,7 @@ export interface ScoredCandidate extends PlacementCandidate {
     dayGap: number;
     timeAdjacency: number;
     earliestTime: number;
+    fieldPreference: number;
     sameDayEvent: number;
     scarcity: number;
     sameDayCageFieldGap: number;
@@ -297,6 +299,7 @@ export interface TeamSchedulingState {
   teamId: string;
   teamName: string;
   divisionId: string;
+  divisionName: string;
   // Requirements tracking
   totalGamesNeeded: number;
   totalPracticesNeeded: number;

@@ -13,12 +13,8 @@ const router = new Hono<{ Bindings: Env }>();
 
 // GET /api/scheduled-events - List scheduled events with optional filters
 router.get('/', async (c) => {
-  // Support seasonPeriodIds as array from query params
-  const seasonPeriodIdsParam = c.req.queries('seasonPeriodIds');
-
   const query: ScheduledEventQuery = {
-    seasonPeriodId: c.req.query('seasonPeriodId'),
-    seasonPeriodIds: seasonPeriodIdsParam && seasonPeriodIdsParam.length > 0 ? seasonPeriodIdsParam : undefined,
+    seasonId: c.req.query('seasonId'),
     divisionId: c.req.query('divisionId'),
     teamId: c.req.query('teamId'),
     fieldId: c.req.query('fieldId'),

@@ -53,12 +53,12 @@ export async function generateSchedule(
 }
 
 export async function evaluateSchedule(
-  periodIds: string[]
+  seasonId: string
 ): Promise<ScheduleEvaluationResult> {
   const response = await fetch(`${API_BASE}/schedule-generator/evaluate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ periodIds }),
+    body: JSON.stringify({ seasonId }),
   });
 
   if (!response.ok) {
