@@ -194,6 +194,12 @@ export default function ScheduleGeneratorPage() {
               {result.errors.map((error, index) => (
                 <div key={index} className={styles.errorItem}>
                   <strong>{error.type}:</strong> {error.message}
+                  {error.summary && (
+                    <details className={styles.itemDetails}>
+                      <summary>Details</summary>
+                      <div className={styles.itemSummary}>{error.summary}</div>
+                    </details>
+                  )}
                 </div>
               ))}
             </div>
@@ -205,6 +211,12 @@ export default function ScheduleGeneratorPage() {
               {result.warnings.map((warning, index) => (
                 <div key={index} className={styles.warningItem}>
                   <strong>{warning.type}:</strong> {warning.message}
+                  {warning.summary && (
+                    <details className={styles.itemDetails}>
+                      <summary>Details</summary>
+                      <div className={styles.itemSummary}>{warning.summary}</div>
+                    </details>
+                  )}
                 </div>
               ))}
             </div>
@@ -257,9 +269,15 @@ export default function ScheduleGeneratorPage() {
                         <span className={styles.logLevel}>{entry.level.toUpperCase()}</span>
                         <span className={styles.logCategory}>[{entry.category}]</span>
                         <span className={styles.logMessage}>{entry.message}</span>
+                        {entry.summary && (
+                          <details className={styles.logDetails}>
+                            <summary>Summary</summary>
+                            <div className={styles.logSummary}>{entry.summary}</div>
+                          </details>
+                        )}
                         {entry.details && (
                           <details className={styles.logDetails}>
-                            <summary>Details</summary>
+                            <summary>Raw Details</summary>
                             <pre>{JSON.stringify(entry.details, null, 2)}</pre>
                           </details>
                         )}

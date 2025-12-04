@@ -37,6 +37,8 @@ export interface SchedulingLogEntry {
   level: 'info' | 'warning' | 'error' | 'debug';
   category: 'game' | 'practice' | 'cage' | 'resource' | 'general';
   message: string;
+  /** Human-readable summary explaining the situation in plain language */
+  summary?: string;
   details?: {
     teamId?: string;
     teamName?: string;
@@ -56,6 +58,8 @@ export interface SchedulingLogEntry {
 export interface ScheduleError {
   type: ScheduleErrorType;
   message: string;
+  /** Human-readable summary explaining the error in plain language */
+  summary?: string;
   details?: Record<string, any>;
 }
 
@@ -74,6 +78,8 @@ export type ScheduleErrorType =
 export interface ScheduleWarning {
   type: ScheduleWarningType;
   message: string;
+  /** Human-readable summary explaining the warning in plain language */
+  summary?: string;
   details?: Record<string, any>;
 }
 
