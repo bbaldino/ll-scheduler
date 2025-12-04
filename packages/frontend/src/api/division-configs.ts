@@ -3,8 +3,7 @@ import type {
   CreateDivisionConfigInput,
   UpdateDivisionConfigInput,
 } from '@ll-scheduler/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export async function fetchDivisionConfigs(seasonId: string): Promise<DivisionConfig[]> {
   const response = await fetch(`${API_BASE}/division-configs?seasonId=${seasonId}`);

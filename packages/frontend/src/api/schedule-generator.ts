@@ -4,8 +4,7 @@ import type {
   ScheduleEvaluationResult,
   ScheduleGenerationLog,
 } from '@ll-scheduler/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export async function fetchLatestGenerationLog(
   seasonId: string

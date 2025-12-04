@@ -4,8 +4,7 @@ import type {
   UpdateScheduledEventInput,
   ScheduledEventQuery,
 } from '@ll-scheduler/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export async function fetchScheduledEvents(
   query: ScheduledEventQuery = {}

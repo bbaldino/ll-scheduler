@@ -1,6 +1,5 @@
 import type { Season, CreateSeasonInput, UpdateSeasonInput } from '@ll-scheduler/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 async function fetchWithRetry(url: string, options?: RequestInit, retries = 3, delay = 500): Promise<Response> {
   for (let i = 0; i < retries; i++) {

@@ -12,8 +12,7 @@ import type {
   CreateCageDateOverrideInput,
   UpdateCageDateOverrideInput,
 } from '@ll-scheduler/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 // ============================================================
 // Global Batting Cages API

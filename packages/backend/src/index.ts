@@ -23,7 +23,18 @@ const app = new Hono<{ Bindings: Env }>();
 
 // CORS middleware
 app.use('/*', cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'], // Add production URL later
+  origin: (origin) => {
+    // Allow localhost for development
+    if (origin?.startsWith('http://localhost:')) {
+      return origin;
+    }
+    // Allow Cloudflare Pages domains (production and preview deployments)
+    if (origin?.endsWith('.pages.dev') || origin?.endsWith('.ll-scheduler.pages.dev')) {
+      return origin;
+    }
+    // Return null to reject other origins
+    return null;
+  },
   credentials: true,
 }));
 

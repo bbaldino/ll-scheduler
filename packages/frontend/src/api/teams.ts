@@ -1,6 +1,5 @@
 import type { Team, CreateTeamInput, UpdateTeamInput } from '@ll-scheduler/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export async function fetchTeams(seasonId: string): Promise<Team[]> {
   const response = await fetch(`${API_BASE}/teams?seasonId=${seasonId}`);
