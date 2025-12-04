@@ -356,6 +356,29 @@
   color: #333;
 }
 
+.summaryContent {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  border-left: 3px solid #666;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.logEntry.error .summaryContent {
+  border-left-color: #f44336;
+}
+
+.logEntry.warning .summaryContent {
+  border-left-color: #ff9800;
+}
+
+.logEntry.info .summaryContent {
+  border-left-color: #2196f3;
+}
+
 .detailsContent {
   margin-top: 0.5rem;
   padding: 0.75rem;

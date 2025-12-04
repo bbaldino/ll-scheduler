@@ -239,9 +239,15 @@ export default function GenerationLogsPage() {
                         <span className={styles.logCategory}>{entry.category}</span>
                       </div>
                       <div className={styles.logMessage}>{entry.message}</div>
+                      {entry.summary && (
+                        <details className={styles.logDetails}>
+                          <summary>Summary</summary>
+                          <div className={styles.summaryContent}>{entry.summary}</div>
+                        </details>
+                      )}
                       {entry.details && Object.keys(entry.details).length > 0 && (
                         <details className={styles.logDetails}>
-                          <summary>Details</summary>
+                          <summary>Raw Details</summary>
                           <div className={styles.detailsContent}>
                             {Object.entries(entry.details).map(([key, value]) => (
                               <div key={key} className={styles.detailItem}>
