@@ -22,7 +22,7 @@ import type {
 import styles from './SeasonsPage.module.css';
 
 export default function SeasonsPage() {
-  const { seasons, refreshSeasons } = useSeason();
+  const { seasons, refreshSeasons, currentSeason, setCurrentSeason } = useSeason();
   const [isCreating, setIsCreating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<CreateSeasonInput>({
@@ -129,6 +129,10 @@ export default function SeasonsPage() {
     setIsSubmitting(true);
     try {
       await deleteSeason(id);
+      // If we deleted the currently selected season, clear the selection
+      if (currentSeason?.id === id) {
+        setCurrentSeason(null);
+      }
       await refreshSeasons();
     } catch (error) {
       console.error('Failed to delete season:', error);
