@@ -117,6 +117,219 @@ export function generateWeekDefinitions(startDate: string, endDate: string): Wee
 }
 
 /**
+ * Round-robin matchup for a single round
+ */
+export interface RoundMatchup {
+  homeTeamId: string;
+  awayTeamId: string;
+}
+
+/**
+ * A complete round in round-robin scheduling
+ */
+export interface ScheduleRound {
+  roundNumber: number;
+  matchups: RoundMatchup[];
+}
+
+/**
+ * Generate round-robin matchups for a list of teams.
+ * Uses the circle method: fix one team, rotate others.
+ * Tracks home/away per pairing AND per team to ensure global balance.
+ *
+ * For n teams:
+ * - If n is even: n-1 rounds, n/2 games per round
+ * - If n is odd: n rounds, (n-1)/2 games per round (one team has bye each round)
+ *
+ * @param teamIds - Array of team IDs in the division
+ * @param gamesPerMatchup - How many times each pair should play (default 1 for single round-robin, 2 for double)
+ * @returns Array of schedule rounds with matchups
+ */
+export function generateRoundRobinMatchups(
+  teamIds: string[],
+  gamesPerMatchup: number = 1
+): ScheduleRound[] {
+  if (teamIds.length < 2) {
+    return [];
+  }
+
+  const teams = [...teamIds];
+
+  // For odd number of teams, add a "BYE" placeholder
+  const hasBye = teams.length % 2 === 1;
+  if (hasBye) {
+    teams.push('BYE');
+  }
+
+  const n = teams.length;
+  const roundsPerCycle = n - 1;
+  const gamesPerRound = n / 2;
+
+  const allRounds: ScheduleRound[] = [];
+
+  // Track home/away count per pairing to ensure pairing balance
+  const pairingHomeCount = new Map<string, Map<string, number>>();
+
+  // Track global home/away count per team to ensure overall balance
+  const globalHomeCount = new Map<string, number>();
+  const globalAwayCount = new Map<string, number>();
+  for (const team of teams) {
+    if (team !== 'BYE') {
+      globalHomeCount.set(team, 0);
+      globalAwayCount.set(team, 0);
+    }
+  }
+
+  const getPairingKey = (t1: string, t2: string): string => {
+    return t1 < t2 ? `${t1}-${t2}` : `${t2}-${t1}`;
+  };
+
+  const getHomeTeam = (t1: string, t2: string): string => {
+    const key = getPairingKey(t1, t2);
+    if (!pairingHomeCount.has(key)) {
+      pairingHomeCount.set(key, new Map([[t1, 0], [t2, 0]]));
+    }
+    const counts = pairingHomeCount.get(key)!;
+    const t1PairingHome = counts.get(t1) || 0;
+    const t2PairingHome = counts.get(t2) || 0;
+
+    // First priority: balance within this pairing
+    let homeTeam: string;
+    if (t1PairingHome < t2PairingHome) {
+      homeTeam = t1;
+    } else if (t2PairingHome < t1PairingHome) {
+      homeTeam = t2;
+    } else {
+      // Pairing is tied - use global balance as tiebreaker
+      // Give home to the team with fewer total home games
+      const t1GlobalHome = globalHomeCount.get(t1) || 0;
+      const t2GlobalHome = globalHomeCount.get(t2) || 0;
+
+      if (t1GlobalHome < t2GlobalHome) {
+        homeTeam = t1;
+      } else if (t2GlobalHome < t1GlobalHome) {
+        homeTeam = t2;
+      } else {
+        // Both tied - alternate based on total meetings in this pairing
+        const totalMeetings = t1PairingHome + t2PairingHome;
+        homeTeam = totalMeetings % 2 === 0 ? (t1 < t2 ? t1 : t2) : (t1 < t2 ? t2 : t1);
+      }
+    }
+
+    const awayTeam = homeTeam === t1 ? t2 : t1;
+
+    // Update pairing counts
+    counts.set(homeTeam, (counts.get(homeTeam) || 0) + 1);
+
+    // Update global counts
+    globalHomeCount.set(homeTeam, (globalHomeCount.get(homeTeam) || 0) + 1);
+    globalAwayCount.set(awayTeam, (globalAwayCount.get(awayTeam) || 0) + 1);
+
+    return homeTeam;
+  };
+
+  // Generate rounds for each cycle (gamesPerMatchup cycles total)
+  for (let cycle = 0; cycle < gamesPerMatchup; cycle++) {
+    // Create a working copy of teams for rotation
+    // Fix the first team, rotate the rest
+    const fixed = teams[0];
+    let rotating = teams.slice(1);
+
+    for (let round = 0; round < roundsPerCycle; round++) {
+      const matchups: RoundMatchup[] = [];
+      const roundNumber = cycle * roundsPerCycle + round;
+
+      // Build the current round's list
+      const currentOrder = [fixed, ...rotating];
+
+      for (let i = 0; i < gamesPerRound; i++) {
+        const team1 = currentOrder[i];
+        const team2 = currentOrder[n - 1 - i];
+
+        // Skip BYE matchups
+        if (team1 === 'BYE' || team2 === 'BYE') {
+          continue;
+        }
+
+        // Determine home team based on pairing and global history
+        const homeTeam = getHomeTeam(team1, team2);
+        const awayTeam = homeTeam === team1 ? team2 : team1;
+
+        matchups.push({
+          homeTeamId: homeTeam,
+          awayTeamId: awayTeam,
+        });
+      }
+
+      allRounds.push({
+        roundNumber,
+        matchups,
+      });
+
+      // Rotate: move last element to position 1
+      rotating = [rotating[rotating.length - 1], ...rotating.slice(0, -1)];
+    }
+  }
+
+  return allRounds;
+}
+
+/**
+ * Flatten round-robin rounds into a simple list of GameMatchups with week targets.
+ * This assigns each round to a week, spreading matchups evenly across the season.
+ *
+ * @param rounds - The generated round-robin rounds
+ * @param divisionId - Division ID for the matchups
+ * @param totalWeeks - Total number of weeks in the game season
+ * @param gamesPerTeamPerWeek - Target games per team per week
+ * @returns Array of matchups with target week assignments
+ */
+export function assignMatchupsToWeeks(
+  rounds: ScheduleRound[],
+  divisionId: string,
+  totalWeeks: number,
+  gamesPerTeamPerWeek: number
+): Array<GameMatchup & { targetWeek: number }> {
+  const result: Array<GameMatchup & { targetWeek: number }> = [];
+
+  if (rounds.length === 0 || totalWeeks === 0) {
+    return result;
+  }
+
+  // Calculate how to distribute rounds across weeks
+  // Each round represents one game per team (approximately)
+  // With gamesPerTeamPerWeek, we should pack that many rounds per week
+
+  let currentWeek = 0;
+  let gamesThisWeek = 0;
+
+  // Estimate games per team per round (for divisions with even teams, it's 1)
+  const teamsPerRound = rounds[0]?.matchups.length * 2 || 2;
+  const gamesPerTeamPerRound = 1; // In round-robin, each team plays once per round
+
+  for (const round of rounds) {
+    for (const matchup of round.matchups) {
+      result.push({
+        homeTeamId: matchup.homeTeamId,
+        awayTeamId: matchup.awayTeamId,
+        divisionId,
+        targetWeek: currentWeek,
+      });
+    }
+
+    gamesThisWeek += gamesPerTeamPerRound;
+
+    // Move to next week if we've filled this one
+    if (gamesThisWeek >= gamesPerTeamPerWeek && currentWeek < totalWeeks - 1) {
+      currentWeek++;
+      gamesThisWeek = 0;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Initialize team scheduling state
  */
 export function initializeTeamState(
@@ -395,8 +608,7 @@ export function generateCandidatesForGame(
         continue;
       }
 
-      // Generate both home/away assignments as separate candidates
-      // The scoring system will prefer the one that balances better
+      // Use the home/away assignment from the matchup (determined by round-robin)
       candidates.push({
         eventType: 'game',
         date: slot.slot.date,
@@ -409,21 +621,6 @@ export function generateCandidatesForGame(
         seasonId,
         homeTeamId: matchup.homeTeamId,
         awayTeamId: matchup.awayTeamId,
-      });
-
-      // Also consider swapped home/away
-      candidates.push({
-        eventType: 'game',
-        date: slot.slot.date,
-        dayOfWeek: slot.slot.dayOfWeek,
-        startTime,
-        endTime,
-        resourceId: slot.resourceId,
-        resourceName: slot.resourceName,
-        resourceType: 'field',
-        seasonId,
-        homeTeamId: matchup.awayTeamId,
-        awayTeamId: matchup.homeTeamId,
       });
     }
   }

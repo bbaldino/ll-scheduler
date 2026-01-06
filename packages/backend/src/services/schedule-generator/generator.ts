@@ -60,6 +60,8 @@ import {
   anyTeamNeedsEventInWeek,
   parseLocalDate,
   formatDateStr,
+  generateRoundRobinMatchups,
+  assignMatchupsToWeeks,
 } from './draft.js';
 
 /**
@@ -717,11 +719,13 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Schedule games using draft-based allocation for fair distribution
+   * Schedule games using round-robin matchup generation.
+   * Phase 1: Generate all matchups upfront using round-robin algorithm
+   * Phase 2: Assign matchups to time slots, optimizing for even spacing between rematches
    */
   private async scheduleGames(): Promise<void> {
-    console.log('\n--- Scheduling Games (Draft-Based) ---');
-    this.log('info', 'game', 'Starting draft-based game scheduling phase');
+    console.log('\n--- Scheduling Games (Round-Robin) ---');
+    this.log('info', 'game', 'Starting round-robin game scheduling phase');
 
     if (!this.scoringContext) {
       throw new Error('Scoring context not initialized');
@@ -745,11 +749,21 @@ export class ScheduleGenerator {
     );
     console.log(`Total weeks for games: ${gameWeeks.length}`);
 
-    // Build division info for game scheduling
-    const divisionTeamsList: Array<{ divisionId: string; teams: Team[]; config: { gamesPerWeek: number; gameDurationHours: number } }> = [];
+    // Build division info and generate matchups for each division
+    type DivisionMatchups = {
+      divisionId: string;
+      divisionName: string;
+      teams: Team[];
+      config: { gamesPerWeek: number; gameDurationHours: number };
+      matchups: Array<GameMatchup & { targetWeek: number }>;
+    };
+
+    const divisionMatchupsList: DivisionMatchups[] = [];
+
     for (const [divisionId, divisionTeams] of teamsByDivision) {
       const config = this.divisionConfigs.get(divisionId);
-      console.log(`\nDivision: ${divisionId}`);
+      const divisionName = this.divisionNames.get(divisionId) || divisionId;
+      console.log(`\nDivision: ${divisionName}`);
       console.log(`  Teams: ${divisionTeams.length}`);
       console.log(`  Has config: ${!!config}`);
       console.log(`  Games per week: ${config?.gamesPerWeek || 'N/A'}`);
@@ -759,340 +773,976 @@ export class ScheduleGenerator {
         continue;
       }
 
-      divisionTeamsList.push({
+      // Calculate exact number of games needed
+      const totalGamesPerTeam = config.gamesPerWeek * gameWeeks.length;
+      const numTeams = divisionTeams.length;
+      const numOpponents = numTeams - 1;
+
+      // Total matchups needed = (gamesPerTeam * numTeams) / 2 (each game involves 2 teams)
+      const totalMatchupsNeeded = (totalGamesPerTeam * numTeams) / 2;
+
+      // Calculate round-robin cycles needed (may generate slightly more than needed)
+      const minCycles = Math.ceil(totalGamesPerTeam / numOpponents);
+
+      console.log(`  Total games per team needed: ${totalGamesPerTeam}`);
+      console.log(`  Total matchups needed: ${totalMatchupsNeeded}`);
+      console.log(`  Opponents: ${numOpponents}`);
+      console.log(`  Round-robin cycles to generate: ${minCycles}`);
+
+      // Phase 1: Generate round-robin matchups
+      const teamIds = divisionTeams.map(t => t.id);
+      const rounds = generateRoundRobinMatchups(teamIds, minCycles);
+
+      // Each round-robin round has every team playing exactly once.
+      // For gamesPerWeek=2, we need 2 rounds per week.
+      // Assign rounds to weeks directly to guarantee valid distribution.
+      const matchupsPerRound = numTeams / 2; // For even teams
+      const roundsPerWeek = config.gamesPerWeek; // Each round = 1 game per team
+      const totalRoundsNeeded = gameWeeks.length * roundsPerWeek;
+
+      console.log(`  Rounds generated: ${rounds.length}`);
+      console.log(`  Matchups per round: ${matchupsPerRound}`);
+      console.log(`  Rounds per week needed: ${roundsPerWeek}`);
+      console.log(`  Total rounds needed: ${totalRoundsNeeded}`);
+
+      // Take only the rounds we need
+      // Note: This may cause home/away imbalance if we're not using complete cycles
+      const roundsToUse = rounds.slice(0, totalRoundsNeeded);
+
+      // Check if we're cutting mid-cycle (which could cause imbalance)
+      const roundsPerCycle = numTeams - 1; // For even teams
+      const completeCycles = Math.floor(roundsToUse.length / roundsPerCycle);
+      const extraRounds = roundsToUse.length % roundsPerCycle;
+      if (extraRounds > 0) {
+        console.log(`  ⚠️ Using ${completeCycles} complete cycles + ${extraRounds} extra rounds (may cause home/away imbalance)`);
+      }
+
+      if (roundsToUse.length < totalRoundsNeeded) {
+        console.warn(`  ⚠️ Not enough rounds: have ${roundsToUse.length}, need ${totalRoundsNeeded}`);
+        this.log('warning', 'game', `Not enough round-robin rounds for ${divisionName}`, {
+          divisionId,
+          roundsGenerated: rounds.length,
+          roundsNeeded: totalRoundsNeeded,
+          gamesPerWeek: config.gamesPerWeek,
+          weeks: gameWeeks.length,
+        });
+      }
+
+      // Assign rounds to weeks
+      const matchups: Array<GameMatchup & { targetWeek: number }> = [];
+      for (let i = 0; i < roundsToUse.length; i++) {
+        const round = roundsToUse[i];
+        const targetWeek = Math.floor(i / roundsPerWeek);
+
+        for (const m of round.matchups) {
+          matchups.push({
+            homeTeamId: m.homeTeamId,
+            awayTeamId: m.awayTeamId,
+            divisionId,
+            targetWeek,
+          });
+        }
+      }
+
+      console.log(`  Total matchups assigned: ${matchups.length}`);
+
+      // Rebalance home/away if needed (when we use partial cycles)
+      this.rebalanceHomeAway(matchups, divisionTeams);
+
+      // Log the distribution
+      const weekCounts = new Map<number, number>();
+      for (const m of matchups) {
+        weekCounts.set(m.targetWeek, (weekCounts.get(m.targetWeek) || 0) + 1);
+      }
+      console.log(`  Matchups per week:`);
+      for (let w = 0; w < gameWeeks.length; w++) {
+        const count = weekCounts.get(w) || 0;
+        const expected = matchupsPerRound * roundsPerWeek;
+        const status = count === expected ? '✓' : '⚠';
+        console.log(`    Week ${w + 1}: ${count} matchups ${status}`);
+      }
+
+      // Build target week distribution with dates (reuse weekCounts from above)
+      const weekDistribution: Array<{ week: number; dates: string; targetMatchups: number }> = [];
+      for (let w = 0; w < gameWeeks.length; w++) {
+        weekDistribution.push({
+          week: w,
+          dates: `${gameWeeks[w].startDate} to ${gameWeeks[w].endDate}`,
+          targetMatchups: weekCounts.get(w) || 0,
+        });
+      }
+
+      // Build a human-readable summary
+      let distributionSummary = `Generated ${matchups.length} matchups for ${divisionName} (need ${totalMatchupsNeeded}).\n`;
+      distributionSummary += `\nTarget week distribution:`;
+      for (const wd of weekDistribution) {
+        distributionSummary += `\n  ${wd.dates}: ${wd.targetMatchups} matchups`;
+      }
+
+      // Log home/away balance after matchup generation (before scheduling)
+      const preScheduleHomeAway: Record<string, { home: number; away: number; total: number }> = {};
+      for (const team of divisionTeams) {
+        const home = matchups.filter(m => m.homeTeamId === team.id).length;
+        const away = matchups.filter(m => m.awayTeamId === team.id).length;
+        preScheduleHomeAway[team.name] = { home, away, total: home + away };
+      }
+
+      let homeAwayBalanceSummary = `\nHome/Away balance after matchup generation:`;
+      for (const [name, counts] of Object.entries(preScheduleHomeAway)) {
+        const diff = Math.abs(counts.home - counts.away);
+        const status = diff <= 1 ? '✓' : '⚠';
+        homeAwayBalanceSummary += `\n  ${name}: ${counts.home} home, ${counts.away} away (${counts.total} total) ${status}`;
+      }
+      distributionSummary += homeAwayBalanceSummary;
+
+      this.log('info', 'game', `Generated round-robin matchups for ${divisionName}`, {
         divisionId,
+        divisionName,
+        teamCount: divisionTeams.length,
+        roundRobinCycles: minCycles,
+        totalRounds: rounds.length,
+        roundsUsed: roundsToUse.length,
+        totalMatchups: matchups.length,
+        totalMatchupsNeeded,
+        weekDistribution,
+        preScheduleHomeAway,
+      }, distributionSummary);
+
+      divisionMatchupsList.push({
+        divisionId,
+        divisionName,
         teams: divisionTeams,
         config: { gamesPerWeek: config.gamesPerWeek, gameDurationHours: config.gameDurationHours },
+        matchups,
       });
     }
 
-    // Track opponent history: teamId -> opponentId -> array of dates played
-    const opponentHistory = new Map<string, Map<string, string[]>>();
-    for (const division of divisionTeamsList) {
-      for (const team of division.teams) {
-        opponentHistory.set(team.id, new Map());
-        // Initialize with all opponents in the division
-        for (const opponent of division.teams) {
-          if (opponent.id !== team.id) {
-            opponentHistory.get(team.id)!.set(opponent.id, []);
-          }
-        }
-      }
-    }
+    // Phase 2: Schedule each matchup to a time slot
+    // Process matchups in order (by target week), finding the best available slot
+    // Prioritize keeping rematches spread out by preferring slots in the target week
 
-    // Helper to get days since last game against opponent
-    const getDaysSinceLastGame = (teamId: string, opponentId: string, currentDate: string): number => {
-      const history = opponentHistory.get(teamId)?.get(opponentId) || [];
-      if (history.length === 0) return Infinity; // Never played
-      const lastDate = history[history.length - 1];
-      const last = parseLocalDate(lastDate);
-      const current = parseLocalDate(currentDate);
-      return Math.floor((current.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
-    };
-
-    // Helper to record a game between two teams
-    const recordGame = (team1Id: string, team2Id: string, date: string) => {
-      opponentHistory.get(team1Id)?.get(team2Id)?.push(date);
-      opponentHistory.get(team2Id)?.get(team1Id)?.push(date);
-    };
-
-    // Helper to schedule a single game between two teams
-    const tryScheduleGame = (
-      team: Team,
-      opponent: Team,
-      divisionId: string,
-      config: { gamesPerWeek: number; gameDurationHours: number },
-      week: WeekDefinition
-    ): boolean => {
-      const teamState = this.teamSchedulingStates.get(team.id);
-      const opponentState = this.teamSchedulingStates.get(opponent.id);
-      if (!teamState || !opponentState) return false;
-
-      // Filter field slots to this week and compatible with division
-      const weekFieldSlots = this.gameFieldSlots.filter((rs) =>
-        week.dates.includes(rs.slot.date) &&
-        this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
-      );
-
-      if (weekFieldSlots.length === 0) {
-        this.log('warning', 'game', `No compatible field slots for ${team.name} vs ${opponent.name} in week ${week.weekNumber}`, {
-          teamName: team.name,
-          opponentName: opponent.name,
-          divisionId,
-          weekNumber: week.weekNumber,
-          reason: 'no_compatible_field_slots',
-        });
-        return false;
-      }
-
-      // Create a matchup object
-      const matchup: GameMatchup = {
-        homeTeamId: team.id,
-        awayTeamId: opponent.id,
-        divisionId,
-      };
-
-      // Generate placement candidates for this game
-      const candidates = generateCandidatesForGame(
-        matchup,
-        weekFieldSlots,
-        week,
-        config.gameDurationHours,
-        this.season.id,
-        this.scoringContext!
-      );
-
-      if (candidates.length === 0) {
-        this.log('warning', 'game', `No valid time slots for ${team.name} vs ${opponent.name} in week ${week.weekNumber}`, {
-          teamName: team.name,
-          opponentName: opponent.name,
-          weekNumber: week.weekNumber,
-          availableFieldSlots: weekFieldSlots.length,
-          reason: 'all_slots_have_conflicts',
-        });
-        return false;
-      }
-
-      // Score all candidates
-      const scoredCandidates = candidates.map((c) =>
-        calculatePlacementScore(c, teamState, this.scoringContext!, this.scoringWeights)
-      );
-      scoredCandidates.sort((a, b) => b.score - a.score);
-      const bestCandidate = scoredCandidates[0];
-
-      if (!bestCandidate) return false;
-
-      // Check if best candidate has severe penalty (sameDayEvent)
-      // Score below -500000 means both teams already have field events that day
-      if (bestCandidate.score < -500000) {
-        const teamFieldDates = Array.from(teamState.fieldDatesUsed);
-        const opponentFieldDates = Array.from(opponentState.fieldDatesUsed);
-        this.log('warning', 'game', `All slots have same-day conflicts for ${team.name} vs ${opponent.name} in week ${week.weekNumber}`, {
-          teamName: team.name,
-          opponentName: opponent.name,
-          weekNumber: week.weekNumber,
-          teamFieldDates: teamFieldDates.filter(d => week.dates.includes(d)),
-          opponentFieldDates: opponentFieldDates.filter(d => week.dates.includes(d)),
-          bestScore: bestCandidate.score,
-          reason: 'same_day_conflicts',
-        });
-        return false;
-      }
-
-      // Create the event draft
-      const eventDraft = candidateToEventDraft(bestCandidate, divisionId);
-      this.scheduledEvents.push(eventDraft);
-      this.scoringContext!.scheduledEvents = this.scheduledEvents;
-
-      // Update both team states
-      const isHomeTeam = bestCandidate.homeTeamId === teamState.teamId;
-      updateTeamStateAfterScheduling(teamState, eventDraft, week.weekNumber, isHomeTeam, opponentState.teamId);
-      updateTeamStateAfterScheduling(opponentState, eventDraft, week.weekNumber, !isHomeTeam, teamState.teamId);
-
-      // Update resource usage
-      updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, config.gameDurationHours);
-
-      // Record the game in opponent history
-      recordGame(team.id, opponent.id, bestCandidate.date);
-
-      const homeTeam = this.teams.find((t) => t.id === bestCandidate.homeTeamId);
-      const awayTeam = this.teams.find((t) => t.id === bestCandidate.awayTeamId);
-      const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
-
-      console.log(`    ✅ ${homeTeam?.name || 'Team'} vs ${awayTeam?.name || 'Team'}: ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName} (score: ${bestCandidate.score.toFixed(1)})`);
-
-      this.log('info', 'game', `Scheduled game: ${homeTeam?.name} vs ${awayTeam?.name}`, {
-        homeTeamId: bestCandidate.homeTeamId,
-        awayTeamId: bestCandidate.awayTeamId,
-        date: bestCandidate.date,
-        dayOfWeek: bestCandidate.dayOfWeek,
-        dayName,
-        time: `${bestCandidate.startTime}-${bestCandidate.endTime}`,
-        resourceName: bestCandidate.resourceName,
-        score: bestCandidate.score,
-        scoreBreakdown: bestCandidate.scoreBreakdown,
-      });
-
-      return true;
-    };
-
-    // Schedule games week by week using draft approach
-    // The high gameDayPreference weight (500) ensures required/preferred days are chosen
     let totalScheduled = 0;
+    let failedToSchedule = 0;
 
-    for (const week of gameWeeks) {
-      console.log(`\nWeek ${week.weekNumber + 1} (${week.startDate} to ${week.endDate}):`);
+    for (const division of divisionMatchupsList) {
+      console.log(`\nScheduling ${division.divisionName}:`);
 
-      let gamesScheduledThisWeek = 0;
-      let round = 0;
-      const maxRounds = 50; // Safety limit
+      // Track preferred day games per team (e.g., Saturday games)
+      // Used to balance preferred day distribution
+      const preferredDayGames = new Map<string, number>();
+      for (const team of division.teams) {
+        preferredDayGames.set(team.id, 0);
+      }
 
-      while (round < maxRounds) {
-        // Find teams that still need games this week, grouped by division
-        const teamsNeedingGames: Array<{ team: Team; divisionId: string; config: { gamesPerWeek: number; gameDurationHours: number }; gamesThisWeek: number }> = [];
+      // Get the required/preferred days for this division
+      const gameDayPrefs = this.scoringContext?.gameDayPreferences.get(division.divisionId) || [];
+      const requiredDays = gameDayPrefs.filter(p => p.priority === 'required').map(p => p.dayOfWeek);
 
-        for (const division of divisionTeamsList) {
-          for (const team of division.teams) {
-            const teamState = this.teamSchedulingStates.get(team.id);
-            if (!teamState) continue;
-            const gamesThisWeek = teamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-            if (gamesThisWeek < division.config.gamesPerWeek) {
-              teamsNeedingGames.push({
-                team,
-                divisionId: division.divisionId,
-                config: division.config,
-                gamesThisWeek,
-              });
-            }
+      // Calculate fair share of preferred-day games based on actual slot availability
+      // Count how many preferred-day game slots are available for this division
+      let totalPreferredDaySlots = 0;
+      if (requiredDays.length > 0) {
+        for (const slot of this.gameFieldSlots) {
+          if (requiredDays.includes(slot.slot.dayOfWeek) &&
+              this.isFieldCompatibleWithDivision(slot.resourceId, division.divisionId)) {
+            // Count each slot as one game opportunity
+            // (the slot duration check happens during candidate generation)
+            totalPreferredDaySlots++;
           }
         }
+        // Each game involves 2 teams, so total team-game-opportunities = slots * 2
+        // Fair share per team = floor(slots * 2 / numTeams) - use floor to be conservative
+        const numTeams = division.teams.length;
+        const fairSharePerTeam = Math.floor((totalPreferredDaySlots * 2) / numTeams);
+        console.log(`  Preferred-day slots: ${totalPreferredDaySlots}, fair share per team: ${fairSharePerTeam}`);
 
-        if (teamsNeedingGames.length === 0) {
-          console.log(`  All teams have met their weekly game quota`);
-          break;
+        // Store for use in scheduling loop
+        (division as any).fairSharePerTeam = fairSharePerTeam;
+      } else {
+        (division as any).fairSharePerTeam = Infinity; // No limit if no required days
+      }
+
+      // Group matchups by target week, then sort within each week
+      // to prioritize teams with fewer preferred-day games
+      const matchupsByWeek = new Map<number, Array<GameMatchup & { targetWeek: number }>>();
+      for (const matchup of division.matchups) {
+        if (!matchupsByWeek.has(matchup.targetWeek)) {
+          matchupsByWeek.set(matchup.targetWeek, []);
         }
+        matchupsByWeek.get(matchup.targetWeek)!.push(matchup);
+      }
 
-        // Sort by fewest games scheduled this week (give priority to teams that need games most)
-        teamsNeedingGames.sort((a, b) => a.gamesThisWeek - b.gamesThisWeek);
+      // Process weeks in order
+      const weekNumbers = Array.from(matchupsByWeek.keys()).sort((a, b) => a - b);
 
-        let anyScheduledThisRound = false;
+      for (const weekNum of weekNumbers) {
+        const weekMatchups = matchupsByWeek.get(weekNum)!;
 
-        // Try to schedule a game for each team that needs one
-        for (const { team, divisionId, config } of teamsNeedingGames) {
-          const teamState = this.teamSchedulingStates.get(team.id);
-          if (!teamState) continue;
+        // Sort matchups so teams with fewer preferred-day games go first
+        // Re-sort before each matchup to account for games just scheduled
+        const getSortedMatchups = () => {
+          return [...weekMatchups].sort((a, b) => {
+            const aMinGames = Math.min(
+              preferredDayGames.get(a.homeTeamId) || 0,
+              preferredDayGames.get(a.awayTeamId) || 0
+            );
+            const bMinGames = Math.min(
+              preferredDayGames.get(b.homeTeamId) || 0,
+              preferredDayGames.get(b.awayTeamId) || 0
+            );
+            return aMinGames - bMinGames; // Teams with fewer preferred-day games get priority
+          });
+        };
 
-          // Re-check if team still needs a game (may have been scheduled as opponent)
-          const gamesThisWeek = teamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-          if (gamesThisWeek >= config.gamesPerWeek) continue;
+        const scheduledInWeek = new Set<string>(); // Track which matchups we've processed
 
-          // Find potential opponents in the same division who also need games
-          const divisionInfo = divisionTeamsList.find((d) => d.divisionId === divisionId);
-          if (!divisionInfo) continue;
-
-          const potentialOpponents: Array<{ opponent: Team; daysSinceLastGame: number; opponentGamesThisWeek: number }> = [];
-
-          for (const opponent of divisionInfo.teams) {
-            if (opponent.id === team.id) continue;
-
-            const opponentState = this.teamSchedulingStates.get(opponent.id);
-            if (!opponentState) continue;
-
-            const opponentGamesThisWeek = opponentState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-            if (opponentGamesThisWeek >= config.gamesPerWeek) continue;
-
-            // Calculate days since they last played each other
-            const daysSinceLastGame = getDaysSinceLastGame(team.id, opponent.id, week.startDate);
-
-            potentialOpponents.push({
-              opponent,
-              daysSinceLastGame,
-              opponentGamesThisWeek,
-            });
-          }
-
-          if (potentialOpponents.length === 0) {
-            // No eligible opponents for this team this week
-            continue;
-          }
-
-          // Sort opponents: prefer those we haven't played recently, then those who need games most
-          potentialOpponents.sort((a, b) => {
-            // Primary: days since last game (higher is better - haven't played recently)
-            if (a.daysSinceLastGame !== b.daysSinceLastGame) {
-              return b.daysSinceLastGame - a.daysSinceLastGame;
-            }
-            // Secondary: opponent needs games more (lower gamesThisWeek is better)
-            return a.opponentGamesThisWeek - b.opponentGamesThisWeek;
+        while (scheduledInWeek.size < weekMatchups.length) {
+          // Re-sort to get the current best priority
+          const sortedRemaining = getSortedMatchups().filter(m => {
+            const key = `${m.homeTeamId}-${m.awayTeamId}`;
+            return !scheduledInWeek.has(key);
           });
 
-          // Try to schedule with the best opponent
-          let scheduled = false;
-          for (const { opponent } of potentialOpponents) {
-            const opponentState = this.teamSchedulingStates.get(opponent.id);
-            if (!opponentState) continue;
+          if (sortedRemaining.length === 0) break;
 
-            // Re-check opponent still needs a game
-            const opponentGamesThisWeek = opponentState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-            if (opponentGamesThisWeek >= config.gamesPerWeek) continue;
+          const matchup = sortedRemaining[0];
+          scheduledInWeek.add(`${matchup.homeTeamId}-${matchup.awayTeamId}`);
+        const homeTeam = division.teams.find(t => t.id === matchup.homeTeamId);
+        const awayTeam = division.teams.find(t => t.id === matchup.awayTeamId);
+        const homeTeamState = this.teamSchedulingStates.get(matchup.homeTeamId);
+        const awayTeamState = this.teamSchedulingStates.get(matchup.awayTeamId);
 
-            if (tryScheduleGame(team, opponent, divisionId, config, week)) {
-              totalScheduled++;
-              gamesScheduledThisWeek++;
-              anyScheduledThisRound = true;
-              scheduled = true;
-              break; // Move to next team
+        if (!homeTeam || !awayTeam || !homeTeamState || !awayTeamState) {
+          console.log(`  ⚠️  Missing team data for matchup`);
+          failedToSchedule++;
+          continue;
+        }
+
+        // Only try the assigned target week - don't move matchups between weeks
+        // The assignMatchupsToWeeks algorithm already ensured 2-regularity,
+        // so if we can't schedule here, there's a field capacity issue
+        let scheduled = false;
+        let failureReason = '';
+        const week = gameWeeks[matchup.targetWeek];
+
+        if (!week) {
+          failureReason = 'target_week_not_found';
+        } else {
+          // Check if either team has already met their games-per-week quota
+          // (This shouldn't happen if assignMatchupsToWeeks worked correctly)
+          const homeGamesThisWeek = homeTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+          const awayGamesThisWeek = awayTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+          if (homeGamesThisWeek >= division.config.gamesPerWeek) {
+            failureReason = `${homeTeam.name} already at quota (${homeGamesThisWeek}/${division.config.gamesPerWeek})`;
+          } else if (awayGamesThisWeek >= division.config.gamesPerWeek) {
+            failureReason = `${awayTeam.name} already at quota (${awayGamesThisWeek}/${division.config.gamesPerWeek})`;
+          } else {
+            // Filter field slots to this week and compatible with division
+            const weekFieldSlots = this.gameFieldSlots.filter((rs) =>
+              week.dates.includes(rs.slot.date) &&
+              this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId)
+            );
+
+            if (weekFieldSlots.length === 0) {
+              failureReason = 'no_compatible_field_slots';
+            } else {
+              // Generate placement candidates for this game
+              const candidates = generateCandidatesForGame(
+                matchup,
+                weekFieldSlots,
+                week,
+                division.config.gameDurationHours,
+                this.season.id,
+                this.scoringContext!
+              );
+
+              if (candidates.length === 0) {
+                failureReason = 'no_valid_time_slots (all slots have conflicts)';
+              } else {
+                // Use the pre-calculated fair share based on actual slot availability
+                const fairSharePerTeam = (division as any).fairSharePerTeam || Infinity;
+
+                const homePreferredGames = preferredDayGames.get(matchup.homeTeamId) || 0;
+                const awayPreferredGames = preferredDayGames.get(matchup.awayTeamId) || 0;
+                // If EITHER team already has their fair share, avoid giving them more preferred-day games
+                // This prevents one team from accumulating too many
+                const eitherTeamHasEnough = homePreferredGames >= fairSharePerTeam || awayPreferredGames >= fairSharePerTeam;
+
+                // If either team already has their fair share of preferred-day games,
+                // filter out preferred-day candidates to leave them for other teams
+                let filteredCandidates = candidates;
+                if (eitherTeamHasEnough && requiredDays.length > 0) {
+                  const nonPreferredCandidates = candidates.filter(c => !requiredDays.includes(c.dayOfWeek));
+                  if (nonPreferredCandidates.length > 0) {
+                    filteredCandidates = nonPreferredCandidates;
+                  }
+                  // If no non-preferred candidates, fall back to all candidates
+                }
+
+                // Score all candidates
+                const scoredCandidates = filteredCandidates.map((c) =>
+                  calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+                );
+                scoredCandidates.sort((a, b) => b.score - a.score);
+                const bestCandidate = scoredCandidates[0];
+
+                if (!bestCandidate) {
+                  failureReason = 'no_scored_candidate';
+                } else if (bestCandidate.score < -500000) {
+                  failureReason = 'best_candidate_has_severe_penalty (same day event)';
+                } else {
+                  // Create the event draft
+                  const eventDraft = candidateToEventDraft(bestCandidate, division.divisionId);
+                  this.scheduledEvents.push(eventDraft);
+                  this.scoringContext!.scheduledEvents = this.scheduledEvents;
+
+                  // Update both team states
+                  updateTeamStateAfterScheduling(homeTeamState, eventDraft, week.weekNumber, true, awayTeamState.teamId);
+                  updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId);
+
+                  // Update resource usage
+                  updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, division.config.gameDurationHours);
+
+                  const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
+
+                  console.log(`  ✅ ${homeTeam.name} vs ${awayTeam.name}: Week ${week.weekNumber + 1} ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName}`);
+
+                  this.log('info', 'game', `Scheduled game: ${homeTeam.name} vs ${awayTeam.name}`, {
+                    homeTeamId: bestCandidate.homeTeamId,
+                    awayTeamId: bestCandidate.awayTeamId,
+                    date: bestCandidate.date,
+                    targetWeek: matchup.targetWeek,
+                    actualWeek: week.weekNumber,
+                    dayOfWeek: bestCandidate.dayOfWeek,
+                    dayName,
+                    time: `${bestCandidate.startTime}-${bestCandidate.endTime}`,
+                    resourceName: bestCandidate.resourceName,
+                    score: bestCandidate.score,
+                  });
+
+                  // Track if this was on a preferred day for fair distribution
+                  if (requiredDays.includes(bestCandidate.dayOfWeek)) {
+                    preferredDayGames.set(matchup.homeTeamId, (preferredDayGames.get(matchup.homeTeamId) || 0) + 1);
+                    preferredDayGames.set(matchup.awayTeamId, (preferredDayGames.get(matchup.awayTeamId) || 0) + 1);
+                  }
+
+                  totalScheduled++;
+                  scheduled = true;
+                }
+              }
+            }
+          }
+        }
+
+        if (!scheduled) {
+          const weekDates = week ? `${week.startDate} to ${week.endDate}` : 'unknown';
+
+          console.log(`  ❌ Could not schedule: ${homeTeam.name} vs ${awayTeam.name} (week ${matchup.targetWeek + 1}): ${failureReason}`);
+
+          const failureSummary = `Could not schedule ${homeTeam.name} vs ${awayTeam.name} in week ${matchup.targetWeek + 1} (${weekDates}).\nReason: ${failureReason}`;
+
+          this.log('warning', 'game', `Failed to schedule matchup: ${homeTeam.name} vs ${awayTeam.name}`, {
+            homeTeamId: matchup.homeTeamId,
+            awayTeamId: matchup.awayTeamId,
+            divisionId: division.divisionId,
+            targetWeek: matchup.targetWeek,
+            weekDates,
+            reason: failureReason,
+          }, failureSummary);
+          failedToSchedule++;
+        }
+        } // end while loop for matchups
+      } // end weekNumbers loop
+    } // end division loop
+
+    // Report summary
+    const totalGames = this.scheduledEvents.filter((e) => e.eventType === 'game').length;
+    console.log(`\n✅ Game scheduling complete. Scheduled: ${totalScheduled}, Failed: ${failedToSchedule}`);
+
+    // Report per-team game counts and check for weekly shortfalls
+    for (const division of divisionMatchupsList) {
+      console.log(`\n${division.divisionName} game counts:`);
+      for (const team of division.teams) {
+        const teamState = this.teamSchedulingStates.get(team.id);
+        if (!teamState) continue;
+        console.log(`  ${team.name}: ${teamState.gamesScheduled} games (${teamState.homeGames} home, ${teamState.awayGames} away)`);
+
+        // Check each week for shortfalls and collect them
+        const weeklyShortfalls: Array<{ week: number; startDate: string; endDate: string; scheduled: number; expected: number }> = [];
+        for (const week of gameWeeks) {
+          const gamesThisWeek = teamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+          if (gamesThisWeek < division.config.gamesPerWeek) {
+            weeklyShortfalls.push({
+              week: week.weekNumber + 1,
+              startDate: week.startDate,
+              endDate: week.endDate,
+              scheduled: gamesThisWeek,
+              expected: division.config.gamesPerWeek,
+            });
+          }
+        }
+
+        // If there are shortfalls, create a warning
+        if (weeklyShortfalls.length > 0) {
+          const totalExpected = division.config.gamesPerWeek * gameWeeks.length;
+          const totalShortfall = totalExpected - teamState.gamesScheduled;
+
+          // Build summary with week details
+          let summary = `${team.name} (${division.divisionName}) is short ${totalShortfall} game${totalShortfall > 1 ? 's' : ''} (${teamState.gamesScheduled}/${totalExpected}).`;
+          summary += '\n\nWeekly breakdown:';
+          for (const shortfall of weeklyShortfalls.slice(0, 10)) {
+            summary += `\n  ${shortfall.startDate} to ${shortfall.endDate}: ${shortfall.scheduled}/${shortfall.expected} games`;
+          }
+          if (weeklyShortfalls.length > 10) {
+            summary += `\n  (${weeklyShortfalls.length - 10} more weeks not shown)`;
+          }
+
+          // Look for failed matchup diagnostics for this team
+          const failedMatchups = this.schedulingLog
+            .filter(entry =>
+              entry.category === 'game' &&
+              entry.level === 'warning' &&
+              entry.message.includes('Failed to schedule matchup') &&
+              (entry.details?.homeTeamId === team.id || entry.details?.awayTeamId === team.id)
+            )
+            .slice(0, 5);
+
+          if (failedMatchups.length > 0) {
+            summary += '\n\nFailed matchups:';
+            for (const entry of failedMatchups) {
+              summary += `\n  ${entry.message}`;
+              if (entry.details?.reason) {
+                summary += `\n    Week: ${entry.details.weekDates || 'unknown'}`;
+                summary += `\n    Reason: ${entry.details.reason}`;
+              }
             }
           }
 
-          if (!scheduled) {
-            this.log('debug', 'game', `Could not find valid slot for ${team.name} in week ${week.weekNumber + 1}`, {
+          this.warnings.push({
+            type: 'insufficient_resources',
+            message: `Team ${team.name} (${division.divisionName}) only got ${teamState.gamesScheduled}/${totalExpected} games`,
+            summary,
+            details: {
               teamId: team.id,
               teamName: team.name,
-              weekNumber: week.weekNumber + 1,
-              potentialOpponentsChecked: potentialOpponents.length,
-            });
-          }
-        }
-
-        if (!anyScheduledThisRound) {
-          // No games could be scheduled this round
-          const stillNeedingGames = teamsNeedingGames.filter((t) => {
-            const state = this.teamSchedulingStates.get(t.team.id);
-            const games = state?.eventsPerWeek.get(week.weekNumber)?.games || 0;
-            return games < t.config.gamesPerWeek;
+              divisionId: division.divisionId,
+              divisionName: division.divisionName,
+              scheduled: teamState.gamesScheduled,
+              needed: totalExpected,
+              weeklyShortfalls,
+            },
           });
-          if (stillNeedingGames.length > 0) {
-            console.log(`  ⚠️  Teams still need games but no slots available:`);
-            for (const { team, config } of stillNeedingGames) {
-              const state = this.teamSchedulingStates.get(team.id);
-              const games = state?.eventsPerWeek.get(week.weekNumber)?.games || 0;
-              console.log(`      - ${team.name}: ${games}/${config.gamesPerWeek} games`);
-            }
-            this.log('warning', 'game', `Teams need games but no slots available in week ${week.weekNumber + 1}`, {
-              weekNumber: week.weekNumber + 1,
-              teamsNeedingGames: stillNeedingGames.map((t) => ({
-                teamName: t.team.name,
-                gamesThisWeek: this.teamSchedulingStates.get(t.team.id)?.eventsPerWeek.get(week.weekNumber)?.games || 0,
-                target: t.config.gamesPerWeek,
-              })),
-            });
-          }
-          break;
+
+          this.log('error', 'game', `Game requirement not met for ${team.name} (${division.divisionName}): ${teamState.gamesScheduled}/${totalExpected} games scheduled`, {
+            teamId: team.id,
+            teamName: team.name,
+            divisionId: division.divisionId,
+            divisionName: division.divisionName,
+            gamesScheduled: teamState.gamesScheduled,
+            gamesNeeded: totalExpected,
+            weeklyShortfalls,
+          }, summary);
         }
-
-        round++;
       }
-
-      console.log(`  Scheduled ${gamesScheduledThisWeek} games this week`);
     }
 
-    // Report any teams that didn't get all their games for the season
-    for (const division of divisionTeamsList) {
+    // Analyze game day preference compliance for each division
+    this.analyzeGameDayPreferenceCompliance(divisionMatchupsList, gameWeeks);
+  }
+
+  /**
+   * Analyze game day preference compliance and log detailed diagnostics when teams
+   * don't get games on required days.
+   */
+  private analyzeGameDayPreferenceCompliance(
+    divisionMatchupsList: Array<{
+      divisionId: string;
+      divisionName: string;
+      teams: Team[];
+      config: { gamesPerWeek: number; gameDurationHours: number };
+    }>,
+    gameWeeks: WeekDefinition[]
+  ): void {
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    for (const division of divisionMatchupsList) {
+      const preferences = this.scoringContext?.gameDayPreferences.get(division.divisionId) || [];
+      const requiredDays = preferences.filter(p => p.priority === 'required');
+
+      if (requiredDays.length === 0) continue; // No required days configured
+
+      console.log(`\n${division.divisionName} - Game Day Preference Analysis:`);
+
       for (const team of division.teams) {
         const teamState = this.teamSchedulingStates.get(team.id);
         if (!teamState) continue;
 
-        const totalNeeded = division.config.gamesPerWeek * gameWeeks.length;
-        if (teamState.gamesScheduled < totalNeeded) {
-          this.log('error', 'game', `Game requirement not met for ${team.name}: ${teamState.gamesScheduled}/${totalNeeded} games scheduled`, {
-            teamId: team.id,
-            teamName: team.name,
-            divisionId: division.divisionId,
-            gamesScheduled: teamState.gamesScheduled,
-            gamesNeeded: totalNeeded,
-            gamesPerWeek: division.config.gamesPerWeek,
-            totalWeeks: gameWeeks.length,
-            shortfall: totalNeeded - teamState.gamesScheduled,
-            homeGames: teamState.homeGames,
-            awayGames: teamState.awayGames,
-          });
+        // Get all games for this team
+        const teamGames = this.scheduledEvents.filter(e =>
+          e.eventType === 'game' &&
+          (e.homeTeamId === team.id || e.awayTeamId === team.id)
+        );
+
+        // Count games by day of week
+        const gamesByDay = new Map<number, number>();
+        for (const game of teamGames) {
+          const date = new Date(game.date + 'T12:00:00');
+          const dayOfWeek = date.getDay();
+          gamesByDay.set(dayOfWeek, (gamesByDay.get(dayOfWeek) || 0) + 1);
+        }
+
+        // Check each required day
+        for (const reqDay of requiredDays) {
+          const gamesOnRequiredDay = gamesByDay.get(reqDay.dayOfWeek) || 0;
+          const dayName = DAY_NAMES[reqDay.dayOfWeek];
+          const expectedGamesOnDay = gameWeeks.length; // Ideally 1 game per week on required day
+
+          if (gamesOnRequiredDay < expectedGamesOnDay) {
+            const shortfall = expectedGamesOnDay - gamesOnRequiredDay;
+
+            // Collect detailed diagnostics about why games couldn't be scheduled on required day
+            const diagnostics = this.diagnoseRequiredDayShortfall(
+              team,
+              division,
+              reqDay.dayOfWeek,
+              gameWeeks
+            );
+
+            let summary = `${team.name} only has ${gamesOnRequiredDay}/${expectedGamesOnDay} games on ${dayName} (required day).\n`;
+            summary += `\nWeeks without a ${dayName} game:\n`;
+            for (const diag of diagnostics.weeksMissingGame.slice(0, 10)) {
+              summary += `  ${diag.weekDates}: ${diag.reason}\n`;
+            }
+            if (diagnostics.weeksMissingGame.length > 10) {
+              summary += `  (${diagnostics.weeksMissingGame.length - 10} more weeks not shown)\n`;
+            }
+
+            if (diagnostics.fieldSlotAvailability.length > 0) {
+              summary += `\n${dayName} field slot availability:\n`;
+              for (const slot of diagnostics.fieldSlotAvailability.slice(0, 5)) {
+                summary += `  ${slot.date}: ${slot.slotsAvailable} slots, ${slot.slotsUsed} used`;
+                if (slot.usedBy.length > 0) {
+                  summary += ` (by: ${slot.usedBy.slice(0, 3).join(', ')}${slot.usedBy.length > 3 ? '...' : ''})`;
+                }
+                summary += '\n';
+              }
+            }
+
+            console.log(`  ⚠️ ${team.name}: ${gamesOnRequiredDay}/${expectedGamesOnDay} ${dayName} games`);
+
+            this.log('warning', 'game', `${team.name} missing ${shortfall} games on required day (${dayName})`, {
+              teamId: team.id,
+              teamName: team.name,
+              divisionId: division.divisionId,
+              divisionName: division.divisionName,
+              requiredDay: reqDay.dayOfWeek,
+              requiredDayName: dayName,
+              gamesOnRequiredDay,
+              expectedGamesOnDay,
+              shortfall,
+              totalGames: teamGames.length,
+              gameDistribution: Object.fromEntries(
+                Array.from(gamesByDay.entries()).map(([day, count]) => [DAY_NAMES[day], count])
+              ),
+              weeksMissingGame: diagnostics.weeksMissingGame,
+              fieldSlotAvailability: diagnostics.fieldSlotAvailability,
+            }, summary);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Diagnose why a team doesn't have a game on a required day for certain weeks.
+   */
+  private diagnoseRequiredDayShortfall(
+    team: Team,
+    division: { divisionId: string; divisionName: string; config: { gamesPerWeek: number; gameDurationHours: number } },
+    requiredDayOfWeek: number,
+    gameWeeks: WeekDefinition[]
+  ): {
+    weeksMissingGame: Array<{ weekDates: string; reason: string }>;
+    fieldSlotAvailability: Array<{ date: string; slotsAvailable: number; slotsUsed: number; usedBy: string[] }>;
+  } {
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const requiredDayName = DAY_NAMES[requiredDayOfWeek];
+
+    const weeksMissingGame: Array<{ weekDates: string; reason: string }> = [];
+    const fieldSlotAvailability: Array<{ date: string; slotsAvailable: number; slotsUsed: number; usedBy: string[] }> = [];
+
+    // Get all games for this team
+    const teamGames = this.scheduledEvents.filter(e =>
+      e.eventType === 'game' &&
+      (e.homeTeamId === team.id || e.awayTeamId === team.id)
+    );
+
+    // Get all dates where this team has a game
+    const teamGameDates = new Set(teamGames.map(g => g.date));
+
+    for (const week of gameWeeks) {
+      // Find the required day date in this week
+      const requiredDayDate = week.dates.find(date => {
+        const d = new Date(date + 'T12:00:00');
+        return d.getDay() === requiredDayOfWeek;
+      });
+
+      if (!requiredDayDate) {
+        weeksMissingGame.push({
+          weekDates: `${week.startDate} to ${week.endDate}`,
+          reason: `No ${requiredDayName} in this week`,
+        });
+        continue;
+      }
+
+      // Check if team has a game on this date
+      if (teamGameDates.has(requiredDayDate)) {
+        continue; // Team has a game on the required day this week
+      }
+
+      // Team doesn't have a game on required day - diagnose why
+
+      // Check if team already has enough games this week
+      const teamState = this.teamSchedulingStates.get(team.id);
+      const gamesThisWeek = teamState?.eventsPerWeek.get(week.weekNumber)?.games || 0;
+      if (gamesThisWeek >= division.config.gamesPerWeek) {
+        weeksMissingGame.push({
+          weekDates: `${week.startDate} to ${week.endDate}`,
+          reason: `Already at game quota (${gamesThisWeek}/${division.config.gamesPerWeek}) - games on other days`,
+        });
+        continue;
+      }
+
+      // Check if there are field slots available on required day for this division
+      const requiredDaySlots = this.gameFieldSlots.filter(rs =>
+        rs.slot.date === requiredDayDate &&
+        this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId)
+      );
+
+      if (requiredDaySlots.length === 0) {
+        weeksMissingGame.push({
+          weekDates: `${week.startDate} to ${week.endDate}`,
+          reason: `No compatible field slots on ${requiredDayName} (${requiredDayDate})`,
+        });
+        continue;
+      }
+
+      // Check what's scheduled on those slots
+      const gamesOnRequiredDay = this.scheduledEvents.filter(e =>
+        e.eventType === 'game' && e.date === requiredDayDate
+      );
+
+      const usedBy = gamesOnRequiredDay.map(g => {
+        const homeTeam = this.teams.find(t => t.id === g.homeTeamId);
+        const awayTeam = this.teams.find(t => t.id === g.awayTeamId);
+        return `${homeTeam?.name || 'Unknown'} vs ${awayTeam?.name || 'Unknown'}`;
+      });
+
+      fieldSlotAvailability.push({
+        date: requiredDayDate,
+        slotsAvailable: requiredDaySlots.length,
+        slotsUsed: gamesOnRequiredDay.length,
+        usedBy,
+      });
+
+      // Check if team has another event on this date blocking them
+      const teamEventsOnDate = this.scheduledEvents.filter(e =>
+        e.date === requiredDayDate &&
+        (e.teamId === team.id || e.homeTeamId === team.id || e.awayTeamId === team.id)
+      );
+
+      if (teamEventsOnDate.length > 0) {
+        const eventTypes = teamEventsOnDate.map(e => e.eventType).join(', ');
+        weeksMissingGame.push({
+          weekDates: `${week.startDate} to ${week.endDate}`,
+          reason: `Team has other event(s) on ${requiredDayDate}: ${eventTypes}`,
+        });
+        continue;
+      }
+
+      // All slots might be taken by other teams
+      if (gamesOnRequiredDay.length >= requiredDaySlots.length) {
+        weeksMissingGame.push({
+          weekDates: `${week.startDate} to ${week.endDate}`,
+          reason: `All ${requiredDaySlots.length} ${requiredDayName} slots used by other teams`,
+        });
+        continue;
+      }
+
+      // There are slots available but team still didn't get one - likely scheduling order issue
+      weeksMissingGame.push({
+        weekDates: `${week.startDate} to ${week.endDate}`,
+        reason: `Slots available (${requiredDaySlots.length - gamesOnRequiredDay.length} unused) but not assigned - check matchup order or conflicts`,
+      });
+    }
+
+    return { weeksMissingGame, fieldSlotAvailability };
+  }
+
+  /**
+   * Assign matchups to weeks ensuring 2-regularity (each team plays exactly gamesPerWeek per week).
+   * This uses a greedy algorithm that tracks team availability per week.
+   *
+   * The algorithm:
+   * 1. For each week, we need (numTeams * gamesPerWeek / 2) matchups
+   * 2. For each matchup, find the earliest week where both teams still have capacity
+   * 3. Assign the matchup to that week
+   *
+   * To spread rematches out, we process matchups in round-robin round order,
+   * which naturally spaces out games between the same two teams.
+   */
+  private assignMatchupsToWeeks(
+    matchups: Array<GameMatchup & { targetWeek: number }>,
+    numWeeks: number,
+    gamesPerWeek: number,
+    teamIds: string[]
+  ): Array<GameMatchup & { targetWeek: number }> {
+    // Track how many games each team has in each week
+    const teamWeekGames = new Map<string, Map<number, number>>();
+    for (const teamId of teamIds) {
+      teamWeekGames.set(teamId, new Map());
+    }
+
+    const getTeamGamesInWeek = (teamId: string, week: number): number => {
+      return teamWeekGames.get(teamId)?.get(week) || 0;
+    };
+
+    const addTeamGameInWeek = (teamId: string, week: number): void => {
+      const weekMap = teamWeekGames.get(teamId)!;
+      weekMap.set(week, (weekMap.get(week) || 0) + 1);
+    };
+
+    const canScheduleInWeek = (homeTeamId: string, awayTeamId: string, week: number): boolean => {
+      return (
+        getTeamGamesInWeek(homeTeamId, week) < gamesPerWeek &&
+        getTeamGamesInWeek(awayTeamId, week) < gamesPerWeek
+      );
+    };
+
+    // Calculate expected matchups per week
+    const matchupsPerWeek = (teamIds.length * gamesPerWeek) / 2;
+    const weekMatchupCount = new Map<number, number>();
+
+    const result: Array<GameMatchup & { targetWeek: number }> = [];
+
+    // Process matchups in their original order (round-robin order helps spread rematches)
+    for (const matchup of matchups) {
+      // Find the best week for this matchup
+      // Strategy: prefer weeks that are less full, starting from week 0
+      let bestWeek = -1;
+      let bestWeekScore = Infinity;
+
+      for (let week = 0; week < numWeeks; week++) {
+        if (!canScheduleInWeek(matchup.homeTeamId, matchup.awayTeamId, week)) {
+          continue;
+        }
+
+        // Score this week: prefer weeks that are less full
+        // This helps balance matchups across weeks
+        const currentMatchups = weekMatchupCount.get(week) || 0;
+
+        // Penalize weeks that are already at or above target
+        const overTarget = Math.max(0, currentMatchups - matchupsPerWeek + 1);
+        const score = currentMatchups + (overTarget * 100);
+
+        if (score < bestWeekScore) {
+          bestWeekScore = score;
+          bestWeek = week;
+        }
+      }
+
+      if (bestWeek === -1) {
+        // No valid week found - this means the math doesn't work out
+        // Log detailed diagnostics
+        const homeTeam = this.teams.find(t => t.id === matchup.homeTeamId);
+        const awayTeam = this.teams.find(t => t.id === matchup.awayTeamId);
+        const homeTeamName = homeTeam?.name || matchup.homeTeamId;
+        const awayTeamName = awayTeam?.name || matchup.awayTeamId;
+
+        const homeGamesPerWeek = Array.from({ length: numWeeks }, (_, w) => `W${w + 1}:${getTeamGamesInWeek(matchup.homeTeamId, w)}`).join(', ');
+        const awayGamesPerWeek = Array.from({ length: numWeeks }, (_, w) => `W${w + 1}:${getTeamGamesInWeek(matchup.awayTeamId, w)}`).join(', ');
+
+        console.warn(`⚠️ Could not find valid week for matchup ${homeTeamName} vs ${awayTeamName}`);
+        console.warn(`   ${homeTeamName} games per week: ${homeGamesPerWeek}`);
+        console.warn(`   ${awayTeamName} games per week: ${awayGamesPerWeek}`);
+
+        // Log to scheduling log so it shows up in the UI
+        const summary = `Could not find valid week for matchup ${homeTeamName} vs ${awayTeamName}.\n` +
+          `Both teams are already at ${gamesPerWeek} games/week in all weeks.\n` +
+          `${homeTeamName}: ${homeGamesPerWeek}\n` +
+          `${awayTeamName}: ${awayGamesPerWeek}`;
+
+        this.log('error', 'game', `No valid week for matchup: ${homeTeamName} vs ${awayTeamName}`, {
+          homeTeamId: matchup.homeTeamId,
+          awayTeamId: matchup.awayTeamId,
+          homeTeamName,
+          awayTeamName,
+          gamesPerWeek,
+          numWeeks,
+          homeGamesPerWeek,
+          awayGamesPerWeek,
+        }, summary);
+
+        // Still need to assign it somewhere for the scheduling phase to report properly
+        // Find the week with the fewest games for the home team (will fail during scheduling)
+        let leastFullWeek = 0;
+        let leastGames = Infinity;
+        for (let week = 0; week < numWeeks; week++) {
+          const homeGames = getTeamGamesInWeek(matchup.homeTeamId, week);
+          if (homeGames < leastGames) {
+            leastGames = homeGames;
+            leastFullWeek = week;
+          }
+        }
+        bestWeek = leastFullWeek;
+      }
+
+      // Assign matchup to best week
+      result.push({
+        ...matchup,
+        targetWeek: bestWeek,
+      });
+
+      // Update tracking (even for "invalid" assignments so we can see the overflow)
+      addTeamGameInWeek(matchup.homeTeamId, bestWeek);
+      addTeamGameInWeek(matchup.awayTeamId, bestWeek);
+      weekMatchupCount.set(bestWeek, (weekMatchupCount.get(bestWeek) || 0) + 1);
+    }
+
+    // Log the distribution for debugging
+    console.log(`  Matchup-to-week assignment:`);
+    for (let week = 0; week < numWeeks; week++) {
+      const count = weekMatchupCount.get(week) || 0;
+      const status = count === matchupsPerWeek ? '✓' : (count < matchupsPerWeek ? '⚠ under' : '⚠ over');
+      console.log(`    Week ${week + 1}: ${count} matchups ${status}`);
+    }
+
+    // Verify team distribution
+    let allTeamsBalanced = true;
+    for (const teamId of teamIds) {
+      const weekMap = teamWeekGames.get(teamId)!;
+      for (let week = 0; week < numWeeks; week++) {
+        const games = weekMap.get(week) || 0;
+        if (games !== gamesPerWeek) {
+          allTeamsBalanced = false;
+          const team = this.teams.find(t => t.id === teamId);
+          console.log(`    ⚠ ${team?.name || teamId} has ${games} games in week ${week + 1} (expected ${gamesPerWeek})`);
+        }
+      }
+    }
+    if (allTeamsBalanced) {
+      console.log(`  ✓ All teams have exactly ${gamesPerWeek} games per week`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Rebalance home/away assignments to minimize imbalance.
+   * This is needed when we use partial round-robin cycles.
+   *
+   * Strategy: For teams with imbalance > 1, find matchups where swapping
+   * home/away would improve overall balance.
+   */
+  private rebalanceHomeAway(
+    matchups: Array<GameMatchup & { targetWeek: number }>,
+    teams: Team[]
+  ): void {
+    // Calculate current balance
+    const getBalance = () => {
+      const homeCount = new Map<string, number>();
+      const awayCount = new Map<string, number>();
+      for (const m of matchups) {
+        homeCount.set(m.homeTeamId, (homeCount.get(m.homeTeamId) || 0) + 1);
+        awayCount.set(m.awayTeamId, (awayCount.get(m.awayTeamId) || 0) + 1);
+      }
+      return { homeCount, awayCount };
+    };
+
+    const getImbalance = (teamId: string, homeCount: Map<string, number>, awayCount: Map<string, number>) => {
+      return (homeCount.get(teamId) || 0) - (awayCount.get(teamId) || 0);
+    };
+
+    const getMaxImbalance = (homeCount: Map<string, number>, awayCount: Map<string, number>) => {
+      let max = 0;
+      for (const team of teams) {
+        max = Math.max(max, Math.abs(getImbalance(team.id, homeCount, awayCount)));
+      }
+      return max;
+    };
+
+    let { homeCount, awayCount } = getBalance();
+    let maxImbalance = getMaxImbalance(homeCount, awayCount);
+
+    if (maxImbalance <= 1) {
+      console.log(`  Home/away balance OK (max imbalance: ${maxImbalance})`);
+      return;
+    }
+
+    console.log(`  Rebalancing home/away (initial max imbalance: ${maxImbalance})...`);
+
+    // Try swapping matchups to reduce imbalance
+    let improved = true;
+    let iterations = 0;
+    const maxIterations = matchups.length * 2; // Safety limit
+
+    while (improved && iterations < maxIterations && maxImbalance > 1) {
+      improved = false;
+      iterations++;
+
+      for (const matchup of matchups) {
+        const homeImbalance = getImbalance(matchup.homeTeamId, homeCount, awayCount);
+        const awayImbalance = getImbalance(matchup.awayTeamId, homeCount, awayCount);
+
+        // If home team has too many home games and away team has too few (or vice versa),
+        // swapping would help both
+        if (homeImbalance > 0 && awayImbalance < 0) {
+          // Swap: home team loses a home game, away team gains one
+          const newHomeImbalance = homeImbalance - 2; // -1 home, +1 away = -2
+          const newAwayImbalance = awayImbalance + 2; // +1 home, -1 away = +2
+
+          // Only swap if it improves or maintains the max imbalance
+          const currentMax = Math.max(Math.abs(homeImbalance), Math.abs(awayImbalance));
+          const newMax = Math.max(Math.abs(newHomeImbalance), Math.abs(newAwayImbalance));
+
+          if (newMax < currentMax) {
+            // Perform swap
+            const temp = matchup.homeTeamId;
+            matchup.homeTeamId = matchup.awayTeamId;
+            matchup.awayTeamId = temp;
+
+            // Update counts
+            homeCount.set(matchup.homeTeamId, (homeCount.get(matchup.homeTeamId) || 0) + 1);
+            homeCount.set(matchup.awayTeamId, (homeCount.get(matchup.awayTeamId) || 0) - 1);
+            awayCount.set(matchup.awayTeamId, (awayCount.get(matchup.awayTeamId) || 0) + 1);
+            awayCount.set(matchup.homeTeamId, (awayCount.get(matchup.homeTeamId) || 0) - 1);
+
+            improved = true;
+            maxImbalance = getMaxImbalance(homeCount, awayCount);
+          }
         }
       }
     }
 
-    const totalGames = this.scheduledEvents.filter((e) => e.eventType === 'game').length;
-    console.log(`\n✅ Game scheduling complete. Total scheduled: ${totalGames}`);
+    console.log(`  Rebalancing complete after ${iterations} iterations (final max imbalance: ${maxImbalance})`);
+  }
+
+  private getWeeksToTry(targetWeek: number, totalWeeks: number): number[] {
+    const weeks: number[] = [targetWeek];
+    let offset = 1;
+
+    // Expand outward from target week
+    while (weeks.length < totalWeeks) {
+      if (targetWeek + offset < totalWeeks) {
+        weeks.push(targetWeek + offset);
+      }
+      if (targetWeek - offset >= 0) {
+        weeks.push(targetWeek - offset);
+      }
+      offset++;
+    }
+
+    return weeks;
   }
 
   /**
@@ -1126,6 +1776,7 @@ export class ScheduleGenerator {
       console.log(`\nWeek ${week.weekNumber + 1} (${week.startDate} to ${week.endDate}):`);
 
       // Get teams that need practices this week, sorted by who is furthest behind their target
+      // Use week number as tiebreaker for teams with the same deficit (fairness rotation)
       const teamsNeedingPractices = Array.from(this.teamSchedulingStates.values())
         .filter((ts) => {
           const config = this.divisionConfigs.get(ts.divisionId);
@@ -1145,12 +1796,21 @@ export class ScheduleGenerator {
           const expectedB = week.weekNumber * (configB?.practicesPerWeek || 1);
           const deficitA = expectedA - a.practicesScheduled;
           const deficitB = expectedB - b.practicesScheduled;
-          // Higher deficit = more behind = should go first (sort descending by deficit)
-          return deficitB - deficitA;
+
+          // Primary sort: Higher deficit = more behind = should go first
+          if (deficitA !== deficitB) {
+            return deficitB - deficitA;
+          }
+
+          // Tiebreaker: rotate priority based on week number for fairness among equal-deficit teams
+          // Use team name hash + week number to create a rotating priority
+          const hashA = a.teamName.charCodeAt(0) + week.weekNumber;
+          const hashB = b.teamName.charCodeAt(0) + week.weekNumber;
+          return (hashA % 100) - (hashB % 100);
         });
 
-      // Rotate starting position based on week number for additional fairness
-      const rotatedByWeek = rotateArray(teamsNeedingPractices, week.weekNumber);
+      // Don't rotate anymore - deficit sorting with tiebreaker handles fairness
+      const rotatedByWeek = teamsNeedingPractices;
 
       if (rotatedByWeek.length === 0) {
         console.log('  No teams need practices this week');
@@ -1212,7 +1872,16 @@ export class ScheduleGenerator {
             const expectedB = (week.weekNumber + 1) * (configB?.practicesPerWeek || 1);
             const deficitA = expectedA - a.practicesScheduled;
             const deficitB = expectedB - b.practicesScheduled;
-            return deficitB - deficitA;
+
+            // Primary: higher deficit goes first
+            if (deficitA !== deficitB) {
+              return deficitB - deficitA;
+            }
+
+            // Tiebreaker: rotate priority based on round + week for fairness
+            const hashA = a.teamName.charCodeAt(0) + week.weekNumber + round;
+            const hashB = b.teamName.charCodeAt(0) + week.weekNumber + round;
+            return (hashA % 100) - (hashB % 100);
           });
 
         if (stillNeedPractices.length === 0) {
@@ -1223,13 +1892,12 @@ export class ScheduleGenerator {
         // Compute slot availability for scarcity calculation
         this.computeTeamSlotAvailability(stillNeedPractices, practiceFieldSlots, week);
 
-        // Rotate team order within round for fairness among teams with similar deficits
-        const rotatedTeams = rotateArray(stillNeedPractices, round);
-        console.log(`  Round ${round + 1}: ${rotatedTeams.length} teams still need practices`);
+        // Use sorted order directly - deficit sorting with tiebreaker handles fairness
+        console.log(`  Round ${round + 1}: ${stillNeedPractices.length} teams still need practices`);
 
         let anyScheduledThisRound = false;
 
-        for (const teamState of rotatedTeams) {
+        for (const teamState of stillNeedPractices) {
           const config = this.divisionConfigs.get(teamState.divisionId);
           if (!config) continue;
 
