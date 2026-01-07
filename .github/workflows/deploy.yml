@@ -48,7 +48,7 @@ jobs:
 
       - name: Build frontend
         env:
-          VITE_API_URL: https://ll-scheduler-api.bbaldino.workers.dev/api
+          VITE_API_URL: https://ll-scheduler-api-production.bbaldino.workers.dev/api
         run: pnpm --filter @ll-scheduler/frontend build
 
       - name: Deploy frontend to Pages
