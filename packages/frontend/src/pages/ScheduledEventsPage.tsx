@@ -56,9 +56,11 @@ export default function ScheduledEventsPage() {
   const [filterDivision, setFilterDivision] = useState<string>('');
   const [filterType, setFilterType] = useState<EventType | ''>('');
   const [filterTeam, setFilterTeam] = useState<string>('');
+  const [filterField, setFilterField] = useState<string>('');
+  const [filterCage, setFilterCage] = useState<string>('');
 
   // View state
-  const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'field'>('calendar');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
 
   // Evaluation state
   const [evaluationResult, setEvaluationResult] = useState<ScheduleEvaluationResult | null>(null);
@@ -247,58 +249,29 @@ export default function ScheduledEventsPage() {
     );
   }
 
-  // Filter events by team (for calendar view - API already filters by division/type/period)
-  const filteredEvents = filterTeam
-    ? events.filter(
+  // Filter events by team/field/cage (API already filters by division/type)
+  const filteredEvents = useMemo(() => {
+    let result = events;
+
+    if (filterTeam) {
+      result = result.filter(
         (e) =>
           e.teamId === filterTeam ||
           e.homeTeamId === filterTeam ||
           e.awayTeamId === filterTeam
-      )
-    : events;
-
-  // Group events by field/cage for field view
-  const eventsByResource = useMemo(() => {
-    const byField = new Map<string, ScheduledEvent[]>();
-    const byCage = new Map<string, ScheduledEvent[]>();
-
-    for (const event of filteredEvents) {
-      if (event.fieldId) {
-        const list = byField.get(event.fieldId) || [];
-        list.push(event);
-        byField.set(event.fieldId, list);
-      }
-      if (event.cageId) {
-        const list = byCage.get(event.cageId) || [];
-        list.push(event);
-        byCage.set(event.cageId, list);
-      }
+      );
     }
 
-    // Sort events within each resource by date, then time
-    for (const list of [...byField.values(), ...byCage.values()]) {
-      list.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+    if (filterField) {
+      result = result.filter((e) => e.fieldId === filterField);
     }
 
-    return { byField, byCage };
-  }, [filteredEvents]);
+    if (filterCage) {
+      result = result.filter((e) => e.cageId === filterCage);
+    }
 
-  // Get sorted field/cage IDs by name for consistent ordering
-  const sortedFieldIds = useMemo(() => {
-    return Array.from(eventsByResource.byField.keys()).sort((a, b) => {
-      const nameA = getFieldName(a);
-      const nameB = getFieldName(b);
-      return nameA.localeCompare(nameB);
-    });
-  }, [eventsByResource.byField, seasonFields]);
-
-  const sortedCageIds = useMemo(() => {
-    return Array.from(eventsByResource.byCage.keys()).sort((a, b) => {
-      const nameA = getCageName(a);
-      const nameB = getCageName(b);
-      return nameA.localeCompare(nameB);
-    });
-  }, [eventsByResource.byCage, seasonCages]);
+    return result;
+  }, [events, filterTeam, filterField, filterCage]);
 
   // Group events by date
   const eventsByDate = filteredEvents.reduce((acc, event) => {
@@ -328,12 +301,6 @@ export default function ScheduledEventsPage() {
               onClick={() => setViewMode('calendar')}
             >
               Calendar View
-            </button>
-            <button
-              className={viewMode === 'field' ? styles.active : ''}
-              onClick={() => setViewMode('field')}
-            >
-              By Field
             </button>
           </div>
           <Link to="/generation-logs" className={styles.linkButton}>
@@ -387,11 +354,45 @@ export default function ScheduledEventsPage() {
               ))}
           </select>
         </div>
-        {filterTeam && (
+        <div className={styles.filterGroup}>
+          <label>Field:</label>
+          <select
+            value={filterField}
+            onChange={(e) => setFilterField(e.target.value)}
+          >
+            <option value="">All Fields</option>
+            {seasonFields
+              .sort((a, b) => (a.fieldName || '').localeCompare(b.fieldName || ''))
+              .map((sf) => (
+                <option key={sf.fieldId} value={sf.fieldId}>
+                  {sf.fieldName || sf.field?.name}
+                </option>
+              ))}
+          </select>
+        </div>
+        <div className={styles.filterGroup}>
+          <label>Cage:</label>
+          <select
+            value={filterCage}
+            onChange={(e) => setFilterCage(e.target.value)}
+          >
+            <option value="">All Cages</option>
+            {seasonCages
+              .sort((a, b) => (a.cageName || '').localeCompare(b.cageName || ''))
+              .map((sc) => (
+                <option key={sc.cageId} value={sc.cageId}>
+                  {sc.cageName || sc.cage?.name}
+                </option>
+              ))}
+          </select>
+        </div>
+        {(filterTeam || filterField || filterCage) && (
           <button
             className={styles.clearFilterButton}
             onClick={() => {
               setFilterTeam('');
+              setFilterField('');
+              setFilterCage('');
               setFilterDivision('');
             }}
           >
@@ -642,90 +643,6 @@ export default function ScheduledEventsPage() {
             onEventUpdate={handleCalendarUpdate}
             onEventDelete={handleCalendarDelete}
           />
-        ) : viewMode === 'field' ? (
-          <>
-            {sortedFieldIds.length === 0 && sortedCageIds.length === 0 && !isCreating && (
-              <div className={styles.empty}>
-                <p>No events scheduled yet. Create one to get started!</p>
-              </div>
-            )}
-
-            {/* Fields Section */}
-            {sortedFieldIds.length > 0 && (
-              <div className={styles.resourceSection}>
-                <h3 className={styles.resourceSectionHeader}>Fields</h3>
-                {sortedFieldIds.map((fieldId) => {
-                  const fieldEvents = eventsByResource.byField.get(fieldId) || [];
-                  return (
-                    <div key={fieldId} className={styles.resourceCard}>
-                      <h4 className={styles.resourceHeader}>{getFieldName(fieldId)}</h4>
-                      <div className={styles.resourceEventList}>
-                        {fieldEvents.map((event) => (
-                          <div key={event.id} className={styles.resourceEventRow}>
-                            <span className={styles.resourceEventDate}>
-                              {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })}
-                            </span>
-                            <span className={styles.resourceEventTime}>
-                              {event.startTime}-{event.endTime}
-                            </span>
-                            <span className={`${styles.resourceEventType} ${styles[event.eventType]}`}>
-                              {EVENT_TYPE_LABELS[event.eventType]}
-                            </span>
-                            <span className={styles.resourceEventDetails}>
-                              {event.eventType === 'game' ? (
-                                `${getTeamName(event.homeTeamId)} vs ${getTeamName(event.awayTeamId)}`
-                              ) : (
-                                getTeamName(event.teamId)
-                              )}
-                            </span>
-                            <span className={styles.resourceEventDivision}>
-                              ({getDivisionName(event.divisionId)})
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Cages Section */}
-            {sortedCageIds.length > 0 && (
-              <div className={styles.resourceSection}>
-                <h3 className={styles.resourceSectionHeader}>Batting Cages</h3>
-                {sortedCageIds.map((cageId) => {
-                  const cageEvents = eventsByResource.byCage.get(cageId) || [];
-                  return (
-                    <div key={cageId} className={styles.resourceCard}>
-                      <h4 className={styles.resourceHeader}>{getCageName(cageId)}</h4>
-                      <div className={styles.resourceEventList}>
-                        {cageEvents.map((event) => (
-                          <div key={event.id} className={styles.resourceEventRow}>
-                            <span className={styles.resourceEventDate}>
-                              {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' })}
-                            </span>
-                            <span className={styles.resourceEventTime}>
-                              {event.startTime}-{event.endTime}
-                            </span>
-                            <span className={`${styles.resourceEventType} ${styles[event.eventType]}`}>
-                              {EVENT_TYPE_LABELS[event.eventType]}
-                            </span>
-                            <span className={styles.resourceEventDetails}>
-                              {getTeamName(event.teamId)}
-                            </span>
-                            <span className={styles.resourceEventDivision}>
-                              ({getDivisionName(event.divisionId)})
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
         ) : (
           <>
             {sortedDates.length === 0 && !isCreating && (
