@@ -16,6 +16,7 @@ interface SeasonFieldRow {
 interface SeasonFieldWithFieldRow extends SeasonFieldRow {
   field_name: string;
   field_division_compatibility: string;
+  field_practice_only: number;
   field_created_at: string;
   field_updated_at: string;
 }
@@ -42,6 +43,7 @@ function rowToSeasonFieldWithField(row: SeasonFieldWithFieldRow): SeasonField {
       id: row.field_id,
       name: row.field_name,
       divisionCompatibility,
+      practiceOnly: row.field_practice_only === 1,
       createdAt: row.field_created_at,
       updatedAt: row.field_updated_at,
     },
@@ -60,6 +62,7 @@ export async function listSeasonFields(db: D1Database, seasonId: string): Promis
         sf.*,
         f.name as field_name,
         f.division_compatibility as field_division_compatibility,
+        f.practice_only as field_practice_only,
         f.created_at as field_created_at,
         f.updated_at as field_updated_at
       FROM season_fields sf
@@ -83,6 +86,7 @@ export async function getSeasonFieldById(db: D1Database, id: string): Promise<Se
         sf.*,
         f.name as field_name,
         f.division_compatibility as field_division_compatibility,
+        f.practice_only as field_practice_only,
         f.created_at as field_created_at,
         f.updated_at as field_updated_at
       FROM season_fields sf
@@ -109,6 +113,7 @@ export async function getSeasonFieldBySeasonAndField(
         sf.*,
         f.name as field_name,
         f.division_compatibility as field_division_compatibility,
+        f.practice_only as field_practice_only,
         f.created_at as field_created_at,
         f.updated_at as field_updated_at
       FROM season_fields sf

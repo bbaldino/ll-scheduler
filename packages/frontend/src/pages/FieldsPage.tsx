@@ -205,6 +205,19 @@ export default function FieldsPage() {
     }
   };
 
+  const togglePracticeOnly = async (field: Field) => {
+    try {
+      await updateField(field.id, { practiceOnly: !field.practiceOnly });
+      await loadGlobalFields();
+      if (currentSeason) {
+        await loadSeasonFields();
+      }
+    } catch (error) {
+      console.error('Failed to update practice-only setting:', error);
+      alert('Failed to update practice-only setting');
+    }
+  };
+
   const handleCreateAvailability = async (seasonFieldId: string) => {
     try {
       await createFieldAvailability({ ...availabilityFormData, seasonFieldId });
@@ -339,10 +352,23 @@ export default function FieldsPage() {
           {globalFields.map((field) => (
             <div key={field.id} className={styles.fieldCard}>
               <div className={styles.fieldHeader}>
-                <h3>{field.name}</h3>
+                <h3>
+                  {field.name}
+                  {field.practiceOnly && <span className={styles.practiceOnlyBadge}>Practice Only</span>}
+                </h3>
                 <button onClick={() => handleDeleteGlobalField(field.id)}>Delete</button>
               </div>
               <div className={styles.fieldDetails}>
+                <div className={styles.practiceOnlySection}>
+                  <label className={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={field.practiceOnly || false}
+                      onChange={() => togglePracticeOnly(field)}
+                    />
+                    <span>Practice only (cannot be used for games)</span>
+                  </label>
+                </div>
                 <div className={styles.divisionSection}>
                   <strong>Division Compatibility:</strong>
                   {divisions.length === 0 ? (

@@ -450,12 +450,14 @@ export class ScheduleGenerator {
     const allDates = getDateRange(this.season.startDate, this.season.endDate);
 
     // Build game field slots for dates from gamesStartDate onwards
+    // Exclude practice-only fields for games
     const gameDates = allDates.filter(date => this.isGameDateAllowed(date));
-    this.buildFieldSlotsForDates(gameDates, this.gameFieldSlots);
+    this.buildFieldSlotsForDates(gameDates, this.gameFieldSlots, true);
 
     // Build practice field slots for all season dates
+    // Include all fields (both game-capable and practice-only)
     const practiceDates = allDates.filter(date => this.isPracticeDateAllowed(date));
-    this.buildFieldSlotsForDates(practiceDates, this.practiceFieldSlots);
+    this.buildFieldSlotsForDates(practiceDates, this.practiceFieldSlots, false);
 
     // Build cage slots for all season dates
     const cageDates = allDates.filter(date => this.isPracticeDateAllowed(date));
@@ -504,12 +506,18 @@ export class ScheduleGenerator {
 
   /**
    * Build field slots for a given date range
+   * @param excludePracticeOnly - if true, skip fields marked as practice-only (for game slots)
    */
-  private buildFieldSlotsForDates(dates: string[], targetSlots: ResourceSlot[]): void {
+  private buildFieldSlotsForDates(dates: string[], targetSlots: ResourceSlot[], excludePracticeOnly: boolean): void {
     for (const date of dates) {
       const dayOfWeek = getDayOfWeek(date);
 
       for (const seasonField of this.seasonFields) {
+        // Skip practice-only fields when building game slots
+        if (excludePracticeOnly && seasonField.field?.practiceOnly) {
+          continue;
+        }
+
         const availability = this.fieldAvailability.filter(
           (a) => a.seasonFieldId === seasonField.id && a.dayOfWeek === dayOfWeek
         );

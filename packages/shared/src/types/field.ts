@@ -7,6 +7,7 @@ export interface Field {
   id: string;
   name: string;
   divisionCompatibility: string[]; // Array of division IDs - which divisions can use this field
+  practiceOnly: boolean; // If true, field can only be used for practices, not games
   createdAt: string;
   updatedAt: string;
 }
@@ -14,11 +15,13 @@ export interface Field {
 export interface CreateFieldInput {
   name: string;
   divisionCompatibility?: string[];
+  practiceOnly?: boolean;
 }
 
 export interface UpdateFieldInput {
   name?: string;
   divisionCompatibility?: string[];
+  practiceOnly?: boolean;
 }
 
 /**

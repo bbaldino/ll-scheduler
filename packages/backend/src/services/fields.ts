@@ -5,6 +5,7 @@ interface FieldRow {
   id: string;
   name: string;
   division_compatibility: string;
+  practice_only: number;
   created_at: string;
   updated_at: string;
 }
@@ -14,6 +15,7 @@ function rowToField(row: FieldRow): Field {
     id: row.id,
     name: row.name,
     divisionCompatibility: JSON.parse(row.division_compatibility || '[]'),
+    practiceOnly: row.practice_only === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -51,9 +53,9 @@ export async function createField(db: D1Database, input: CreateFieldInput): Prom
 
   await db
     .prepare(
-      'INSERT INTO fields (id, name, division_compatibility, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO fields (id, name, division_compatibility, practice_only, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
     )
-    .bind(id, input.name, JSON.stringify(input.divisionCompatibility || []), now, now)
+    .bind(id, input.name, JSON.stringify(input.divisionCompatibility || []), input.practiceOnly ? 1 : 0, now, now)
     .run();
 
   const field = await getFieldById(db, id);
@@ -88,6 +90,11 @@ export async function updateField(
   if (input.divisionCompatibility !== undefined) {
     updates.push('division_compatibility = ?');
     values.push(JSON.stringify(input.divisionCompatibility));
+  }
+
+  if (input.practiceOnly !== undefined) {
+    updates.push('practice_only = ?');
+    values.push(input.practiceOnly ? 1 : 0);
   }
 
   if (updates.length > 0) {
