@@ -117,9 +117,13 @@ export function calculatePlacementScore(
     breakdown.fieldPreference = calculateFieldPreferenceRaw(candidate.resourceId, teamState.divisionId, context) * weights.fieldPreference;
   }
 
-  // Practice-specific penalties
+  // Practice-specific factors
   if (candidate.eventType === 'practice') {
     breakdown.weekendMorningPractice = calculateWeekendMorningPracticeRaw(candidate.dayOfWeek, candidate.startTime) * weights.weekendMorningPractice;
+    // Apply earliestTime for practices - prefer earlier times over preferred fields
+    breakdown.earliestTime = calculateEarliestTimeRaw(candidate, context) * weights.earliestTime;
+    // Reduce field preference weight for practices (field choice less important than for games)
+    breakdown.fieldPreference = breakdown.fieldPreference * 0.3;
   }
 
   // Binary penalty: same-day event (only for same resource type)

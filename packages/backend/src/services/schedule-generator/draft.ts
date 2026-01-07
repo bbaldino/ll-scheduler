@@ -744,6 +744,71 @@ export function selectBestCandidate(
 }
 
 /**
+ * Select best candidate using two-phase approach for practices:
+ * 1. Select field based on all factors EXCEPT timeAdjacency
+ * 2. Select best time slot on that field using timeAdjacency
+ *
+ * This prevents practices from clustering on game fields just because
+ * games are already there, while still packing practices together on
+ * whichever field is selected.
+ */
+export function selectBestCandidateTwoPhase(
+  candidates: PlacementCandidate[],
+  teamState: TeamSchedulingState,
+  context: ScoringContext,
+  weights: ScoringWeights
+): ScoredCandidate | null {
+  if (candidates.length === 0) return null;
+
+  // Score all candidates with full scoring (including timeAdjacency)
+  const scoredCandidates: ScoredCandidate[] = [];
+  for (const candidate of candidates) {
+    scoredCandidates.push(calculatePlacementScore(candidate, teamState, context, weights));
+  }
+
+  // Group by field
+  const byField = new Map<string, ScoredCandidate[]>();
+  for (const scored of scoredCandidates) {
+    const fieldId = scored.resourceId;
+    if (!byField.has(fieldId)) {
+      byField.set(fieldId, []);
+    }
+    byField.get(fieldId)!.push(scored);
+  }
+
+  // For each field, find the best candidate and its "field selection score"
+  // (score minus timeAdjacency contribution)
+  let bestField: string | null = null;
+  let bestFieldScore = -Infinity;
+  const bestByField = new Map<string, ScoredCandidate>();
+
+  for (const [fieldId, fieldCandidates] of byField) {
+    // Find best candidate on this field (using full score with timeAdjacency)
+    let bestOnField: ScoredCandidate | null = null;
+    for (const c of fieldCandidates) {
+      if (!bestOnField || c.score > bestOnField.score) {
+        bestOnField = c;
+      }
+    }
+
+    if (bestOnField) {
+      bestByField.set(fieldId, bestOnField);
+
+      // Calculate field selection score (exclude timeAdjacency)
+      const fieldSelectionScore = bestOnField.score - (bestOnField.scoreBreakdown?.timeAdjacency || 0);
+
+      if (fieldSelectionScore > bestFieldScore) {
+        bestFieldScore = fieldSelectionScore;
+        bestField = fieldId;
+      }
+    }
+  }
+
+  // Return the best candidate from the selected field
+  return bestField ? bestByField.get(bestField) || null : null;
+}
+
+/**
  * Convert a scored candidate to a scheduled event draft
  */
 export function candidateToEventDraft(

@@ -63,6 +63,7 @@ import {
   generateCandidatesForTeamEvent,
   generateCandidatesForGame,
   selectBestCandidate,
+  selectBestCandidateTwoPhase,
   candidateToEventDraft,
   getWeekNumberForDate,
   teamNeedsEventInWeek,
@@ -1064,8 +1065,28 @@ export class ScheduleGenerator {
 
       for (const weekNum of weekNumbers) {
         const weekMatchups = matchupsByWeek.get(weekNum)!;
+        const weekFieldSlots = fieldSlotsByWeek.get(weekNum) || [];
 
-        // Sort matchups once - teams with fewer preferred-day games go first
+        // Count how many games can fit on required days this week
+        // A single slot (e.g., 9am-6pm) can hold multiple games
+        let requiredDayGameCapacity = 0;
+        if (requiredDays.length > 0) {
+          for (const slot of weekFieldSlots) {
+            if (requiredDays.includes(slot.slot.dayOfWeek)) {
+              // Calculate how many games of this division's duration can fit in this slot
+              const gamesInSlot = Math.floor(slot.slot.duration / division.config.gameDurationHours);
+              requiredDayGameCapacity += gamesInSlot;
+            }
+          }
+        }
+
+        // Determine if there's scarcity: fewer required-day game slots than matchups
+        const hasRequiredDayScarcity = requiredDays.length > 0 && requiredDayGameCapacity < weekMatchups.length;
+        if (hasRequiredDayScarcity) {
+          verboseLog(`  Week ${weekNum + 1}: Required-day scarcity - ${requiredDayGameCapacity} game slots for ${weekMatchups.length} matchups`);
+        }
+
+        // Sort matchups - teams with fewer preferred-day games go first (matters when there's scarcity)
         const sortedMatchups = [...weekMatchups].sort((a, b) => {
           const aMinGames = Math.min(
             preferredDayGames.get(a.homeTeamId) || 0,
@@ -1077,6 +1098,9 @@ export class ScheduleGenerator {
           );
           return aMinGames - bMinGames;
         });
+
+        // Track how many required-day slots we've used this week
+        let requiredDaySlotsUsedThisWeek = 0;
 
         // Process each matchup in sorted order
         for (const matchup of sortedMatchups) {
@@ -1131,24 +1155,31 @@ export class ScheduleGenerator {
               if (candidates.length === 0) {
                 failureReason = 'no_valid_time_slots (all slots have conflicts)';
               } else {
-                // Use the pre-calculated fair share based on actual slot availability
-                const fairSharePerTeam = (division as any).fairSharePerTeam || Infinity;
-
-                const homePreferredGames = preferredDayGames.get(matchup.homeTeamId) || 0;
-                const awayPreferredGames = preferredDayGames.get(matchup.awayTeamId) || 0;
-                // If EITHER team already has their fair share, avoid giving them more preferred-day games
-                // This prevents one team from accumulating too many
-                const eitherTeamHasEnough = homePreferredGames >= fairSharePerTeam || awayPreferredGames >= fairSharePerTeam;
-
-                // If either team already has their fair share of preferred-day games,
-                // filter out preferred-day candidates to leave them for other teams
+                // Only apply fair-share filtering when there's actual scarcity of required-day slots
+                // If there are enough Saturday slots for all matchups, everyone should get Saturday
                 let filteredCandidates = candidates;
-                if (eitherTeamHasEnough && requiredDays.length > 0) {
-                  const nonPreferredCandidates = candidates.filter(c => !requiredDays.includes(c.dayOfWeek));
-                  if (nonPreferredCandidates.length > 0) {
-                    filteredCandidates = nonPreferredCandidates;
+
+                if (hasRequiredDayScarcity) {
+                  // There's scarcity - use fair share logic to decide who gets filtered
+                  const fairSharePerTeam = (division as any).fairSharePerTeam || Infinity;
+                  const homePreferredGames = preferredDayGames.get(matchup.homeTeamId) || 0;
+                  const awayPreferredGames = preferredDayGames.get(matchup.awayTeamId) || 0;
+
+                  // Calculate remaining required-day slots this week
+                  const remainingRequiredDaySlots = requiredDayGameCapacity - requiredDaySlotsUsedThisWeek;
+                  const remainingMatchups = sortedMatchups.length - sortedMatchups.indexOf(matchup);
+
+                  // Only filter if: (1) team has enough AND (2) there aren't enough slots for remaining matchups
+                  const eitherTeamHasEnough = homePreferredGames >= fairSharePerTeam || awayPreferredGames >= fairSharePerTeam;
+                  const shouldFilterForFairness = eitherTeamHasEnough && remainingRequiredDaySlots < remainingMatchups;
+
+                  if (shouldFilterForFairness) {
+                    const nonPreferredCandidates = candidates.filter(c => !requiredDays.includes(c.dayOfWeek));
+                    if (nonPreferredCandidates.length > 0) {
+                      filteredCandidates = nonPreferredCandidates;
+                      verboseLog(`    Filtering ${homeTeam.name} vs ${awayTeam.name} to non-required days (fair share)`);
+                    }
                   }
-                  // If no non-preferred candidates, fall back to all candidates
                 }
 
                 // Score all candidates
@@ -1157,6 +1188,29 @@ export class ScheduleGenerator {
                 );
                 scoredCandidates.sort((a, b) => b.score - a.score);
                 const bestCandidate = scoredCandidates[0];
+
+                // Log when a non-required day is selected despite required-day candidates existing
+                if (requiredDays.length > 0 && bestCandidate && !requiredDays.includes(bestCandidate.dayOfWeek)) {
+                  const requiredDayCandidates = scoredCandidates.filter(c => requiredDays.includes(c.dayOfWeek));
+                  if (requiredDayCandidates.length > 0) {
+                    const bestRequired = requiredDayCandidates[0];
+                    const breakdown = bestRequired.scoreBreakdown;
+                    this.log('warning', 'game', `Non-required day selected for ${homeTeam.name} vs ${awayTeam.name}`, {
+                      selectedDate: bestCandidate.date,
+                      selectedDay: ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek],
+                      selectedScore: bestCandidate.score,
+                      bestRequiredDate: bestRequired.date,
+                      bestRequiredDay: ScheduleGenerator.DAY_NAMES[bestRequired.dayOfWeek],
+                      bestRequiredScore: bestRequired.score,
+                      requiredDayBreakdown: breakdown ? {
+                        gameDayPreference: breakdown.gameDayPreference,
+                        sameDayEvent: breakdown.sameDayEvent,
+                        dayGap: breakdown.dayGap,
+                        timeAdjacency: breakdown.timeAdjacency,
+                      } : undefined,
+                    }, `Game scheduled on ${ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek]} instead of required day. Required day score: ${bestRequired.score.toFixed(0)}, selected score: ${bestCandidate.score.toFixed(0)}`);
+                  }
+                }
 
                 if (!bestCandidate) {
                   failureReason = 'no_scored_candidate';
@@ -1196,6 +1250,7 @@ export class ScheduleGenerator {
                   if (requiredDays.includes(bestCandidate.dayOfWeek)) {
                     preferredDayGames.set(matchup.homeTeamId, (preferredDayGames.get(matchup.homeTeamId) || 0) + 1);
                     preferredDayGames.set(matchup.awayTeamId, (preferredDayGames.get(matchup.awayTeamId) || 0) + 1);
+                    requiredDaySlotsUsedThisWeek++;
                   }
 
                   totalScheduled++;
@@ -2070,8 +2125,10 @@ export class ScheduleGenerator {
             continue;
           }
 
-          // Score and select the best candidate
-          const bestCandidate = selectBestCandidate(
+          // Score and select the best candidate using two-phase approach:
+          // 1. Select field based on earliestTime, resourceUtilization, etc. (not timeAdjacency)
+          // 2. Select best time slot on that field (using timeAdjacency to pack events)
+          const bestCandidate = selectBestCandidateTwoPhase(
             candidates,
             teamState,
             this.scoringContext,
