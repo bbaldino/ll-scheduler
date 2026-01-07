@@ -764,34 +764,54 @@ function evaluateGameSpacing(
     });
   }
 
-  // Calculate overall average
+  // Calculate average per division (not global) since divisions have different games per week
+  const divisionAverages = new Map<string, number>();
   const teamsWithGames = teamReports.filter((r) => r.totalGames >= 2);
-  const overallAvg =
-    teamsWithGames.length > 0
-      ? teamsWithGames.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) /
-        teamsWithGames.length
-      : 0;
 
-  // Now check each team's deviation from the overall average
+  // Group by division and calculate per-division average
+  const byDivision = new Map<string, TeamGameSpacingReport[]>();
+  for (const report of teamsWithGames) {
+    const existing = byDivision.get(report.divisionId) || [];
+    existing.push(report);
+    byDivision.set(report.divisionId, existing);
+  }
+
+  for (const [divisionId, divisionReports] of byDivision) {
+    const avg = divisionReports.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) / divisionReports.length;
+    divisionAverages.set(divisionId, avg);
+  }
+
+  // Now check each team's deviation from their division's average
   for (const report of teamReports) {
     if (report.totalGames < 2) continue;
-    const deviation = Math.abs(report.averageDaysBetweenGames - overallAvg);
+    const divisionAvg = divisionAverages.get(report.divisionId) || 0;
+    const deviation = Math.abs(report.averageDaysBetweenGames - divisionAvg);
     report.passed = deviation <= MAX_DEVIATION_FROM_AVG;
   }
 
   const allPassed = teamReports.every((r) => r.passed);
   const failedCount = teamReports.filter((r) => !r.passed).length;
 
-  // Calculate max deviation for summary
-  const maxDeviation = teamsWithGames.length > 0
-    ? Math.max(...teamsWithGames.map((r) => Math.abs(r.averageDaysBetweenGames - overallAvg)))
+  // Calculate max deviation within each division for summary
+  let maxDeviation = 0;
+  for (const [divisionId, divisionReports] of byDivision) {
+    const divisionAvg = divisionAverages.get(divisionId) || 0;
+    for (const report of divisionReports) {
+      const deviation = Math.abs(report.averageDaysBetweenGames - divisionAvg);
+      maxDeviation = Math.max(maxDeviation, deviation);
+    }
+  }
+
+  // Calculate overall average for display purposes only
+  const overallAvg = teamsWithGames.length > 0
+    ? teamsWithGames.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) / teamsWithGames.length
     : 0;
 
   return {
     passed: allPassed,
     summary: allPassed
-      ? `Game spacing is fair across teams (avg: ${overallAvg.toFixed(1)} days, max deviation: ${maxDeviation.toFixed(1)})`
-      : `${failedCount} teams with uneven game spacing (avg: ${overallAvg.toFixed(1)} days, max deviation: ${maxDeviation.toFixed(1)})`,
+      ? `Game spacing is fair within divisions (max deviation: ${maxDeviation.toFixed(1)} days)`
+      : `${failedCount} teams with uneven game spacing within their division (max deviation: ${maxDeviation.toFixed(1)} days)`,
     teamReports,
     overallAverageDaysBetweenGames: Math.round(overallAvg * 10) / 10,
   };
