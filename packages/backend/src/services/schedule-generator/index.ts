@@ -23,11 +23,11 @@ import { listFieldAvailabilitiesForSeason } from '../field-availabilities.js';
 import { listCageAvailabilitiesForSeason } from '../cage-availabilities.js';
 import { listFieldDateOverridesForSeason } from '../field-date-overrides.js';
 import { listCageDateOverridesForSeason } from '../cage-date-overrides.js';
-import {
-  listScheduledEvents,
-  createScheduledEvent,
-  deleteScheduledEvent,
-} from '../scheduled-events.js';
+import { listScheduledEvents } from '../scheduled-events.js';
+import { generateId } from '../../utils/id.js';
+
+// D1 batch size limit - use conservative value to stay well under limits
+const BATCH_SIZE = 50;
 
 /**
  * Main service for generating schedules
@@ -97,14 +97,21 @@ export async function generateSchedule(
       relevantDivisionIds.has(dc.divisionId)
     );
 
-    // Clear existing events if requested
+    // Clear existing events if requested (using batch for efficiency)
     if (request.clearExisting) {
       const existingEvents = await listScheduledEvents(db, {
         seasonId: request.seasonId,
       });
 
-      for (const event of existingEvents) {
-        await deleteScheduledEvent(db, event.id);
+      if (existingEvents.length > 0) {
+        const deleteStatements = existingEvents.map((event) =>
+          db.prepare('DELETE FROM scheduled_events WHERE id = ?').bind(event.id)
+        );
+        // Batch in chunks to avoid D1 limits
+        for (let i = 0; i < deleteStatements.length; i += BATCH_SIZE) {
+          const chunk = deleteStatements.slice(i, i + BATCH_SIZE);
+          await db.batch(chunk);
+        }
       }
     }
 
@@ -156,27 +163,49 @@ export async function generateSchedule(
 }
 
 /**
- * Save generated events to the database
+ * Save generated events to the database using batch insert for efficiency
  */
 async function saveScheduledEvents(
   db: D1Database,
   events: ScheduledEventDraft[]
 ): Promise<void> {
-  for (const event of events) {
-    const input = {
-      seasonId: event.seasonId,
-      divisionId: event.divisionId,
-      eventType: event.eventType,
-      date: event.date,
-      startTime: event.startTime,
-      endTime: event.endTime,
-      status: 'scheduled' as const,
-      fieldId: event.fieldId,
-      cageId: event.cageId,
-      homeTeamId: event.homeTeamId,
-      awayTeamId: event.awayTeamId,
-      teamId: event.teamId,
-    };
-    await createScheduledEvent(db, input);
+  if (events.length === 0) return;
+
+  const now = new Date().toISOString();
+
+  const insertStatements = events.map((event) => {
+    const id = generateId();
+    return db
+      .prepare(
+        `INSERT INTO scheduled_events (
+          id, season_id, division_id, event_type, date, start_time, end_time,
+          status, notes, field_id, cage_id, home_team_id, away_team_id, team_id,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id,
+        event.seasonId,
+        event.divisionId,
+        event.eventType,
+        event.date,
+        event.startTime,
+        event.endTime,
+        'scheduled',
+        null,
+        event.fieldId || null,
+        event.cageId || null,
+        event.homeTeamId || null,
+        event.awayTeamId || null,
+        event.teamId || null,
+        now,
+        now
+      );
+  });
+
+  // Batch in chunks to avoid D1 limits
+  for (let i = 0; i < insertStatements.length; i += BATCH_SIZE) {
+    const chunk = insertStatements.slice(i, i + BATCH_SIZE);
+    await db.batch(chunk);
   }
 }
