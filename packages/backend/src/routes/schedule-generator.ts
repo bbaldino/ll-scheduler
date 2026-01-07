@@ -14,23 +14,18 @@ const router = new Hono<{ Bindings: Env }>();
 // POST /api/schedule-generator/generate - Generate a schedule for a season
 router.post('/generate', async (c) => {
   try {
-    console.log('=== SCHEDULE GENERATION REQUEST RECEIVED ===');
     const request: GenerateScheduleRequest = await c.req.json();
-    console.log('Request body:', JSON.stringify(request, null, 2));
 
     if (!request.seasonId) {
-      console.log('ERROR: seasonId is missing');
       return c.json({ error: 'seasonId is required' }, 400);
     }
 
-    console.log('Calling generateSchedule with seasonId:', request.seasonId);
     const result = await generateSchedule(c.env.DB, request);
-    console.log('generateSchedule result:', JSON.stringify(result, null, 2));
+    console.log('Schedule generation complete:', result.success ? 'SUCCESS' : 'FAILED', '- Events:', result.eventsCreated);
 
     // Save the generation log
     try {
       await saveScheduleGenerationLog(c.env.DB, request.seasonId, result);
-      console.log('Schedule generation log saved');
     } catch (logError) {
       console.error('Failed to save schedule generation log:', logError);
       // Don't fail the request if logging fails

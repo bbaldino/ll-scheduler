@@ -528,10 +528,13 @@ export function generateCandidatesForTeamEvent(
     const slotEndMinutes = endH * 60 + endM;
     const durationMinutes = durationHours * 60;
 
+    // Use 60-minute intervals for practices/cages to reduce candidate count
+    // (30-min intervals generated too many candidates, slowing down scoring)
+    const interval = 60;
     for (
       let candidateStart = slotStartMinutes;
       candidateStart + durationMinutes <= slotEndMinutes;
-      candidateStart += 30
+      candidateStart += interval
     ) {
       const candidateEnd = candidateStart + durationMinutes;
       rejectionStats.total++;
@@ -646,6 +649,17 @@ function hasResourceConflict(
   endTime: string,
   context: ScoringContext
 ): boolean {
+  // Use index if available for O(1) lookup instead of O(n) scan
+  if (context.eventsByDateResource) {
+    const key = `${date}-${resourceId}`;
+    const events = context.eventsByDateResource.get(key);
+    if (!events || events.length === 0) return false;
+    return events.some((event) =>
+      timesOverlap(event.startTime, event.endTime, startTime, endTime)
+    );
+  }
+
+  // Fallback to full scan if index not available
   return context.scheduledEvents.some((event) => {
     if (event.date !== date) return false;
     const eventResourceId = event.fieldId || event.cageId;
@@ -705,7 +719,8 @@ function formatTime(minutes: number): string {
 }
 
 /**
- * Score and sort candidates, returning the best one
+ * Score candidates and return the best one (highest score)
+ * Uses linear scan to find max instead of sorting all candidates
  */
 export function selectBestCandidate(
   candidates: PlacementCandidate[],
@@ -715,14 +730,17 @@ export function selectBestCandidate(
 ): ScoredCandidate | null {
   if (candidates.length === 0) return null;
 
-  const scored = candidates.map((c) =>
-    calculatePlacementScore(c, teamState, context, weights)
-  );
+  // Track best as we go - O(n) instead of O(n log n) sort
+  let best: ScoredCandidate | null = null;
 
-  // Sort by score descending
-  scored.sort((a, b) => b.score - a.score);
+  for (const candidate of candidates) {
+    const scored = calculatePlacementScore(candidate, teamState, context, weights);
+    if (best === null || scored.score > best.score) {
+      best = scored;
+    }
+  }
 
-  return scored[0];
+  return best;
 }
 
 /**

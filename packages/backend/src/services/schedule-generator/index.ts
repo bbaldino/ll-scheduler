@@ -36,6 +36,9 @@ export async function generateSchedule(
   db: D1Database,
   request: GenerateScheduleRequest
 ): Promise<GenerateScheduleResult> {
+  const timings: Record<string, number> = {};
+  let startTime = Date.now();
+
   try {
     verboseLog('generateSchedule: Starting with request:', JSON.stringify(request, null, 2));
 
@@ -63,6 +66,9 @@ export async function generateSchedule(
     }
     verboseLog('generateSchedule: Found season:', JSON.stringify(season, null, 2));
 
+    timings['fetchSeason'] = Date.now() - startTime;
+    startTime = Date.now();
+
     // Fetch all necessary data
     const [
       divisions,
@@ -85,6 +91,9 @@ export async function generateSchedule(
       listFieldDateOverridesForSeason(db, request.seasonId),
       listCageDateOverridesForSeason(db, request.seasonId),
     ]);
+
+    timings['fetchAllData'] = Date.now() - startTime;
+    startTime = Date.now();
 
     // Filter teams by division if specified
     const filteredTeams = request.divisionIds
@@ -115,6 +124,9 @@ export async function generateSchedule(
       }
     }
 
+    timings['clearExisting'] = Date.now() - startTime;
+    startTime = Date.now();
+
     // Create the generator
     const generator = new ScheduleGenerator(
       season,
@@ -129,10 +141,16 @@ export async function generateSchedule(
       cageOverrides
     );
 
+    timings['createGenerator'] = Date.now() - startTime;
+    startTime = Date.now();
+
     // Generate the schedule
     verboseLog('generateSchedule: Calling generator.generate()');
     const result = await generator.generate();
     verboseLog('generateSchedule: Generator result:', JSON.stringify(result, null, 2));
+
+    timings['generate'] = Date.now() - startTime;
+    startTime = Date.now();
 
     // Save the generated events to the database
     if (result.success) {
@@ -143,6 +161,9 @@ export async function generateSchedule(
     } else {
       verboseLog('generateSchedule: Generation failed, not saving events');
     }
+
+    timings['saveEvents'] = Date.now() - startTime;
+    console.log('TIMINGS:', JSON.stringify(timings));
 
     return result;
   } catch (error) {

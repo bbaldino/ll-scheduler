@@ -33,6 +33,10 @@ export interface ScoringContext {
   divisionConfigs: Map<string, { practicesPerWeek: number; gamesPerWeek: number; cageSessionsPerWeek: number }>;
   // Team slot availability for scarcity calculation: teamId -> set of available slot keys
   teamSlotAvailability?: Map<string, Set<string>>;
+  // Index for fast conflict checking: "date-resourceId" -> events at that resource on that date
+  eventsByDateResource?: Map<string, ScheduledEventDraft[]>;
+  // Index for fast team conflict checking: "date-teamId" -> events involving that team on that date
+  eventsByDateTeam?: Map<string, ScheduledEventDraft[]>;
 }
 
 /**
@@ -438,6 +442,18 @@ export function calculateMatchupHomeAwayBalanceRaw(
 }
 
 /**
+ * Convert YYYY-MM-DD to day number (days since epoch, approximately)
+ * This avoids expensive Date object creation
+ */
+function dateToDayNumber(dateStr: string): number {
+  const year = parseInt(dateStr.substring(0, 4), 10);
+  const month = parseInt(dateStr.substring(5, 7), 10);
+  const day = parseInt(dateStr.substring(8, 10), 10);
+  // Approximate days since epoch - doesn't need to be exact, just consistent
+  return year * 365 + month * 30 + day;
+}
+
+/**
  * Calculate day gap raw score
  * Returns 0-1 where:
  * - 1.0 = 2+ day gap between events (ideal)
@@ -452,20 +468,27 @@ export function calculateDayGapRaw(
   candidateDate: string,
   teamState: TeamSchedulingState
 ): number {
-  // Combine both field and cage dates to get all dates with events
-  const allDatesUsed = new Set([...teamState.fieldDatesUsed, ...teamState.cageDatesUsed]);
-
-  if (allDatesUsed.size === 0) {
+  // Quick check: if both sets are empty, return early
+  if (teamState.fieldDatesUsed.size === 0 && teamState.cageDatesUsed.size === 0) {
     return 1.0; // No existing events, best possible score
   }
 
-  const candidate = parseLocalDate(candidateDate);
+  // Convert candidate date to day number (fast integer math instead of Date objects)
+  const candidateDayNum = dateToDayNumber(candidateDate);
   let closestGap = Infinity;
 
-  for (const usedDate of allDatesUsed) {
-    const existing = parseLocalDate(usedDate);
-    const gapDays = Math.abs((candidate.getTime() - existing.getTime()) / (1000 * 60 * 60 * 24));
+  // Check field dates without creating new Set
+  for (const usedDate of teamState.fieldDatesUsed) {
+    const gapDays = Math.abs(candidateDayNum - dateToDayNumber(usedDate));
     closestGap = Math.min(closestGap, gapDays);
+    if (closestGap === 0) return 0; // Early exit - can't get closer
+  }
+
+  // Check cage dates
+  for (const usedDate of teamState.cageDatesUsed) {
+    const gapDays = Math.abs(candidateDayNum - dateToDayNumber(usedDate));
+    closestGap = Math.min(closestGap, gapDays);
+    if (closestGap === 0) return 0; // Early exit - can't get closer
   }
 
   // Scale: 0 days → 0, 1 day → 0.5, 2+ days → 1.0
@@ -485,13 +508,19 @@ export function calculateTimeAdjacencyRaw(
   candidate: PlacementCandidate,
   context: ScoringContext
 ): number {
-  // Find events on the same resource and date
-  const sameResourceDateEvents = context.scheduledEvents.filter(
-    (e) =>
-      e.date === candidate.date &&
-      ((e.fieldId && e.fieldId === candidate.resourceId) ||
-        (e.cageId && e.cageId === candidate.resourceId))
-  );
+  // Find events on the same resource and date - use index if available
+  let sameResourceDateEvents: ScheduledEventDraft[];
+  if (context.eventsByDateResource) {
+    const key = `${candidate.date}-${candidate.resourceId}`;
+    sameResourceDateEvents = context.eventsByDateResource.get(key) || [];
+  } else {
+    sameResourceDateEvents = context.scheduledEvents.filter(
+      (e) =>
+        e.date === candidate.date &&
+        ((e.fieldId && e.fieldId === candidate.resourceId) ||
+          (e.cageId && e.cageId === candidate.resourceId))
+    );
+  }
 
   if (sameResourceDateEvents.length === 0) {
     // No existing events - neutral score (first event of the day)
@@ -601,21 +630,36 @@ export function calculateSameDayCageFieldGapRaw(
     return 0;
   }
 
-  // Find the opposite-type events on this date
-  const oppositeTypeEvents = context.scheduledEvents.filter((e) => {
-    if (e.date !== candidate.date) return false;
-    // Get the team ID for this scheduled event
-    const eventTeamId = e.teamId || e.homeTeamId;
-    if (eventTeamId !== teamState.teamId) return false;
-    // Check if it's the opposite resource type
-    if (isCageCandidate) {
-      // Candidate is cage, look for field events (has fieldId, no cageId)
-      return e.fieldId && !e.cageId;
-    } else {
-      // Candidate is field, look for cage events
-      return e.cageId && !e.fieldId;
-    }
-  });
+  // Find the opposite-type events on this date - use team index if available
+  let oppositeTypeEvents: ScheduledEventDraft[];
+  if (context.eventsByDateTeam) {
+    const key = `${candidate.date}-${teamState.teamId}`;
+    const teamEventsOnDate = context.eventsByDateTeam.get(key) || [];
+    oppositeTypeEvents = teamEventsOnDate.filter((e) => {
+      if (isCageCandidate) {
+        // Candidate is cage, look for field events (has fieldId, no cageId)
+        return e.fieldId && !e.cageId;
+      } else {
+        // Candidate is field, look for cage events
+        return e.cageId && !e.fieldId;
+      }
+    });
+  } else {
+    oppositeTypeEvents = context.scheduledEvents.filter((e) => {
+      if (e.date !== candidate.date) return false;
+      // Get the team ID for this scheduled event
+      const eventTeamId = e.teamId || e.homeTeamId;
+      if (eventTeamId !== teamState.teamId) return false;
+      // Check if it's the opposite resource type
+      if (isCageCandidate) {
+        // Candidate is cage, look for field events (has fieldId, no cageId)
+        return e.fieldId && !e.cageId;
+      } else {
+        // Candidate is field, look for cage events
+        return e.cageId && !e.fieldId;
+      }
+    });
+  }
 
   if (oppositeTypeEvents.length === 0) {
     // No opposite-type events found for this team on this date
@@ -691,7 +735,40 @@ export function createScoringContext(): ScoringContext {
     weekDefinitions: [],
     scheduledEvents: [],
     divisionConfigs: new Map(),
+    eventsByDateResource: new Map(),
+    eventsByDateTeam: new Map(),
   };
+}
+
+/**
+ * Update indexes after adding an event (for fast conflict checking)
+ * Note: This does NOT add to scheduledEvents - the caller manages that array
+ */
+export function addEventToContext(
+  context: ScoringContext,
+  event: ScheduledEventDraft
+): void {
+  // Update resource index
+  const resourceId = event.fieldId || event.cageId;
+  if (resourceId && context.eventsByDateResource) {
+    const resourceKey = `${event.date}-${resourceId}`;
+    if (!context.eventsByDateResource.has(resourceKey)) {
+      context.eventsByDateResource.set(resourceKey, []);
+    }
+    context.eventsByDateResource.get(resourceKey)!.push(event);
+  }
+
+  // Update team index
+  if (context.eventsByDateTeam) {
+    const teamIds = [event.teamId, event.homeTeamId, event.awayTeamId].filter(Boolean) as string[];
+    for (const teamId of teamIds) {
+      const teamKey = `${event.date}-${teamId}`;
+      if (!context.eventsByDateTeam.has(teamKey)) {
+        context.eventsByDateTeam.set(teamKey, []);
+      }
+      context.eventsByDateTeam.get(teamKey)!.push(event);
+    }
+  }
 }
 
 /**
