@@ -32,6 +32,10 @@ app.use('/*', cors({
     if (origin?.endsWith('.pages.dev') || origin?.endsWith('.ll-scheduler.pages.dev')) {
       return origin;
     }
+    // Allow custom domain
+    if (origin === 'https://cpll.baldino.me') {
+      return origin;
+    }
     // Return null to reject other origins
     return null;
   },
