@@ -240,16 +240,8 @@ export default function ScheduledEventsPage() {
     return divisions.find((d) => d.id === divisionId)?.name || 'Unknown';
   };
 
-
-  if (!currentSeason) {
-    return (
-      <div className={styles.container}>
-        <p>Please select a season to view scheduled events.</p>
-      </div>
-    );
-  }
-
   // Filter events by team/field/cage (API already filters by division/type)
+  // Must be before early return to maintain hooks order
   const filteredEvents = useMemo(() => {
     let result = events;
 
@@ -274,15 +266,25 @@ export default function ScheduledEventsPage() {
   }, [events, filterTeam, filterField, filterCage]);
 
   // Group events by date
-  const eventsByDate = filteredEvents.reduce((acc, event) => {
-    if (!acc[event.date]) {
-      acc[event.date] = [];
-    }
-    acc[event.date].push(event);
-    return acc;
-  }, {} as Record<string, ScheduledEvent[]>);
+  const eventsByDate = useMemo(() => {
+    return filteredEvents.reduce((acc, event) => {
+      if (!acc[event.date]) {
+        acc[event.date] = [];
+      }
+      acc[event.date].push(event);
+      return acc;
+    }, {} as Record<string, ScheduledEvent[]>);
+  }, [filteredEvents]);
 
-  const sortedDates = Object.keys(eventsByDate).sort();
+  const sortedDates = useMemo(() => Object.keys(eventsByDate).sort(), [eventsByDate]);
+
+  if (!currentSeason) {
+    return (
+      <div className={styles.container}>
+        <p>Please select a season to view scheduled events.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.container}>

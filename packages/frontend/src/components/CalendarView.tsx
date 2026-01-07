@@ -131,20 +131,21 @@ export default function CalendarView({
 
   const formatEventSummary = (event: ScheduledEvent) => {
     const time = `${event.startTime}-${event.endTime}`;
+    const division = getDivisionName(event.divisionId);
 
     if (event.eventType === 'game') {
       const homeTeam = getTeamName(event.homeTeamId);
       const awayTeam = getTeamName(event.awayTeamId);
       const field = getFieldName(event.fieldId);
-      return `${time}: ${homeTeam} vs ${awayTeam} @ ${field}`;
+      return `${time}: ${homeTeam} vs ${awayTeam} @ ${field} (${division})`;
     } else if (event.eventType === 'practice') {
       const team = getTeamName(event.teamId);
       const field = getFieldName(event.fieldId);
-      return `${time}: ${team} Practice @ ${field}`;
+      return `${time}: ${team} Practice @ ${field} (${division})`;
     } else {
       const team = getTeamName(event.teamId);
       const cage = getCageName(event.cageId);
-      return `${time}: ${team} Cage @ ${cage}`;
+      return `${time}: ${team} Cage @ ${cage} (${division})`;
     }
   };
 
