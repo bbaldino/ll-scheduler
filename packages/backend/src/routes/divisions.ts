@@ -11,6 +11,18 @@ router.get('/', async (c) => {
   return c.json(divisions);
 });
 
+// PUT /api/divisions/reorder - Reorder divisions
+router.put('/reorder', async (c) => {
+  const input: { divisionIds: string[] } = await c.req.json();
+
+  if (!input.divisionIds || !Array.isArray(input.divisionIds)) {
+    return c.json({ error: 'Missing required field: divisionIds (array)' }, 400);
+  }
+
+  const divisions = await divisionsService.reorderDivisions(c.env.DB, input.divisionIds);
+  return c.json(divisions);
+});
+
 // GET /api/divisions/:id - Get a specific division
 router.get('/:id', async (c) => {
   const id = c.req.param('id');

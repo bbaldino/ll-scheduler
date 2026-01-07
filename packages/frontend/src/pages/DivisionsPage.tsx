@@ -4,6 +4,7 @@ import {
   createDivision,
   updateDivision,
   deleteDivision,
+  reorderDivisions,
 } from '../api/divisions';
 import type { Division, CreateDivisionInput } from '@ll-scheduler/shared';
 import styles from './DivisionsPage.module.css';
@@ -95,6 +96,38 @@ export default function DivisionsPage() {
     }
   };
 
+  const handleMoveUp = async (index: number) => {
+    if (index === 0) return;
+    const newOrder = [...divisions];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    setIsSubmitting(true);
+    try {
+      const updated = await reorderDivisions(newOrder.map((d) => d.id));
+      setDivisions(updated);
+    } catch (error) {
+      console.error('Failed to reorder divisions:', error);
+      alert('Failed to reorder divisions');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleMoveDown = async (index: number) => {
+    if (index === divisions.length - 1) return;
+    const newOrder = [...divisions];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    setIsSubmitting(true);
+    try {
+      const updated = await reorderDivisions(newOrder.map((d) => d.id));
+      setDivisions(updated);
+    } catch (error) {
+      console.error('Failed to reorder divisions:', error);
+      alert('Failed to reorder divisions');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (loading) {
     return <div className={styles.container}>Loading...</div>;
   }
@@ -110,7 +143,8 @@ export default function DivisionsPage() {
 
       <p className={styles.description}>
         Divisions are global (T-Ball, Minors, Majors, etc.). Configure season-specific settings like
-        practices per week in each season's settings.
+        practices per week in each season's settings. Use the arrows to set scheduling priority—divisions
+        at the top are scheduled first and get priority for field slots.
       </p>
 
       {isCreating && (
@@ -138,8 +172,11 @@ export default function DivisionsPage() {
         </form>
       )}
 
+      {divisions.length > 0 && (
+        <h4 className={styles.listHeader}>Scheduling Priority</h4>
+      )}
       <div className={styles.divisionList}>
-        {divisions.map((division) => (
+        {divisions.map((division, index) => (
           <div key={division.id} className={styles.divisionCard}>
             {editingId === division.id ? (
               <div className={styles.editForm}>
@@ -160,6 +197,25 @@ export default function DivisionsPage() {
               </div>
             ) : (
               <>
+                <div className={styles.orderControls}>
+                  <button
+                    onClick={() => handleMoveUp(index)}
+                    disabled={isSubmitting || index === 0}
+                    className={styles.orderButton}
+                    title="Move up (schedule earlier)"
+                  >
+                    ↑
+                  </button>
+                  <span className={styles.orderNumber}>{index + 1}</span>
+                  <button
+                    onClick={() => handleMoveDown(index)}
+                    disabled={isSubmitting || index === divisions.length - 1}
+                    className={styles.orderButton}
+                    title="Move down (schedule later)"
+                  >
+                    ↓
+                  </button>
+                </div>
                 <div className={styles.divisionInfo}>
                   <h3>{division.name}</h3>
                 </div>

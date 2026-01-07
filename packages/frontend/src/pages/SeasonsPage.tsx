@@ -17,9 +17,47 @@ import type {
   DivisionConfig,
   CreateDivisionConfigInput,
   GameDayPreference,
+  GameWeekOverride,
   SeasonField,
 } from '@ll-scheduler/shared';
 import styles from './SeasonsPage.module.css';
+
+// Helper to generate week definitions for a season's game period
+function generateGameWeeks(gamesStartDate: string, endDate: string): Array<{ weekNumber: number; startDate: string; endDate: string }> {
+  if (!gamesStartDate || !endDate) return [];
+
+  const weeks: Array<{ weekNumber: number; startDate: string; endDate: string }> = [];
+  const start = new Date(gamesStartDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  // Find the start of the first week (Sunday of the week containing gamesStartDate)
+  let weekStart = new Date(start);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+
+  let weekNumber = 1;
+  while (weekStart <= end) {
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+
+    weeks.push({
+      weekNumber,
+      startDate: weekStart.toISOString().split('T')[0],
+      endDate: weekEnd.toISOString().split('T')[0],
+    });
+
+    weekStart.setDate(weekStart.getDate() + 7);
+    weekNumber++;
+  }
+
+  return weeks;
+}
+
+function formatWeekDateRange(startDate: string, endDate: string): string {
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
+}
 
 export default function SeasonsPage() {
   const { seasons, refreshSeasons, currentSeason, setCurrentSeason } = useSeason();
@@ -47,6 +85,11 @@ export default function SeasonsPage() {
     cageSessionDurationHours: undefined,
     fieldPreferences: undefined,
   });
+
+  // Game week overrides state
+  const [addingOverrideForConfigId, setAddingOverrideForConfigId] = useState<string | null>(null);
+  const [newOverrideWeek, setNewOverrideWeek] = useState<number>(1);
+  const [newOverrideGames, setNewOverrideGames] = useState<number>(0);
 
   // Load divisions on mount
   useEffect(() => {
@@ -252,6 +295,48 @@ export default function SeasonsPage() {
     setConfigFormData({ ...configFormData, gameDayPreferences: updated.length > 0 ? updated : undefined });
   };
 
+  // Game week override handlers
+  const handleAddGameWeekOverride = async (seasonId: string, config: DivisionConfig) => {
+    const existingOverrides = config.gameWeekOverrides || [];
+
+    // Check if this week already has an override
+    if (existingOverrides.some(o => o.weekNumber === newOverrideWeek)) {
+      alert('This week already has an override');
+      return;
+    }
+
+    const updatedOverrides: GameWeekOverride[] = [
+      ...existingOverrides,
+      { weekNumber: newOverrideWeek, gamesPerWeek: newOverrideGames },
+    ].sort((a, b) => a.weekNumber - b.weekNumber);
+
+    try {
+      await updateDivisionConfig(config.id, { gameWeekOverrides: updatedOverrides });
+      await loadDivisionConfigsForSeason(seasonId);
+      setAddingOverrideForConfigId(null);
+      setNewOverrideWeek(1);
+      setNewOverrideGames(0);
+    } catch (error) {
+      console.error('Failed to add game week override:', error);
+      alert('Failed to add game week override');
+    }
+  };
+
+  const handleRemoveGameWeekOverride = async (seasonId: string, config: DivisionConfig, weekNumber: number) => {
+    const existingOverrides = config.gameWeekOverrides || [];
+    const updatedOverrides = existingOverrides.filter(o => o.weekNumber !== weekNumber);
+
+    try {
+      await updateDivisionConfig(config.id, {
+        gameWeekOverrides: updatedOverrides.length > 0 ? updatedOverrides : [],
+      });
+      await loadDivisionConfigsForSeason(seasonId);
+    } catch (error) {
+      console.error('Failed to remove game week override:', error);
+      alert('Failed to remove game week override');
+    }
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -350,13 +435,36 @@ export default function SeasonsPage() {
             </div>
             <div className={styles.seasonDetails}>
               <p>
-                <strong>Season:</strong> {season.startDate} to {season.endDate}
+                <strong>Start Date:</strong>{' '}
+                <input
+                  type="date"
+                  value={season.startDate}
+                  onChange={(e) => handleUpdate(season, { startDate: e.target.value })}
+                  className={styles.inlineInput}
+                  max={season.endDate}
+                />
               </p>
-              {season.gamesStartDate && season.gamesStartDate !== season.startDate && (
-                <p>
-                  <strong>Games Start:</strong> {season.gamesStartDate}
-                </p>
-              )}
+              <p>
+                <strong>End Date:</strong>{' '}
+                <input
+                  type="date"
+                  value={season.endDate}
+                  onChange={(e) => handleUpdate(season, { endDate: e.target.value })}
+                  className={styles.inlineInput}
+                  min={season.startDate}
+                />
+              </p>
+              <p>
+                <strong>Games Start:</strong>{' '}
+                <input
+                  type="date"
+                  value={season.gamesStartDate || season.startDate}
+                  onChange={(e) => handleUpdate(season, { gamesStartDate: e.target.value })}
+                  className={styles.inlineInput}
+                  min={season.startDate}
+                  max={season.endDate}
+                />
+              </p>
               <p>
                 <strong>Status:</strong>
                 <select
@@ -704,6 +812,109 @@ export default function SeasonsPage() {
                                       const field = (seasonFields[season.id] || []).find(f => f.fieldId === fieldId);
                                       return `${idx + 1}. ${field?.field?.name || fieldId}`;
                                     }).join(', ')}</span>
+                                  </div>
+                                )}
+
+                                {/* Game Week Overrides Section */}
+                                {existingConfig.gamesPerWeek > 0 && (
+                                  <div className={styles.gameWeekOverrides}>
+                                    <div className={styles.overridesHeader}>
+                                      <span className={styles.overridesLabel}>Game week overrides:</span>
+                                      {addingOverrideForConfigId !== existingConfig.id && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setAddingOverrideForConfigId(existingConfig.id);
+                                            setNewOverrideWeek(1);
+                                            setNewOverrideGames(existingConfig.gamesPerWeek);
+                                          }}
+                                          className={styles.addOverrideBtn}
+                                        >
+                                          + Add Override
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {existingConfig.gameWeekOverrides && existingConfig.gameWeekOverrides.length > 0 ? (
+                                      <div className={styles.overridesList}>
+                                        {existingConfig.gameWeekOverrides.map((override) => {
+                                          const gameWeeks = generateGameWeeks(
+                                            season.gamesStartDate || season.startDate,
+                                            season.endDate
+                                          );
+                                          const week = gameWeeks.find(w => w.weekNumber === override.weekNumber);
+                                          return (
+                                            <div key={override.weekNumber} className={styles.overrideItem}>
+                                              <span>
+                                                Week {override.weekNumber}
+                                                {week && ` (${formatWeekDateRange(week.startDate, week.endDate)})`}:
+                                                {' '}{override.gamesPerWeek} game{override.gamesPerWeek !== 1 ? 's' : ''}
+                                              </span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleRemoveGameWeekOverride(season.id, existingConfig, override.weekNumber)}
+                                                className={styles.removeOverrideBtn}
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <span className={styles.noOverrides}>No overrides (default {existingConfig.gamesPerWeek}/week)</span>
+                                    )}
+
+                                    {addingOverrideForConfigId === existingConfig.id && (
+                                      <div className={styles.addOverrideForm}>
+                                        {(() => {
+                                          const gameWeeks = generateGameWeeks(
+                                            season.gamesStartDate || season.startDate,
+                                            season.endDate
+                                          );
+                                          const existingWeeks = new Set(
+                                            (existingConfig.gameWeekOverrides || []).map(o => o.weekNumber)
+                                          );
+                                          const availableWeeks = gameWeeks.filter(w => !existingWeeks.has(w.weekNumber));
+
+                                          return (
+                                            <>
+                                              <select
+                                                value={newOverrideWeek}
+                                                onChange={(e) => setNewOverrideWeek(parseInt(e.target.value))}
+                                              >
+                                                {availableWeeks.map((week) => (
+                                                  <option key={week.weekNumber} value={week.weekNumber}>
+                                                    Week {week.weekNumber} ({formatWeekDateRange(week.startDate, week.endDate)})
+                                                  </option>
+                                                ))}
+                                              </select>
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={newOverrideGames}
+                                                onChange={(e) => setNewOverrideGames(parseInt(e.target.value) || 0)}
+                                                placeholder="Games"
+                                                style={{ width: '60px' }}
+                                              />
+                                              <span>games</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleAddGameWeekOverride(season.id, existingConfig)}
+                                              >
+                                                Add
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setAddingOverrideForConfigId(null)}
+                                              >
+                                                Cancel
+                                              </button>
+                                            </>
+                                          );
+                                        })()}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>

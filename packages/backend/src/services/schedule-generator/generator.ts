@@ -72,6 +72,7 @@ import {
  */
 export class ScheduleGenerator {
   private season: Season;
+  private divisions: Division[]; // Ordered by schedulingOrder
   private divisionConfigs: Map<string, DivisionConfig>;
   private divisionNames: Map<string, string>; // divisionId -> divisionName
   private teams: Team[];
@@ -124,6 +125,7 @@ export class ScheduleGenerator {
     cageOverrides: CageDateOverride[]
   ) {
     this.season = season;
+    this.divisions = divisions; // Already sorted by schedulingOrder from listDivisions
     this.divisionConfigs = new Map(divisionConfigs.map((dc) => [dc.divisionId, dc]));
     this.divisionNames = new Map(divisions.map((d) => [d.id, d.name]));
     this.teams = teams;
@@ -153,6 +155,35 @@ export class ScheduleGenerator {
    */
   private getGamesStartDate(): string {
     return this.season.gamesStartDate || this.season.startDate;
+  }
+
+  /**
+   * Get games per week for a specific division and week
+   * Returns the override value if one exists, otherwise the default gamesPerWeek
+   * Week numbers are 1-based (matching the UI)
+   */
+  private getGamesPerWeekForDivision(divisionId: string, weekNumber: number): number {
+    const config = this.divisionConfigs.get(divisionId);
+    if (!config) return 0;
+
+    const override = config.gameWeekOverrides?.find(o => o.weekNumber === weekNumber);
+    if (override !== undefined) {
+      return override.gamesPerWeek;
+    }
+    return config.gamesPerWeek;
+  }
+
+  /**
+   * Calculate total games per team for a division across all game weeks
+   * Accounts for per-week overrides
+   */
+  private getTotalGamesPerTeam(divisionId: string, gameWeeks: WeekDefinition[]): number {
+    let total = 0;
+    for (const week of gameWeeks) {
+      // weekNumber in WeekDefinition is 0-based internally, but overrides use 1-based
+      total += this.getGamesPerWeekForDivision(divisionId, week.weekNumber + 1);
+    }
+    return total;
   }
 
   /**
@@ -760,9 +791,15 @@ export class ScheduleGenerator {
 
     const divisionMatchupsList: DivisionMatchups[] = [];
 
-    for (const [divisionId, divisionTeams] of teamsByDivision) {
+    // Iterate over divisions in schedulingOrder (this.divisions is already sorted)
+    for (const division of this.divisions) {
+      const divisionId = division.id;
+      const divisionTeams = teamsByDivision.get(divisionId);
+      if (!divisionTeams || divisionTeams.length === 0) {
+        continue; // No teams in this division for this season
+      }
       const config = this.divisionConfigs.get(divisionId);
-      const divisionName = this.divisionNames.get(divisionId) || divisionId;
+      const divisionName = division.name;
       console.log(`\nDivision: ${divisionName}`);
       console.log(`  Teams: ${divisionTeams.length}`);
       console.log(`  Has config: ${!!config}`);
@@ -773,8 +810,13 @@ export class ScheduleGenerator {
         continue;
       }
 
-      // Calculate exact number of games needed
-      const totalGamesPerTeam = config.gamesPerWeek * gameWeeks.length;
+      // Calculate games per week for each week (may vary due to overrides)
+      const gamesPerWeekByWeek: number[] = gameWeeks.map((week) =>
+        this.getGamesPerWeekForDivision(divisionId, week.weekNumber + 1)
+      );
+
+      // Calculate exact number of games needed (sum of per-week values)
+      const totalGamesPerTeam = gamesPerWeekByWeek.reduce((sum, g) => sum + g, 0);
       const numTeams = divisionTeams.length;
       const numOpponents = numTeams - 1;
 
@@ -784,7 +826,12 @@ export class ScheduleGenerator {
       // Calculate round-robin cycles needed (may generate slightly more than needed)
       const minCycles = Math.ceil(totalGamesPerTeam / numOpponents);
 
-      console.log(`  Total games per team needed: ${totalGamesPerTeam}`);
+      // Log per-week game distribution if there are overrides
+      const hasOverrides = config.gameWeekOverrides && config.gameWeekOverrides.length > 0;
+      console.log(`  Total games per team needed: ${totalGamesPerTeam}${hasOverrides ? ' (with overrides)' : ''}`);
+      if (hasOverrides) {
+        console.log(`  Per-week games: ${gamesPerWeekByWeek.map((g, i) => `W${i+1}:${g}`).join(', ')}`);
+      }
       console.log(`  Total matchups needed: ${totalMatchupsNeeded}`);
       console.log(`  Opponents: ${numOpponents}`);
       console.log(`  Round-robin cycles to generate: ${minCycles}`);
@@ -794,15 +841,12 @@ export class ScheduleGenerator {
       const rounds = generateRoundRobinMatchups(teamIds, minCycles);
 
       // Each round-robin round has every team playing exactly once.
-      // For gamesPerWeek=2, we need 2 rounds per week.
-      // Assign rounds to weeks directly to guarantee valid distribution.
+      // With per-week overrides, we need variable rounds per week.
       const matchupsPerRound = numTeams / 2; // For even teams
-      const roundsPerWeek = config.gamesPerWeek; // Each round = 1 game per team
-      const totalRoundsNeeded = gameWeeks.length * roundsPerWeek;
+      const totalRoundsNeeded = totalGamesPerTeam; // Total rounds = total games per team
 
       console.log(`  Rounds generated: ${rounds.length}`);
       console.log(`  Matchups per round: ${matchupsPerRound}`);
-      console.log(`  Rounds per week needed: ${roundsPerWeek}`);
       console.log(`  Total rounds needed: ${totalRoundsNeeded}`);
 
       // Take only the rounds we need
@@ -828,19 +872,22 @@ export class ScheduleGenerator {
         });
       }
 
-      // Assign rounds to weeks
+      // Assign rounds to weeks, respecting per-week game counts
       const matchups: Array<GameMatchup & { targetWeek: number }> = [];
-      for (let i = 0; i < roundsToUse.length; i++) {
-        const round = roundsToUse[i];
-        const targetWeek = Math.floor(i / roundsPerWeek);
-
-        for (const m of round.matchups) {
-          matchups.push({
-            homeTeamId: m.homeTeamId,
-            awayTeamId: m.awayTeamId,
-            divisionId,
-            targetWeek,
-          });
+      let roundIndex = 0;
+      for (let weekIdx = 0; weekIdx < gameWeeks.length; weekIdx++) {
+        const gamesThisWeek = gamesPerWeekByWeek[weekIdx];
+        // Assign gamesThisWeek rounds to this week
+        for (let r = 0; r < gamesThisWeek && roundIndex < roundsToUse.length; r++) {
+          const round = roundsToUse[roundIndex++];
+          for (const m of round.matchups) {
+            matchups.push({
+              homeTeamId: m.homeTeamId,
+              awayTeamId: m.awayTeamId,
+              divisionId,
+              targetWeek: weekIdx,
+            });
+          }
         }
       }
 
@@ -857,9 +904,10 @@ export class ScheduleGenerator {
       console.log(`  Matchups per week:`);
       for (let w = 0; w < gameWeeks.length; w++) {
         const count = weekCounts.get(w) || 0;
-        const expected = matchupsPerRound * roundsPerWeek;
-        const status = count === expected ? '✓' : '⚠';
-        console.log(`    Week ${w + 1}: ${count} matchups ${status}`);
+        const expectedGames = gamesPerWeekByWeek[w];
+        const expectedMatchups = matchupsPerRound * expectedGames;
+        const status = count === expectedMatchups ? '✓' : '⚠';
+        console.log(`    Week ${w + 1}: ${count} matchups (expect ${expectedMatchups}) ${status}`);
       }
 
       // Build target week distribution with dates (reuse weekCounts from above)
@@ -1032,10 +1080,11 @@ export class ScheduleGenerator {
           // (This shouldn't happen if assignMatchupsToWeeks worked correctly)
           const homeGamesThisWeek = homeTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
           const awayGamesThisWeek = awayTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-          if (homeGamesThisWeek >= division.config.gamesPerWeek) {
-            failureReason = `${homeTeam.name} already at quota (${homeGamesThisWeek}/${division.config.gamesPerWeek})`;
-          } else if (awayGamesThisWeek >= division.config.gamesPerWeek) {
-            failureReason = `${awayTeam.name} already at quota (${awayGamesThisWeek}/${division.config.gamesPerWeek})`;
+          const gamesPerWeekQuota = this.getGamesPerWeekForDivision(division.divisionId, week.weekNumber + 1);
+          if (homeGamesThisWeek >= gamesPerWeekQuota) {
+            failureReason = `${homeTeam.name} already at quota (${homeGamesThisWeek}/${gamesPerWeekQuota})`;
+          } else if (awayGamesThisWeek >= gamesPerWeekQuota) {
+            failureReason = `${awayTeam.name} already at quota (${awayGamesThisWeek}/${gamesPerWeekQuota})`;
           } else {
             // Filter field slots to this week and compatible with division
             const weekFieldSlots = this.gameFieldSlots.filter((rs) =>
@@ -1171,20 +1220,21 @@ export class ScheduleGenerator {
         const weeklyShortfalls: Array<{ week: number; startDate: string; endDate: string; scheduled: number; expected: number }> = [];
         for (const week of gameWeeks) {
           const gamesThisWeek = teamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-          if (gamesThisWeek < division.config.gamesPerWeek) {
+          const expectedGamesThisWeek = this.getGamesPerWeekForDivision(division.divisionId, week.weekNumber + 1);
+          if (gamesThisWeek < expectedGamesThisWeek) {
             weeklyShortfalls.push({
               week: week.weekNumber + 1,
               startDate: week.startDate,
               endDate: week.endDate,
               scheduled: gamesThisWeek,
-              expected: division.config.gamesPerWeek,
+              expected: expectedGamesThisWeek,
             });
           }
         }
 
         // If there are shortfalls, create a warning
         if (weeklyShortfalls.length > 0) {
-          const totalExpected = division.config.gamesPerWeek * gameWeeks.length;
+          const totalExpected = this.getTotalGamesPerTeam(division.divisionId, gameWeeks);
           const totalShortfall = totalExpected - teamState.gamesScheduled;
 
           // Build summary with week details
@@ -1405,10 +1455,11 @@ export class ScheduleGenerator {
       // Check if team already has enough games this week
       const teamState = this.teamSchedulingStates.get(team.id);
       const gamesThisWeek = teamState?.eventsPerWeek.get(week.weekNumber)?.games || 0;
-      if (gamesThisWeek >= division.config.gamesPerWeek) {
+      const gamesPerWeekQuota = this.getGamesPerWeekForDivision(division.divisionId, week.weekNumber + 1);
+      if (gamesThisWeek >= gamesPerWeekQuota) {
         weeksMissingGame.push({
           weekDates: `${week.startDate} to ${week.endDate}`,
-          reason: `Already at game quota (${gamesThisWeek}/${division.config.gamesPerWeek}) - games on other days`,
+          reason: `Already at game quota (${gamesThisWeek}/${gamesPerWeekQuota}) - games on other days`,
         });
         continue;
       }

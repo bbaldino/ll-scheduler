@@ -57,3 +57,12 @@ export async function deleteDivision(id: string): Promise<void> {
     method: 'DELETE',
   });
 }
+
+export async function reorderDivisions(divisionIds: string[]): Promise<Division[]> {
+  const response = await fetchWithRetry(`${API_BASE}/divisions/reorder`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ divisionIds }),
+  });
+  return response.json();
+}

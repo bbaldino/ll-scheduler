@@ -49,25 +49,36 @@
   margin-top: 1rem;
 }
 
+.listHeader {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9em;
+  color: #555;
+  font-weight: 600;
+}
+
 .divisionList {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 500px;
 }
 
 .divisionCard {
   background-color: white;
   border: 1px solid #ddd;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 0.75rem 1rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+}
+
+.divisionInfo {
+  flex: 1;
 }
 
 .divisionInfo h3 {
-  margin: 0 0 0.5rem 0;
+  margin: 0;
 }
 
 .divisionInfo p {
@@ -79,6 +90,7 @@
 .divisionActions {
   display: flex;
   gap: 0.5rem;
+  margin-left: auto;
 }
 
 .editForm {
@@ -111,4 +123,40 @@
   text-align: center;
   padding: 3rem;
   color: #666;
+}
+
+.orderControls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.75rem;
+}
+
+.orderButton {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #f5f5f5;
+  cursor: pointer;
+}
+
+.orderButton:hover:not(:disabled) {
+  background-color: #e0e0e0;
+}
+
+.orderButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.orderNumber {
+  font-size: 0.85em;
+  color: #666;
+  font-weight: 500;
+  min-width: 20px;
+  text-align: center;
 }
