@@ -155,6 +155,49 @@ function getAllowedEventTypesForWeek(
 }
 
 /**
+ * Get games per week for a division, accounting for per-week overrides
+ * gameWeekNumber is 1-based (Week 1 = first game week)
+ */
+function getGamesPerWeekForDivision(
+  config: DivisionConfig,
+  gameWeekNumber: number
+): number {
+  const override = config.gameWeekOverrides?.find(o => o.weekNumber === gameWeekNumber);
+  if (override !== undefined) {
+    return override.gamesPerWeek;
+  }
+  return config.gamesPerWeek;
+}
+
+/**
+ * Generate game weeks from gamesStartDate to endDate
+ * Returns array with 1-based week numbers and date ranges
+ */
+function generateGameWeeks(season: Season): Array<{ weekNumber: number; start: string; end: string }> {
+  const gamesStart = season.gamesStartDate || season.startDate;
+  const gameWeeks: Array<{ weekNumber: number; start: string; end: string }> = [];
+
+  let weekNumber = 1;
+  let currentWeekStart = getWeekStart(gamesStart);
+
+  while (currentWeekStart <= season.endDate) {
+    const weekEnd = getWeekEnd(currentWeekStart);
+    gameWeeks.push({
+      weekNumber,
+      start: currentWeekStart,
+      end: weekEnd,
+    });
+
+    const nextWeek = new Date(currentWeekStart + 'T00:00:00');
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    currentWeekStart = nextWeek.toISOString().split('T')[0];
+    weekNumber++;
+  }
+
+  return gameWeeks;
+}
+
+/**
  * Evaluate weekly requirements for all teams
  */
 function evaluateWeeklyRequirements(
@@ -182,6 +225,9 @@ function evaluateWeeklyRequirements(
     nextWeek.setDate(nextWeek.getDate() + 7);
     currentWeekStart = nextWeek.toISOString().split('T')[0];
   }
+
+  // Generate game weeks to map week dates to game week numbers
+  const gameWeeks = generateGameWeeks(season);
 
   for (const team of teams) {
     const division = divisionMap.get(team.divisionId);
@@ -212,8 +258,16 @@ function evaluateWeeklyRequirements(
       // Determine which event types are allowed for this week based on season
       const allowedTypes = getAllowedEventTypesForWeek(week.start, week.end, season);
 
+      // Find the game week number for this week (if it's a game week)
+      const gameWeek = gameWeeks.find(gw => gw.start === week.start);
+      const gameWeekNumber = gameWeek?.weekNumber;
+
       // Only require events that are allowed in this week's periods
-      const gamesRequired = allowedTypes.has('game') ? config.gamesPerWeek : 0;
+      // Use game week override if available
+      let gamesRequired = 0;
+      if (allowedTypes.has('game') && gameWeekNumber !== undefined) {
+        gamesRequired = getGamesPerWeekForDivision(config, gameWeekNumber);
+      }
       const practicesRequired = allowedTypes.has('practice') ? config.practicesPerWeek : 0;
       const cagesRequired = allowedTypes.has('cage') ? (config.cageSessionsPerWeek || 0) : 0;
 
@@ -770,21 +824,24 @@ function evaluateMatchupBalance(
     );
 
     // Calculate ideal games per matchup
-    // Total games per team = gamesPerWeek * number of weeks
+    // Total games per team = sum of games per week (accounting for overrides)
     // Number of opponents = (teamCount - 1)
     // Ideal games per matchup = (totalGamesPerTeam) / numberOfOpponents
     const teamCount = divisionTeams.length;
     if (teamCount < 2) continue;
 
-    // Calculate number of weeks from season dates
-    const gamesStartDate = season.gamesStartDate || season.startDate;
-    const startDate = new Date(gamesStartDate + 'T00:00:00');
-    const endDate = new Date(season.endDate + 'T00:00:00');
-    const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const numWeeks = Math.ceil(totalDays / 7);
+    // Calculate total games per team by summing each game week's requirement
+    const gameWeeks = generateGameWeeks(season);
+    let totalGamesPerTeam = 0;
+    if (config) {
+      for (let i = 0; i < gameWeeks.length; i++) {
+        totalGamesPerTeam += getGamesPerWeekForDivision(config, i + 1);
+      }
+    } else {
+      // Fallback if no config
+      totalGamesPerTeam = 2 * gameWeeks.length;
+    }
 
-    const gamesPerWeek = config?.gamesPerWeek || 2;
-    const totalGamesPerTeam = gamesPerWeek * numWeeks;
     const numberOfOpponents = teamCount - 1;
     const idealGamesPerMatchup = totalGamesPerTeam / numberOfOpponents;
 

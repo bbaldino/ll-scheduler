@@ -5,6 +5,14 @@ import type {
   ScheduledEventDraft,
 } from '@ll-scheduler/shared';
 import { ScheduleGenerator } from './generator.js';
+
+// Verbose logging - set to true to enable detailed console output
+const VERBOSE_LOGGING = false;
+function verboseLog(...args: unknown[]): void {
+  if (VERBOSE_LOGGING) {
+    verboseLog(...args);
+  }
+}
 import { getSeasonById } from '../seasons.js';
 import { listDivisions } from '../divisions.js';
 import { listDivisionConfigsBySeasonId } from '../division-configs.js';
@@ -29,7 +37,7 @@ export async function generateSchedule(
   request: GenerateScheduleRequest
 ): Promise<GenerateScheduleResult> {
   try {
-    console.log('generateSchedule: Starting with request:', JSON.stringify(request, null, 2));
+    verboseLog('generateSchedule: Starting with request:', JSON.stringify(request, null, 2));
 
     // Validate season ID
     if (!request.seasonId) {
@@ -42,10 +50,10 @@ export async function generateSchedule(
     }
 
     // Fetch the season
-    console.log('generateSchedule: Fetching season:', request.seasonId);
+    verboseLog('generateSchedule: Fetching season:', request.seasonId);
     const season = await getSeasonById(db, request.seasonId);
     if (!season) {
-      console.log('generateSchedule: Season not found');
+      verboseLog('generateSchedule: Season not found');
       return {
         success: false,
         eventsCreated: 0,
@@ -53,7 +61,7 @@ export async function generateSchedule(
         errors: [{ type: 'invalid_config', message: 'Season not found' }],
       };
     }
-    console.log('generateSchedule: Found season:', JSON.stringify(season, null, 2));
+    verboseLog('generateSchedule: Found season:', JSON.stringify(season, null, 2));
 
     // Fetch all necessary data
     const [
@@ -115,18 +123,18 @@ export async function generateSchedule(
     );
 
     // Generate the schedule
-    console.log('generateSchedule: Calling generator.generate()');
+    verboseLog('generateSchedule: Calling generator.generate()');
     const result = await generator.generate();
-    console.log('generateSchedule: Generator result:', JSON.stringify(result, null, 2));
+    verboseLog('generateSchedule: Generator result:', JSON.stringify(result, null, 2));
 
     // Save the generated events to the database
     if (result.success) {
       const events = generator.getScheduledEvents();
-      console.log('generateSchedule: Saving', events.length, 'events to database');
+      verboseLog('generateSchedule: Saving', events.length, 'events to database');
       await saveScheduledEvents(db, events);
-      console.log('generateSchedule: Events saved successfully');
+      verboseLog('generateSchedule: Events saved successfully');
     } else {
-      console.log('generateSchedule: Generation failed, not saving events');
+      verboseLog('generateSchedule: Generation failed, not saving events');
     }
 
     return result;

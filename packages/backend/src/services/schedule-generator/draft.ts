@@ -11,6 +11,14 @@ import type {
 import type { EventType } from '@ll-scheduler/shared';
 import { calculatePlacementScore, ScoringContext, updateResourceUsage } from './scoring.js';
 
+// Verbose logging - set to true to enable detailed console output
+const VERBOSE_LOGGING = false;
+function verboseLog(...args: unknown[]): void {
+  if (VERBOSE_LOGGING) {
+    console.log(...args);
+  }
+}
+
 /**
  * Rotate an array by n positions
  * [A, B, C] rotated by 1 becomes [B, C, A]
@@ -480,14 +488,14 @@ export function generateCandidatesForTeamEvent(
   const relevantDatesUsed = eventType === 'cage' ? teamState.cageDatesUsed : teamState.fieldDatesUsed;
 
   if (enableLogging) {
-    console.log(`      [generateCandidates] Team ${teamState.teamName}: ${weekSlots.length} slots in week ${week.weekNumber + 1}`);
-    console.log(`      [generateCandidates] Team ${eventType} dates already used: [${Array.from(relevantDatesUsed).sort().join(', ')}]`);
-    console.log(`      [generateCandidates] Team field dates: [${Array.from(teamState.fieldDatesUsed).sort().join(', ')}]`);
-    console.log(`      [generateCandidates] Team cage dates: [${Array.from(teamState.cageDatesUsed).sort().join(', ')}]`);
+    verboseLog(`      [generateCandidates] Team ${teamState.teamName}: ${weekSlots.length} slots in week ${week.weekNumber + 1}`);
+    verboseLog(`      [generateCandidates] Team ${eventType} dates already used: [${Array.from(relevantDatesUsed).sort().join(', ')}]`);
+    verboseLog(`      [generateCandidates] Team field dates: [${Array.from(teamState.fieldDatesUsed).sort().join(', ')}]`);
+    verboseLog(`      [generateCandidates] Team cage dates: [${Array.from(teamState.cageDatesUsed).sort().join(', ')}]`);
 
     // Log available dates in this week
     const datesWithSlots = new Set(weekSlots.map(s => s.slot.date));
-    console.log(`      [generateCandidates] Dates with slots this week: [${Array.from(datesWithSlots).sort().join(', ')}]`);
+    verboseLog(`      [generateCandidates] Dates with slots this week: [${Array.from(datesWithSlots).sort().join(', ')}]`);
   }
 
   for (const slot of weekSlots) {
@@ -554,15 +562,15 @@ export function generateCandidatesForTeamEvent(
   }
 
   if (enableLogging) {
-    console.log(`      [generateCandidates] Rejection stats: duration=${rejectionStats.durationTooShort}, resourceConflict=${rejectionStats.resourceConflict}, teamHasEvent=${rejectionStats.teamAlreadyHasEvent}`);
-    console.log(`      [generateCandidates] Generated ${candidates.length} candidates`);
+    verboseLog(`      [generateCandidates] Rejection stats: duration=${rejectionStats.durationTooShort}, resourceConflict=${rejectionStats.resourceConflict}, teamHasEvent=${rejectionStats.teamAlreadyHasEvent}`);
+    verboseLog(`      [generateCandidates] Generated ${candidates.length} candidates`);
 
     // Log per-date breakdown
     for (const [date, stats] of Array.from(dateStats.entries()).sort()) {
       const dayOfWeek = getDayOfWeekFromDateStr(date);
       const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek];
       if (stats.rejected.length > 0 || stats.accepted === 0) {
-        console.log(`        ${date} (${dayName}): ${stats.slots} slots, ${stats.accepted} candidates, rejections: ${stats.rejected.length > 0 ? [...new Set(stats.rejected)].join(', ') : 'none'}`);
+        verboseLog(`        ${date} (${dayName}): ${stats.slots} slots, ${stats.accepted} candidates, rejections: ${stats.rejected.length > 0 ? [...new Set(stats.rejected)].join(', ') : 'none'}`);
       }
     }
   }
