@@ -55,6 +55,7 @@ export interface DivisionConfig {
   cageSessionDurationHours?: number; // Duration of cage sessions in hours (default 1)
   fieldPreferences?: string[]; // Ordered list of field IDs, first = most preferred
   gameWeekOverrides?: GameWeekOverride[]; // Per-week game count overrides
+  maxGamesPerSeason?: number; // Maximum total games per team for the season (limits round-robin matchups)
   createdAt: string;
   updatedAt: string;
 }
@@ -72,6 +73,7 @@ export interface CreateDivisionConfigInput {
   cageSessionDurationHours?: number;
   fieldPreferences?: string[];
   gameWeekOverrides?: GameWeekOverride[];
+  maxGamesPerSeason?: number;
 }
 
 export interface UpdateDivisionConfigInput {
@@ -85,4 +87,5 @@ export interface UpdateDivisionConfigInput {
   cageSessionDurationHours?: number;
   fieldPreferences?: string[];
   gameWeekOverrides?: GameWeekOverride[];
+  maxGamesPerSeason?: number;
 }

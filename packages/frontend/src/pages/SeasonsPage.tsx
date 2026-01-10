@@ -226,6 +226,7 @@ export default function SeasonsPage() {
       cageSessionsPerWeek: config.cageSessionsPerWeek,
       cageSessionDurationHours: config.cageSessionDurationHours,
       fieldPreferences: config.fieldPreferences,
+      maxGamesPerSeason: config.maxGamesPerSeason,
     });
     setEditingConfigId(config.id);
   };
@@ -262,6 +263,7 @@ export default function SeasonsPage() {
         cageSessionsPerWeek: configFormData.cageSessionsPerWeek,
         cageSessionDurationHours: configFormData.cageSessionDurationHours,
         fieldPreferences: configFormData.fieldPreferences,
+        maxGamesPerSeason: configFormData.maxGamesPerSeason,
       });
       await loadDivisionConfigsForSeason(configFormData.seasonId);
       setEditingConfigId(null);
@@ -961,6 +963,22 @@ export default function SeasonsPage() {
                                       required
                                     />
                                   </div>
+                                  <div className={styles.formGroup}>
+                                    <label>Max Games/Season (optional)</label>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      placeholder="No limit"
+                                      value={configFormData.maxGamesPerSeason || ''}
+                                      onChange={(e) =>
+                                        setConfigFormData({
+                                          ...configFormData,
+                                          maxGamesPerSeason: e.target.value ? parseInt(e.target.value) : undefined,
+                                        })
+                                      }
+                                    />
+                                  </div>
                                 </div>
                                 <div className={styles.formGroup}>
                                   <label>Game Day Preferences (optional)</label>
@@ -1136,6 +1154,9 @@ export default function SeasonsPage() {
                                 <div className={styles.configDetailRow}>
                                   <span>Games: {existingConfig.gamesPerWeek}/week</span>
                                   <span>Duration: {existingConfig.gameDurationHours}h</span>
+                                  {existingConfig.maxGamesPerSeason && (
+                                    <span>Max/season: {existingConfig.maxGamesPerSeason}</span>
+                                  )}
                                 </div>
                                 {existingConfig.gameDayPreferences && existingConfig.gameDayPreferences.length > 0 && (
                                   <div className={styles.configDetailRow}>

@@ -274,13 +274,18 @@ export class ScheduleGenerator {
 
   /**
    * Calculate total games per team for a division across all game weeks
-   * Accounts for per-week overrides
+   * Accounts for per-week overrides and maxGamesPerSeason cap
    */
   private getTotalGamesPerTeam(divisionId: string, gameWeeks: WeekDefinition[]): number {
     let total = 0;
     for (let i = 0; i < gameWeeks.length; i++) {
       // Use 1-based game week index for override lookup
       total += this.getGamesPerWeekForDivision(divisionId, i + 1);
+    }
+    // Cap at maxGamesPerSeason if set
+    const config = this.divisionConfigs.get(divisionId);
+    if (config?.maxGamesPerSeason && total > config.maxGamesPerSeason) {
+      return config.maxGamesPerSeason;
     }
     return total;
   }
@@ -946,7 +951,14 @@ export class ScheduleGenerator {
       );
 
       // Calculate exact number of games needed (sum of per-week values)
-      const totalGamesPerTeam = gamesPerWeekByWeek.reduce((sum, g) => sum + g, 0);
+      let totalGamesPerTeam = gamesPerWeekByWeek.reduce((sum, g) => sum + g, 0);
+
+      // Cap at maxGamesPerSeason if set
+      if (config.maxGamesPerSeason && totalGamesPerTeam > config.maxGamesPerSeason) {
+        verboseLog(`  Capping games from ${totalGamesPerTeam} to maxGamesPerSeason: ${config.maxGamesPerSeason}`);
+        totalGamesPerTeam = config.maxGamesPerSeason;
+      }
+
       const numTeams = divisionTeams.length;
       const numOpponents = numTeams - 1;
 
@@ -957,7 +969,7 @@ export class ScheduleGenerator {
       const minCycles = Math.ceil(totalGamesPerTeam / numOpponents);
 
       // Log per-week game distribution if there are overrides
-      const hasOverrides = config.gameWeekOverrides && config.gameWeekOverrides.length > 0;
+      const hasOverrides = config.gameWeekOverrides && config.gameWeekOverrides.length > 0 || !!config.maxGamesPerSeason;
       verboseLog(`  Total games per team needed: ${totalGamesPerTeam}${hasOverrides ? ' (with overrides)' : ''}`);
       if (hasOverrides) {
         verboseLog(`  Per-week games: ${gamesPerWeekByWeek.map((g, i) => `W${i+1}:${g}`).join(', ')}`);
@@ -1276,32 +1288,9 @@ export class ScheduleGenerator {
               if (candidates.length === 0) {
                 failureReason = 'no_valid_time_slots (all slots have conflicts)';
               } else {
-                // Only apply fair-share filtering when there's actual scarcity of required-day slots
-                // If there are enough Saturday slots for all matchups, everyone should get Saturday
-                let filteredCandidates = candidates;
-
-                if (hasRequiredDayScarcity) {
-                  // There's scarcity - use fair share logic to decide who gets filtered
-                  const fairSharePerTeam = (division as any).fairSharePerTeam || Infinity;
-                  const homePreferredGames = preferredDayGames.get(matchup.homeTeamId) || 0;
-                  const awayPreferredGames = preferredDayGames.get(matchup.awayTeamId) || 0;
-
-                  // Calculate remaining required-day slots this week
-                  const remainingRequiredDaySlots = requiredDayGameCapacity - requiredDaySlotsUsedThisWeek;
-                  const remainingMatchups = sortedMatchups.length - sortedMatchups.indexOf(matchup);
-
-                  // Only filter if: (1) team has enough AND (2) there aren't enough slots for remaining matchups
-                  const eitherTeamHasEnough = homePreferredGames >= fairSharePerTeam || awayPreferredGames >= fairSharePerTeam;
-                  const shouldFilterForFairness = eitherTeamHasEnough && remainingRequiredDaySlots < remainingMatchups;
-
-                  if (shouldFilterForFairness) {
-                    const nonPreferredCandidates = candidates.filter(c => !requiredDays.includes(c.dayOfWeek));
-                    if (nonPreferredCandidates.length > 0) {
-                      filteredCandidates = nonPreferredCandidates;
-                      verboseLog(`    Filtering ${homeTeam.name} vs ${awayTeam.name} to non-required days (fair share)`);
-                    }
-                  }
-                }
+                // Use all candidates - let the two-phase approach handle required day priority
+                // We want to fill all required-day slots first before using non-required days
+                const filteredCandidates = candidates;
 
                 // Two-phase approach: try required days first, fall back to other days only if needed
                 let bestCandidate: ScoredCandidate | undefined;

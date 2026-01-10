@@ -19,6 +19,7 @@ interface DivisionConfigRow {
   cage_session_duration_hours: number | null;
   field_preferences: string | null; // JSON string
   game_week_overrides: string | null; // JSON string
+  max_games_per_season: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,6 +39,7 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     cageSessionDurationHours: row.cage_session_duration_hours || undefined,
     fieldPreferences: row.field_preferences ? JSON.parse(row.field_preferences) : undefined,
     gameWeekOverrides: row.game_week_overrides ? JSON.parse(row.game_week_overrides) : undefined,
+    maxGamesPerSeason: row.max_games_per_season || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -89,8 +91,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -106,6 +108,7 @@ export async function createDivisionConfig(
       input.cageSessionDurationHours || null,
       input.fieldPreferences ? JSON.stringify(input.fieldPreferences) : null,
       input.gameWeekOverrides ? JSON.stringify(input.gameWeekOverrides) : null,
+      input.maxGamesPerSeason || null,
       now,
       now
     )
@@ -171,6 +174,10 @@ export async function updateDivisionConfig(
   if (input.gameWeekOverrides !== undefined) {
     updates.push('game_week_overrides = ?');
     values.push(input.gameWeekOverrides ? JSON.stringify(input.gameWeekOverrides) : null);
+  }
+  if (input.maxGamesPerSeason !== undefined) {
+    updates.push('max_games_per_season = ?');
+    values.push(input.maxGamesPerSeason || null);
   }
 
   if (updates.length === 0) {
