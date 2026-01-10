@@ -115,6 +115,23 @@
   color: #333;
 }
 
+.milestones {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 0.25rem;
+}
+
+.milestone {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: #7c4dff;
+  color: white;
+  text-align: center;
+  font-weight: 500;
+}
+
 .dayEvents {
   display: flex;
   flex-direction: column;
@@ -170,7 +187,7 @@
 }
 
 .timeHeader {
-  height: 60px;
+  min-height: 60px;
   border-bottom: 1px solid #e0e0e0;
 }
 
@@ -188,7 +205,7 @@
 }
 
 .weekDayHeader {
-  height: 60px;
+  min-height: 60px;
   padding: 0.5rem;
   text-align: center;
   border-bottom: 1px solid #e0e0e0;
@@ -208,6 +225,22 @@
 
 .weekDayDate.today {
   color: #2196f3;
+}
+
+.weekMilestones {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 0.25rem;
+}
+
+.weekMilestone {
+  font-size: 0.6rem;
+  padding: 1px 3px;
+  border-radius: 2px;
+  background: #7c4dff;
+  color: white;
+  font-weight: 500;
 }
 
 .weekTimeSlot {

@@ -17,6 +17,12 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   cage: 'Cage',
 };
 
+interface SeasonMilestones {
+  startDate?: string;
+  gamesStartDate?: string;
+  endDate?: string;
+}
+
 interface CalendarViewProps {
   events: ScheduledEvent[];
   teams: Team[];
@@ -24,6 +30,7 @@ interface CalendarViewProps {
   seasonCages: SeasonCage[];
   divisions: Division[];
   initialDate?: string; // ISO date string to start the calendar on
+  seasonMilestones?: SeasonMilestones; // Key season dates to annotate
   onEventClick?: (event: ScheduledEvent) => void;
   onEventUpdate?: (id: string, input: UpdateScheduledEventInput) => Promise<void>;
   onEventDelete?: (id: string) => Promise<void>;
@@ -42,6 +49,7 @@ export default function CalendarView({
   seasonCages,
   divisions,
   initialDate,
+  seasonMilestones,
   onEventClick,
   onEventUpdate,
   onEventDelete,
@@ -175,6 +183,22 @@ export default function CalendarView({
     if (!date) return [];
     const dateStr = date.toISOString().split('T')[0];
     return events.filter((e) => e.date === dateStr);
+  };
+
+  // Get season milestones for a specific date
+  const getMilestonesForDate = (dateStr: string): string[] => {
+    if (!seasonMilestones) return [];
+    const milestones: string[] = [];
+    if (seasonMilestones.startDate === dateStr) {
+      milestones.push('Season Start');
+    }
+    if (seasonMilestones.gamesStartDate === dateStr && seasonMilestones.gamesStartDate !== seasonMilestones.startDate) {
+      milestones.push('Games Start');
+    }
+    if (seasonMilestones.endDate === dateStr) {
+      milestones.push('Season End');
+    }
+    return milestones;
   };
 
   // Week view helpers - starts on Monday
@@ -338,32 +362,45 @@ export default function CalendarView({
               {day}
             </div>
           ))}
-          {days.map((date, index) => (
-            <div
-              key={index}
-              className={`${styles.dayCell} ${!date ? styles.emptyDay : ''} ${
-                date && date.toDateString() === new Date().toDateString() ? styles.today : ''
-              }`}
-            >
-              {date && (
-                <>
-                  <div className={styles.dayNumber}>{date.getDate()}</div>
-                  <div className={styles.dayEvents}>
-                    {getEventsForDate(date).map((event) => (
-                      <div
-                        key={event.id}
-                        className={`${styles.eventItem} ${styles[event.eventType]}`}
-                        onClick={() => handleEventClick(event)}
-                        title={formatEventSummary(event)}
-                      >
-                        {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
+          {days.map((date, index) => {
+            const dateStr = date ? date.toISOString().split('T')[0] : '';
+            const milestones = date ? getMilestonesForDate(dateStr) : [];
+            return (
+              <div
+                key={index}
+                className={`${styles.dayCell} ${!date ? styles.emptyDay : ''} ${
+                  date && date.toDateString() === new Date().toDateString() ? styles.today : ''
+                }`}
+              >
+                {date && (
+                  <>
+                    <div className={styles.dayNumber}>{date.getDate()}</div>
+                    {milestones.length > 0 && (
+                      <div className={styles.milestones}>
+                        {milestones.map((milestone) => (
+                          <div key={milestone} className={styles.milestone}>
+                            {milestone}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
+                    )}
+                    <div className={styles.dayEvents}>
+                      {getEventsForDate(date).map((event) => (
+                        <div
+                          key={event.id}
+                          className={`${styles.eventItem} ${styles[event.eventType]}`}
+                          onClick={() => handleEventClick(event)}
+                          title={formatEventSummary(event)}
+                        >
+                          {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -388,6 +425,7 @@ export default function CalendarView({
             const dateStr = date.toISOString().split('T')[0];
             const dayEvents = getEventsForDateStr(dateStr);
             const layoutInfo = layoutEvents(dayEvents);
+            const milestones = getMilestonesForDate(dateStr);
 
             return (
               <div key={date.toISOString()} className={styles.dayColumn}>
@@ -398,6 +436,15 @@ export default function CalendarView({
                   }`}>
                     {date.getDate()}
                   </div>
+                  {milestones.length > 0 && (
+                    <div className={styles.weekMilestones}>
+                      {milestones.map((milestone) => (
+                        <div key={milestone} className={styles.weekMilestone}>
+                          {milestone}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className={styles.weekDayBody} style={{ height: totalHeight, position: 'relative' }}>
                   {/* Grid lines for hours */}

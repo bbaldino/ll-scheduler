@@ -642,6 +642,11 @@ export default function ScheduledEventsPage() {
             seasonCages={seasonCages}
             divisions={divisions}
             initialDate={currentSeason?.startDate}
+            seasonMilestones={currentSeason ? {
+              startDate: currentSeason.startDate,
+              gamesStartDate: currentSeason.gamesStartDate,
+              endDate: currentSeason.endDate,
+            } : undefined}
             onEventUpdate={handleCalendarUpdate}
             onEventDelete={handleCalendarDelete}
           />
