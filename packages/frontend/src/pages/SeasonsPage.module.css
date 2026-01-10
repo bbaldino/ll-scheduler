@@ -536,3 +536,218 @@
   color: #888;
   font-size: 0.85em;
 }
+
+/* Delete Events Section */
+.deleteEventsSection {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.deleteEventsToggle {
+  padding: 0.5rem 1rem;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #c62828;
+  font-weight: 500;
+}
+
+.deleteEventsToggle:hover:not(:disabled) {
+  background-color: #ffcdd2;
+}
+
+.deleteEventsToggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deleteEventsPanel {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+}
+
+.deleteEventsDescription {
+  margin: 0 0 1rem 0;
+  color: #666;
+  font-size: 0.9em;
+}
+
+.filterGroup {
+  margin-bottom: 1rem;
+}
+
+.filterHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.filterLabel {
+  font-weight: 500;
+  color: #444;
+}
+
+.selectAllButtons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.selectAllBtn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8em;
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #1565c0;
+}
+
+.selectAllBtn:hover {
+  background-color: #bbdefb;
+}
+
+.selectAllBtnSmall {
+  padding: 0.1rem 0.35rem;
+  font-size: 0.75em;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #555;
+}
+
+.selectAllBtnSmall:hover {
+  background-color: #e0e0e0;
+}
+
+.checkboxGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.checkboxItem {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background-color: #f5f5f5;
+  font-weight: normal;
+}
+
+.checkboxItem:hover {
+  background-color: #e0e0e0;
+}
+
+.noTeamsHint {
+  color: #888;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.teamsByDivision {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.divisionTeamsGroup {
+  padding: 0.5rem;
+  background-color: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.divisionTeamsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.divisionTeamsLabel {
+  font-weight: 500;
+  color: #333;
+  font-size: 0.9em;
+}
+
+.deleteEventsActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.deleteEventsButton {
+  padding: 0.5rem 1rem;
+  background-color: #c62828;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.deleteEventsButton:hover:not(:disabled) {
+  background-color: #b71c1c;
+}
+
+.deleteEventsButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cancelConfirmButton {
+  padding: 0.5rem 1rem;
+  background-color: #f5f5f5;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  color: #333;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cancelConfirmButton:hover:not(:disabled) {
+  background-color: #e0e0e0;
+}
+
+.confirmWarning {
+  color: #c62828;
+  font-weight: 500;
+}
+
+.deleteEventsSuccess {
+  padding: 0.75rem 1rem;
+  background-color: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  border-radius: 4px;
+  color: #2e7d32;
+  margin-bottom: 0.75rem;
+}
+
+.deleteEventsError {
+  padding: 0.75rem 1rem;
+  background-color: #ffebee;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  color: #c62828;
+  margin-bottom: 0.75rem;
+}

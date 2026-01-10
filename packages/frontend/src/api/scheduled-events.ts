@@ -3,6 +3,7 @@ import type {
   CreateScheduledEventInput,
   UpdateScheduledEventInput,
   ScheduledEventQuery,
+  EventType,
 } from '@ll-scheduler/shared';
 import { API_BASE } from './config';
 
@@ -75,4 +76,21 @@ export async function deleteScheduledEvent(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error('Failed to delete scheduled event');
   }
+}
+
+export async function deleteScheduledEventsBulk(params: {
+  seasonId: string;
+  divisionIds?: string[];
+  teamIds?: string[];
+  eventTypes?: EventType[];
+}): Promise<{ deletedCount: number }> {
+  const response = await fetch(`${API_BASE}/scheduled-events/bulk`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to delete scheduled events');
+  }
+  return response.json();
 }

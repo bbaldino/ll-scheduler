@@ -235,3 +235,62 @@ export async function deleteScheduledEvent(db: D1Database, id: string): Promise<
 
   return (result.meta.changes ?? 0) > 0;
 }
+
+/**
+ * Bulk delete scheduled events with optional filters.
+ * Returns the number of events deleted.
+ */
+export async function deleteScheduledEventsBulk(
+  db: D1Database,
+  params: {
+    seasonId: string;
+    divisionIds?: string[];
+    teamIds?: string[];
+    eventTypes?: EventType[];
+  }
+): Promise<number> {
+  const conditions: string[] = ['season_id = ?'];
+  const queryParams: any[] = [params.seasonId];
+
+  if (params.divisionIds && params.divisionIds.length > 0) {
+    const placeholders = params.divisionIds.map(() => '?').join(', ');
+    conditions.push(`division_id IN (${placeholders})`);
+    queryParams.push(...params.divisionIds);
+  }
+
+  if (params.teamIds && params.teamIds.length > 0) {
+    const placeholders = params.teamIds.map(() => '?').join(', ');
+    conditions.push(`(team_id IN (${placeholders}) OR home_team_id IN (${placeholders}) OR away_team_id IN (${placeholders}))`);
+    // Need to add teamIds three times for the three IN clauses
+    queryParams.push(...params.teamIds, ...params.teamIds, ...params.teamIds);
+  }
+
+  if (params.eventTypes && params.eventTypes.length > 0) {
+    const placeholders = params.eventTypes.map(() => '?').join(', ');
+    conditions.push(`event_type IN (${placeholders})`);
+    queryParams.push(...params.eventTypes);
+  }
+
+  const whereClause = conditions.join(' AND ');
+
+  // First, get the IDs of events to delete
+  const selectSql = `SELECT id FROM scheduled_events WHERE ${whereClause}`;
+  const selectResult = await db.prepare(selectSql).bind(...queryParams).all<{ id: string }>();
+  const eventIds = (selectResult.results || []).map(r => r.id);
+
+  if (eventIds.length === 0) {
+    return 0;
+  }
+
+  // Batch delete in chunks of 50 to avoid D1 limits
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < eventIds.length; i += BATCH_SIZE) {
+    const chunk = eventIds.slice(i, i + BATCH_SIZE);
+    const deleteStatements = chunk.map(id =>
+      db.prepare('DELETE FROM scheduled_events WHERE id = ?').bind(id)
+    );
+    await db.batch(deleteStatements);
+  }
+
+  return eventIds.length;
+}

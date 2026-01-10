@@ -7,6 +7,7 @@ import {
   createScheduledEvent,
   updateScheduledEvent,
   deleteScheduledEvent,
+  deleteScheduledEventsBulk,
 } from '../services/scheduled-events.js';
 
 const router = new Hono<{ Bindings: Env }>();
@@ -59,6 +60,29 @@ router.put('/:id', async (c) => {
   }
 
   return c.json(event);
+});
+
+// DELETE /api/scheduled-events/bulk - Bulk delete scheduled events with filters
+router.delete('/bulk', async (c) => {
+  const body = await c.req.json<{
+    seasonId: string;
+    divisionIds?: string[];
+    teamIds?: string[];
+    eventTypes?: string[];
+  }>();
+
+  if (!body.seasonId) {
+    return c.json({ error: 'seasonId is required' }, 400);
+  }
+
+  const deletedCount = await deleteScheduledEventsBulk(c.env.DB, {
+    seasonId: body.seasonId,
+    divisionIds: body.divisionIds,
+    teamIds: body.teamIds,
+    eventTypes: body.eventTypes as any,
+  });
+
+  return c.json({ deletedCount });
 });
 
 // DELETE /api/scheduled-events/:id - Delete a scheduled event

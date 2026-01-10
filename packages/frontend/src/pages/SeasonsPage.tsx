@@ -9,6 +9,8 @@ import {
   deleteDivisionConfig,
 } from '../api/division-configs';
 import { fetchSeasonFields } from '../api/fields';
+import { fetchTeams } from '../api/teams';
+import { deleteScheduledEventsBulk } from '../api/scheduled-events';
 import type {
   Season,
   CreateSeasonInput,
@@ -19,6 +21,8 @@ import type {
   GameDayPreference,
   GameWeekOverride,
   SeasonField,
+  Team,
+  EventType,
 } from '@ll-scheduler/shared';
 import styles from './SeasonsPage.module.css';
 
@@ -90,6 +94,16 @@ export default function SeasonsPage() {
   const [addingOverrideForConfigId, setAddingOverrideForConfigId] = useState<string | null>(null);
   const [newOverrideWeek, setNewOverrideWeek] = useState<number>(1);
   const [newOverrideGames, setNewOverrideGames] = useState<number>(0);
+
+  // Delete events state
+  const [deleteEventsExpandedForSeasonId, setDeleteEventsExpandedForSeasonId] = useState<string | null>(null);
+  const [seasonTeams, setSeasonTeams] = useState<Record<string, Team[]>>({});
+  const [selectedDivisionIds, setSelectedDivisionIds] = useState<string[]>([]);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
+  const [selectedEventTypes, setSelectedEventTypes] = useState<EventType[]>([]);
+  const [isDeletingEvents, setIsDeletingEvents] = useState(false);
+  const [deleteEventsStatus, setDeleteEventsStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Load divisions on mount
   useEffect(() => {
@@ -337,6 +351,67 @@ export default function SeasonsPage() {
     }
   };
 
+  // Delete events handlers
+  const toggleDeleteEventsSection = async (seasonId: string) => {
+    if (deleteEventsExpandedForSeasonId === seasonId) {
+      setDeleteEventsExpandedForSeasonId(null);
+      setSelectedDivisionIds([]);
+      setSelectedTeamIds([]);
+      setSelectedEventTypes([]);
+      setDeleteEventsStatus(null);
+      setConfirmingDelete(false);
+    } else {
+      setDeleteEventsExpandedForSeasonId(seasonId);
+      setSelectedDivisionIds([]);
+      setSelectedTeamIds([]);
+      setSelectedEventTypes([]);
+      setDeleteEventsStatus(null);
+      setConfirmingDelete(false);
+      // Load teams for this season if not already loaded
+      if (!seasonTeams[seasonId]) {
+        try {
+          const teams = await fetchTeams(seasonId);
+          setSeasonTeams((prev) => ({ ...prev, [seasonId]: teams }));
+        } catch (error) {
+          console.error('Failed to load teams:', error);
+        }
+      }
+    }
+  };
+
+  const handleDeleteEvents = async (seasonId: string) => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setDeleteEventsStatus(null);
+      return;
+    }
+
+    setIsDeletingEvents(true);
+    setDeleteEventsStatus(null);
+    try {
+      const result = await deleteScheduledEventsBulk({
+        seasonId,
+        divisionIds: selectedDivisionIds.length > 0 ? selectedDivisionIds : undefined,
+        teamIds: selectedTeamIds.length > 0 ? selectedTeamIds : undefined,
+        eventTypes: selectedEventTypes.length > 0 ? selectedEventTypes : undefined,
+      });
+      setDeleteEventsStatus({
+        type: 'success',
+        message: `Successfully deleted ${result.deletedCount} event${result.deletedCount !== 1 ? 's' : ''}.`,
+      });
+      setSelectedDivisionIds([]);
+      setSelectedTeamIds([]);
+      setSelectedEventTypes([]);
+      setConfirmingDelete(false);
+    } catch (error) {
+      console.error('Failed to delete events:', error);
+      setDeleteEventsStatus({ type: 'error', message: 'Failed to delete events' });
+      setConfirmingDelete(false);
+    } finally {
+      setIsDeletingEvents(false);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -516,6 +591,247 @@ export default function SeasonsPage() {
                   />
                   <span className={styles.addBlackoutHint}>Select a date to add</span>
                 </div>
+              </div>
+
+              {/* Delete Events Section */}
+              <div className={styles.deleteEventsSection}>
+                <button
+                  onClick={() => toggleDeleteEventsSection(season.id)}
+                  className={styles.deleteEventsToggle}
+                  disabled={isDeletingEvents}
+                >
+                  {deleteEventsExpandedForSeasonId === season.id ? 'Cancel' : 'Delete Events...'}
+                </button>
+
+                {deleteEventsExpandedForSeasonId === season.id && (
+                  <div className={styles.deleteEventsPanel}>
+                    <p className={styles.deleteEventsDescription}>
+                      Select filters to delete specific events, or leave all unchecked to delete all events for this season.
+                    </p>
+
+                    {/* Division filter */}
+                    <div className={styles.filterGroup}>
+                      <div className={styles.filterHeader}>
+                        <label className={styles.filterLabel}>Divisions:</label>
+                        <div className={styles.selectAllButtons}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDivisionIds(divisions.map((d) => d.id))}
+                            className={styles.selectAllBtn}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDivisionIds([]);
+                              setSelectedTeamIds([]);
+                            }}
+                            className={styles.selectAllBtn}
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      <div className={styles.checkboxGrid}>
+                        {divisions.map((division) => (
+                          <label key={division.id} className={styles.checkboxItem}>
+                            <input
+                              type="checkbox"
+                              checked={selectedDivisionIds.includes(division.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedDivisionIds([...selectedDivisionIds, division.id]);
+                                } else {
+                                  setSelectedDivisionIds(selectedDivisionIds.filter((id) => id !== division.id));
+                                  // Also remove any selected teams from this division
+                                  const divisionTeamIds = (seasonTeams[season.id] || [])
+                                    .filter((t) => t.divisionId === division.id)
+                                    .map((t) => t.id);
+                                  setSelectedTeamIds(selectedTeamIds.filter((id) => !divisionTeamIds.includes(id)));
+                                }
+                              }}
+                            />
+                            {division.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Team filter - grouped by division */}
+                    <div className={styles.filterGroup}>
+                      <div className={styles.filterHeader}>
+                        <label className={styles.filterLabel}>Teams:</label>
+                        <div className={styles.selectAllButtons}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const visibleTeams = (seasonTeams[season.id] || []).filter(
+                                (t) => selectedDivisionIds.length === 0 || selectedDivisionIds.includes(t.divisionId)
+                              );
+                              setSelectedTeamIds(visibleTeams.map((t) => t.id));
+                            }}
+                            className={styles.selectAllBtn}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTeamIds([])}
+                            className={styles.selectAllBtn}
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      <div className={styles.teamsByDivision}>
+                        {divisions
+                          .filter((division) =>
+                            selectedDivisionIds.length === 0 || selectedDivisionIds.includes(division.id)
+                          )
+                          .map((division) => {
+                            const divisionTeams = (seasonTeams[season.id] || []).filter(
+                              (t) => t.divisionId === division.id
+                            );
+                            if (divisionTeams.length === 0) return null;
+                            return (
+                              <div key={division.id} className={styles.divisionTeamsGroup}>
+                                <div className={styles.divisionTeamsHeader}>
+                                  <span className={styles.divisionTeamsLabel}>{division.name}</span>
+                                  <div className={styles.selectAllButtons}>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const teamIds = divisionTeams.map((t) => t.id);
+                                        setSelectedTeamIds([...new Set([...selectedTeamIds, ...teamIds])]);
+                                      }}
+                                      className={styles.selectAllBtnSmall}
+                                    >
+                                      All
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const teamIds = divisionTeams.map((t) => t.id);
+                                        setSelectedTeamIds(selectedTeamIds.filter((id) => !teamIds.includes(id)));
+                                      }}
+                                      className={styles.selectAllBtnSmall}
+                                    >
+                                      None
+                                    </button>
+                                  </div>
+                                </div>
+                                <div className={styles.checkboxGrid}>
+                                  {divisionTeams.map((team) => (
+                                    <label key={team.id} className={styles.checkboxItem}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedTeamIds.includes(team.id)}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setSelectedTeamIds([...selectedTeamIds, team.id]);
+                                          } else {
+                                            setSelectedTeamIds(selectedTeamIds.filter((id) => id !== team.id));
+                                          }
+                                        }}
+                                      />
+                                      {team.name}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        {(seasonTeams[season.id] || []).length === 0 && (
+                          <span className={styles.noTeamsHint}>No teams in this season</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Event type filter */}
+                    <div className={styles.filterGroup}>
+                      <div className={styles.filterHeader}>
+                        <label className={styles.filterLabel}>Event Types:</label>
+                        <div className={styles.selectAllButtons}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEventTypes(['game', 'practice', 'cage'])}
+                            className={styles.selectAllBtn}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEventTypes([])}
+                            className={styles.selectAllBtn}
+                          >
+                            None
+                          </button>
+                        </div>
+                      </div>
+                      <div className={styles.checkboxGrid}>
+                        {(['game', 'practice', 'cage'] as EventType[]).map((eventType) => (
+                          <label key={eventType} className={styles.checkboxItem}>
+                            <input
+                              type="checkbox"
+                              checked={selectedEventTypes.includes(eventType)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedEventTypes([...selectedEventTypes, eventType]);
+                                } else {
+                                  setSelectedEventTypes(selectedEventTypes.filter((t) => t !== eventType));
+                                }
+                              }}
+                            />
+                            {eventType.charAt(0).toUpperCase() + eventType.slice(1)}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {deleteEventsStatus && (
+                      <div
+                        className={
+                          deleteEventsStatus.type === 'success'
+                            ? styles.deleteEventsSuccess
+                            : styles.deleteEventsError
+                        }
+                      >
+                        {deleteEventsStatus.message}
+                      </div>
+                    )}
+
+                    <div className={styles.deleteEventsActions}>
+                      {confirmingDelete ? (
+                        <>
+                          <span className={styles.confirmWarning}>Are you sure? This cannot be undone.</span>
+                          <button
+                            onClick={() => handleDeleteEvents(season.id)}
+                            className={styles.deleteEventsButton}
+                            disabled={isDeletingEvents}
+                          >
+                            {isDeletingEvents ? 'Deleting...' : 'Yes, Delete'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmingDelete(false)}
+                            className={styles.cancelConfirmButton}
+                            disabled={isDeletingEvents}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => handleDeleteEvents(season.id)}
+                          className={styles.deleteEventsButton}
+                          disabled={isDeletingEvents}
+                        >
+                          Delete Events
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
