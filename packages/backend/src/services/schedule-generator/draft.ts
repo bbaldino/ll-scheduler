@@ -79,6 +79,16 @@ export function getDayOfWeekFromDateStr(dateStr: string): number {
 }
 
 /**
+ * Calculate the number of days between two date strings (YYYY-MM-DD)
+ */
+export function calculateDaysBetween(date1: string, date2: string): number {
+  const d1 = parseLocalDate(date1);
+  const d2 = parseLocalDate(date2);
+  const diffMs = Math.abs(d2.getTime() - d1.getTime());
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
  * Generate week definitions from a date range
  * Weeks run Monday through Sunday
  */
@@ -371,6 +381,8 @@ export function initializeTeamState(
     fieldDatesUsed: new Set(),
     cageDatesUsed: new Set(),
     minDaysBetweenEvents: requirements.minDaysBetweenEvents,
+    gameDates: [],
+    shortRestGamesCount: 0,
   };
 }
 
@@ -407,6 +419,19 @@ export function updateTeamStateAfterScheduling(
           teamState.matchupHomeAway.set(opponentId, matchup);
         }
       }
+
+      // Track game dates and short rest count
+      // Check if this game is within 2 days of ANY existing game (games can be scheduled out of order)
+      const newGameDate = event.date;
+      const isShortRest = teamState.gameDates.some(
+        (existingDate) => calculateDaysBetween(existingDate, newGameDate) <= 2
+      );
+      if (isShortRest) {
+        teamState.shortRestGamesCount++;
+      }
+      // Insert date in sorted order
+      teamState.gameDates.push(newGameDate);
+      teamState.gameDates.sort();
       break;
     case 'practice':
       teamState.practicesScheduled++;

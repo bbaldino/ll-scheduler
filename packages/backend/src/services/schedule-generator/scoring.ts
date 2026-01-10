@@ -58,6 +58,7 @@ export interface ScoreBreakdown {
   scarcity: number;
   sameDayCageFieldGap: number;
   weekendMorningPractice: number;
+  shortRestBalance: number;
 }
 
 /**
@@ -91,6 +92,7 @@ export function calculatePlacementScore(
     scarcity: 0,
     sameDayCageFieldGap: 0,
     weekendMorningPractice: 0,
+    shortRestBalance: 0,
   };
 
   // Continuous positive factors (rawScore 0-1)
@@ -109,6 +111,7 @@ export function calculatePlacementScore(
     if (candidate.homeTeamId && candidate.awayTeamId) {
       breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
       breakdown.matchupHomeAwayBalance = calculateMatchupHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.matchupHomeAwayBalance;
+      breakdown.shortRestBalance = calculateShortRestBalanceRaw(candidate, context) * weights.shortRestBalance;
     }
   }
 
@@ -443,6 +446,85 @@ export function calculateMatchupHomeAwayBalanceRaw(
   // 3 imbalance = 0.25
   // 4+ imbalance = 0
   return Math.max(0, 1 - Math.abs(newImbalance) / 4);
+}
+
+/**
+ * Calculate short rest balance raw score for games
+ * Returns 0-1 where:
+ * - 0 = no penalty (this game won't create short rest, or team is below/at average short rest count)
+ * - 1 = full penalty (this game creates short rest and team already has more than division average)
+ *
+ * This encourages distributing short-rest games evenly across teams in a division.
+ * A "short rest" game is one scheduled ≤2 days after the team's previous game.
+ */
+export function calculateShortRestBalanceRaw(
+  candidate: PlacementCandidate,
+  context: ScoringContext
+): number {
+  if (!candidate.homeTeamId || !candidate.awayTeamId) {
+    return 0;
+  }
+
+  const homeTeam = context.teamStates.get(candidate.homeTeamId);
+  const awayTeam = context.teamStates.get(candidate.awayTeamId);
+
+  if (!homeTeam || !awayTeam) {
+    return 0;
+  }
+
+  // Check if either team would have a short rest game (≤2 days from ANY existing game)
+  // Games can be scheduled out of chronological order, so we need to check all dates
+  const candidateDayNum = dateToDayNumber(candidate.date);
+
+  const wouldBeShortRestForHome = homeTeam.gameDates.some(
+    (date) => Math.abs(candidateDayNum - dateToDayNumber(date)) <= 2
+  );
+
+  const wouldBeShortRestForAway = awayTeam.gameDates.some(
+    (date) => Math.abs(candidateDayNum - dateToDayNumber(date)) <= 2
+  );
+
+  // If neither team would have short rest, no penalty
+  if (!wouldBeShortRestForHome && !wouldBeShortRestForAway) {
+    return 0;
+  }
+
+  // Calculate division average short rest count
+  // Only look at teams in the same division(s)
+  const divisionsToCheck = new Set([homeTeam.divisionId, awayTeam.divisionId]);
+  let totalShortRestCount = 0;
+  let teamCount = 0;
+
+  for (const [, teamState] of context.teamStates) {
+    if (divisionsToCheck.has(teamState.divisionId)) {
+      totalShortRestCount += teamState.shortRestGamesCount;
+      teamCount++;
+    }
+  }
+
+  const avgShortRest = teamCount > 0 ? totalShortRestCount / teamCount : 0;
+
+  // Calculate penalty for each team that would get short rest
+  let maxPenalty = 0;
+
+  if (wouldBeShortRestForHome) {
+    // How much above average is this team?
+    const excess = homeTeam.shortRestGamesCount - avgShortRest;
+    // Penalty increases when team is above average
+    // 0 excess = 0.3 penalty (still some penalty for any short rest)
+    // 1 excess = 0.6 penalty
+    // 2+ excess = 1.0 penalty
+    const penalty = Math.min(1, 0.3 + Math.max(0, excess) * 0.35);
+    maxPenalty = Math.max(maxPenalty, penalty);
+  }
+
+  if (wouldBeShortRestForAway) {
+    const excess = awayTeam.shortRestGamesCount - avgShortRest;
+    const penalty = Math.min(1, 0.3 + Math.max(0, excess) * 0.35);
+    maxPenalty = Math.max(maxPenalty, penalty);
+  }
+
+  return maxPenalty;
 }
 
 /**

@@ -229,6 +229,7 @@ export interface ScoringWeights {
   scarcity: number; // Penalize taking slots that are scarce for other teams
   sameDayCageFieldGap: number; // Penalize non-adjacent cage+field events on same day
   weekendMorningPractice: number; // Penalize practices on weekend mornings (games should get priority)
+  shortRestBalance: number; // For games: penalize short rest when team already has more than division average
 }
 
 /**
@@ -253,6 +254,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   scarcity: -1000,
   sameDayCageFieldGap: -1000, // Strong penalty for non-adjacent cage+field on same day
   weekendMorningPractice: -500, // Penalty for practices on weekend mornings (reserve for games)
+  shortRestBalance: -500, // Strong penalty for short rest when team already has more than average
 };
 
 /**
@@ -295,6 +297,7 @@ export interface ScoredCandidate extends PlacementCandidate {
     scarcity: number;
     sameDayCageFieldGap: number;
     weekendMorningPractice: number;
+    shortRestBalance: number;
   };
 }
 
@@ -326,6 +329,9 @@ export interface TeamSchedulingState {
   fieldDatesUsed: Set<string>; // Dates with field events (games/practices) scheduled
   cageDatesUsed: Set<string>; // Dates with cage events scheduled
   minDaysBetweenEvents: number;
+  // Game-specific tracking for short rest balancing
+  gameDates: string[]; // Sorted list of dates when games are scheduled
+  shortRestGamesCount: number; // Count of games scheduled ≤2 days after previous game
 }
 
 /**

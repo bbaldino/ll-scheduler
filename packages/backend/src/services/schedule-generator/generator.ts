@@ -1096,8 +1096,24 @@ export class ScheduleGenerator {
           verboseLog(`  Week ${weekNum + 1}: Required-day scarcity - ${requiredDayGameCapacity} game slots for ${weekMatchups.length} matchups`);
         }
 
-        // Sort matchups - teams with fewer preferred-day games go first (matters when there's scarcity)
+        // Sort matchups to balance fairness:
+        // 1. Teams with more short rest games go first (so they get first pick of non-short-rest slots)
+        // 2. Teams with fewer preferred-day games go first (matters when there's scarcity)
         const sortedMatchups = [...weekMatchups].sort((a, b) => {
+          // First priority: teams with more short rest games should go first
+          const aMaxShortRest = Math.max(
+            this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0,
+            this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0
+          );
+          const bMaxShortRest = Math.max(
+            this.teamSchedulingStates.get(b.homeTeamId)?.shortRestGamesCount || 0,
+            this.teamSchedulingStates.get(b.awayTeamId)?.shortRestGamesCount || 0
+          );
+          if (aMaxShortRest !== bMaxShortRest) {
+            return bMaxShortRest - aMaxShortRest; // Higher short rest count goes first
+          }
+
+          // Second priority: teams with fewer preferred-day games go first
           const aMinGames = Math.min(
             preferredDayGames.get(a.homeTeamId) || 0,
             preferredDayGames.get(a.awayTeamId) || 0
@@ -1254,6 +1270,7 @@ export class ScheduleGenerator {
                     time: `${bestCandidate.startTime}-${bestCandidate.endTime}`,
                     resourceName: bestCandidate.resourceName,
                     score: bestCandidate.score,
+                    scoreBreakdown: bestCandidate.scoreBreakdown,
                   });
 
                   // Track if this was on a preferred day for fair distribution
