@@ -2,6 +2,7 @@ import type {
   GenerateScheduleRequest,
   GenerateScheduleResult,
   ScheduledEventDraft,
+  ScheduledEvent,
   TimeSlot,
   ResourceSlot,
   TeamConstraint,
@@ -157,6 +158,84 @@ export class ScheduleGenerator {
       // Store division compatibility (from the joined Cage data)
       this.cageDivisionCompatibility.set(sc.cageId, sc.divisionCompatibility || []);
     }
+  }
+
+  /**
+   * Initialize the generator with existing events from the database.
+   * This allows the generator to work around pre-scheduled events.
+   * Must be called AFTER generate() has been called (which initializes team states).
+   * Actually, we need to call this BEFORE generate(), so we'll store the events
+   * and process them during initializeDraftScheduling.
+   */
+  private existingEventsToProcess: ScheduledEvent[] = [];
+
+  public initializeWithExistingEvents(existingEvents: ScheduledEvent[]): void {
+    this.existingEventsToProcess = existingEvents;
+  }
+
+  /**
+   * Process existing events after team states have been initialized.
+   * Converts ScheduledEvent to ScheduledEventDraft and updates team states.
+   */
+  private processExistingEvents(): void {
+    if (this.existingEventsToProcess.length === 0) return;
+
+    this.log('info', 'general', `Processing ${this.existingEventsToProcess.length} existing events`);
+
+    for (const event of this.existingEventsToProcess) {
+      // Convert ScheduledEvent to ScheduledEventDraft
+      const draft: ScheduledEventDraft = {
+        seasonId: event.seasonId,
+        divisionId: event.divisionId,
+        eventType: event.eventType,
+        date: event.date,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        fieldId: event.fieldId,
+        cageId: event.cageId,
+        homeTeamId: event.homeTeamId,
+        awayTeamId: event.awayTeamId,
+        teamId: event.teamId,
+      };
+
+      // Add to scheduled events
+      this.scheduledEvents.push(draft);
+
+      // Determine which week this event falls in
+      const weekNumber = this.getWeekNumberForDate(event.date);
+
+      // Update team scheduling states
+      if (event.eventType === 'game' && event.homeTeamId && event.awayTeamId) {
+        const homeState = this.teamSchedulingStates.get(event.homeTeamId);
+        const awayState = this.teamSchedulingStates.get(event.awayTeamId);
+
+        if (homeState) {
+          updateTeamStateAfterScheduling(homeState, draft, weekNumber, true, event.awayTeamId);
+        }
+        if (awayState) {
+          updateTeamStateAfterScheduling(awayState, draft, weekNumber, false, event.homeTeamId);
+        }
+      } else if (event.teamId) {
+        const teamState = this.teamSchedulingStates.get(event.teamId);
+        if (teamState) {
+          updateTeamStateAfterScheduling(teamState, draft, weekNumber);
+        }
+      }
+    }
+
+    this.log('info', 'general', `Initialized with existing: ${this.scheduledEvents.filter(e => e.eventType === 'game').length} games, ${this.scheduledEvents.filter(e => e.eventType === 'practice').length} practices, ${this.scheduledEvents.filter(e => e.eventType === 'cage').length} cage sessions`);
+  }
+
+  /**
+   * Get the week number (1-based) for a given date
+   */
+  private getWeekNumberForDate(dateStr: string): number {
+    for (const week of this.weekDefinitions) {
+      if (week.dates.includes(dateStr)) {
+        return week.weekNumber;
+      }
+    }
+    return 1; // Default to week 1 if not found
   }
 
   /**
@@ -371,6 +450,12 @@ export class ScheduleGenerator {
       // Step 3.5: Initialize draft-based scheduling
       this.initializeDraftScheduling();
       verboseLog(`✓ Initialized draft scheduling with ${this.weekDefinitions.length} weeks`);
+
+      // Step 3.6: Process any existing events that were passed in
+      this.processExistingEvents();
+      if (this.existingEventsToProcess.length > 0) {
+        verboseLog(`✓ Processed ${this.existingEventsToProcess.length} existing events`);
+      }
 
       // Step 4: Schedule games
       verboseLog('\n' + '-'.repeat(80));

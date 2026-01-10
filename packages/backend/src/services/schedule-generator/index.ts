@@ -106,14 +106,24 @@ export async function generateSchedule(
       relevantDivisionIds.has(dc.divisionId)
     );
 
+    // Load existing events for this season
+    const existingEvents = await listScheduledEvents(db, {
+      seasonId: request.seasonId,
+      // If specific divisions requested, only load events for those divisions
+      ...(request.divisionIds && request.divisionIds.length > 0
+        ? { divisionId: request.divisionIds[0] } // Note: listScheduledEvents only supports single divisionId filter
+        : {}),
+    });
+
+    // Filter to requested divisions if multiple were specified
+    const filteredExistingEvents = request.divisionIds && request.divisionIds.length > 1
+      ? existingEvents.filter(e => request.divisionIds!.includes(e.divisionId))
+      : existingEvents;
+
     // Clear existing events if requested (using batch for efficiency)
     if (request.clearExisting) {
-      const existingEvents = await listScheduledEvents(db, {
-        seasonId: request.seasonId,
-      });
-
-      if (existingEvents.length > 0) {
-        const deleteStatements = existingEvents.map((event) =>
+      if (filteredExistingEvents.length > 0) {
+        const deleteStatements = filteredExistingEvents.map((event) =>
           db.prepare('DELETE FROM scheduled_events WHERE id = ?').bind(event.id)
         );
         // Batch in chunks to avoid D1 limits
@@ -142,6 +152,16 @@ export async function generateSchedule(
     );
 
     timings['createGenerator'] = Date.now() - startTime;
+    startTime = Date.now();
+
+    // If not clearing existing events, initialize the generator with them
+    // so it works around pre-scheduled events
+    if (!request.clearExisting && filteredExistingEvents.length > 0) {
+      verboseLog(`generateSchedule: Initializing with ${filteredExistingEvents.length} existing events`);
+      generator.initializeWithExistingEvents(filteredExistingEvents);
+    }
+
+    timings['initExisting'] = Date.now() - startTime;
     startTime = Date.now();
 
     // Generate the schedule
