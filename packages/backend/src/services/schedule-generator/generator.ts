@@ -455,7 +455,17 @@ export class ScheduleGenerator {
   private buildResourceSlots(): void {
     this.log('info', 'general', 'Building resource slots');
 
-    const allDates = getDateRange(this.season.startDate, this.season.endDate);
+    const allDatesRaw = getDateRange(this.season.startDate, this.season.endDate);
+
+    // Filter out season-level blackout dates
+    const blackoutSet = new Set(this.season.blackoutDates || []);
+    const allDates = allDatesRaw.filter(date => !blackoutSet.has(date));
+
+    if (blackoutSet.size > 0) {
+      this.log('info', 'general', `Excluding ${blackoutSet.size} blackout dates from scheduling`, {
+        blackoutDates: Array.from(blackoutSet).sort(),
+      });
+    }
 
     // Build game field slots for dates from gamesStartDate onwards
     // Exclude practice-only fields for games

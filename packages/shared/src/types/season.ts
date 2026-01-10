@@ -13,6 +13,7 @@ export interface Season {
   startDate: string; // ISO date string - season start (practices/cages begin)
   endDate: string; // ISO date string - season end
   gamesStartDate?: string; // ISO date string - when games can begin (defaults to startDate if not set)
+  blackoutDates?: string[]; // ISO date strings - dates when no events should be scheduled
   status: SeasonStatus;
   createdAt: string;
   updatedAt: string;
@@ -25,6 +26,7 @@ export interface CreateSeasonInput {
   startDate: string;
   endDate: string;
   gamesStartDate?: string;
+  blackoutDates?: string[];
   copyFromSeasonId?: string; // Optional: copy configuration from previous season
 }
 
@@ -33,6 +35,7 @@ export interface UpdateSeasonInput {
   startDate?: string;
   endDate?: string;
   gamesStartDate?: string;
+  blackoutDates?: string[];
   status?: SeasonStatus;
 }
 

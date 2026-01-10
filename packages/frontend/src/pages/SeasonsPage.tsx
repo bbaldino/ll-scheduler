@@ -478,6 +478,45 @@ export default function SeasonsPage() {
                   <option value="archived">Archived</option>
                 </select>
               </p>
+              <div className={styles.blackoutDatesSection}>
+                <strong>Blackout Dates:</strong>
+                <p className={styles.helperText}>
+                  No games, practices, or cage sessions will be scheduled on these dates.
+                </p>
+                <div className={styles.blackoutDatesList}>
+                  {(season.blackoutDates || []).sort().map((date) => (
+                    <div key={date} className={styles.blackoutDateItem}>
+                      <span>{new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (season.blackoutDates || []).filter(d => d !== date);
+                          handleUpdate(season, { blackoutDates: updated });
+                        }}
+                        className={styles.removeBlackoutBtn}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className={styles.addBlackoutDate}>
+                  <input
+                    type="date"
+                    min={season.startDate}
+                    max={season.endDate}
+                    onChange={(e) => {
+                      const date = e.target.value;
+                      if (date && !(season.blackoutDates || []).includes(date)) {
+                        handleUpdate(season, { blackoutDates: [...(season.blackoutDates || []), date] });
+                      }
+                      e.target.value = '';
+                    }}
+                    className={styles.blackoutDateInput}
+                  />
+                  <span className={styles.addBlackoutHint}>Select a date to add</span>
+                </div>
+              </div>
             </div>
 
             {expandedSeasonId === season.id && (

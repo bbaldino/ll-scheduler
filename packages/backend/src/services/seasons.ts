@@ -7,18 +7,29 @@ interface SeasonRow {
   start_date: string;
   end_date: string;
   games_start_date: string | null;
+  blackout_dates: string | null;
   status: string;
   created_at: string;
   updated_at: string;
 }
 
 function rowToSeason(row: SeasonRow): Season {
+  let blackoutDates: string[] | undefined;
+  if (row.blackout_dates) {
+    try {
+      blackoutDates = JSON.parse(row.blackout_dates);
+    } catch {
+      blackoutDates = undefined;
+    }
+  }
+
   return {
     id: row.id,
     name: row.name,
     startDate: row.start_date,
     endDate: row.end_date,
     gamesStartDate: row.games_start_date ?? undefined,
+    blackoutDates,
     status: row.status as any,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -50,8 +61,8 @@ export async function createSeason(db: D1Database, input: CreateSeasonInput): Pr
 
   await db
     .prepare(
-      `INSERT INTO seasons (id, name, start_date, end_date, games_start_date, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)`
+      `INSERT INTO seasons (id, name, start_date, end_date, games_start_date, blackout_dates, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)`
     )
     .bind(
       id,
@@ -59,6 +70,7 @@ export async function createSeason(db: D1Database, input: CreateSeasonInput): Pr
       input.startDate,
       input.endDate,
       input.gamesStartDate ?? null,
+      input.blackoutDates ? JSON.stringify(input.blackoutDates) : null,
       now,
       now
     )
@@ -100,6 +112,10 @@ export async function updateSeason(
   if (input.gamesStartDate !== undefined) {
     updates.push('games_start_date = ?');
     values.push(input.gamesStartDate);
+  }
+  if (input.blackoutDates !== undefined) {
+    updates.push('blackout_dates = ?');
+    values.push(input.blackoutDates ? JSON.stringify(input.blackoutDates) : null);
   }
   if (input.status !== undefined) {
     updates.push('status = ?');
