@@ -540,3 +540,70 @@
   margin-left: auto;
   margin-right: 0.5rem;
 }
+
+/* Division content for game spacing */
+.divisionContent {
+  padding-left: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* Spacing stats row */
+.spacingStats {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0.5rem;
+  background: #f9f9f9;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.spacingStats span {
+  color: #555;
+}
+
+/* Gap distribution */
+.gapDistribution {
+  margin-top: 0.5rem;
+}
+
+.gapDistributionLabel {
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: #444;
+}
+
+.gapBars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.gapBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gapBarLabel {
+  width: 30px;
+  font-size: 0.85rem;
+  color: #666;
+  text-align: right;
+}
+
+.gapBarFill {
+  background: #4caf50;
+  color: white;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  min-width: 25px;
+  text-align: center;
+}
+
+.gapBarFill.gapBarWarning {
+  background: #ff9800;
+}

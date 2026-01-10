@@ -528,7 +528,59 @@ function GameSpacingSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const overallAvg = report.overallAverageDaysBetweenGames;
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
+
+  const toggleTeam = (teamId: string) => {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+      }
+      return next;
+    });
+  };
+
+  // Compute gap distribution from gameGaps array
+  const computeGapDistribution = (gameGaps: number[]): Record<number, number> => {
+    const distribution: Record<number, number> = {};
+    for (const gap of gameGaps) {
+      distribution[gap] = (distribution[gap] || 0) + 1;
+    }
+    return distribution;
+  };
+
+  // Group teams by division
+  const teamsByDivision = new Map<string, { divisionName: string; teams: TeamGameSpacingReport[] }>();
+  for (const team of report.teamReports) {
+    if (!teamsByDivision.has(team.divisionId)) {
+      teamsByDivision.set(team.divisionId, { divisionName: team.divisionName, teams: [] });
+    }
+    teamsByDivision.get(team.divisionId)!.teams.push(team);
+  }
+
+  // Calculate division-level stats
+  const getDivisionStats = (teams: TeamGameSpacingReport[]) => {
+    const teamsWithGames = teams.filter(t => t.totalGames >= 2);
+    if (teamsWithGames.length === 0) return { avg: 0, passed: true };
+    const avg = teamsWithGames.reduce((sum, t) => sum + t.averageDaysBetweenGames, 0) / teamsWithGames.length;
+    const passed = teams.every(t => t.passed);
+    return { avg: Math.round(avg * 10) / 10, passed };
+  };
 
   return (
     <div className={styles.section}>
@@ -542,50 +594,94 @@ function GameSpacingSection({
       {expanded && (
         <div className={styles.sectionContent}>
           <div className={styles.overallAverage}>
-            Overall Average: <strong>{overallAvg}</strong> days between games
+            Overall Average: <strong>{report.overallAverageDaysBetweenGames}</strong> days between games
           </div>
-          {report.teamReports.length === 0 ? (
+          {teamsByDivision.size === 0 ? (
             <p className={styles.noData}>No team data available</p>
           ) : (
-            <table className={styles.balanceTable}>
-              <thead>
-                <tr>
-                  <th>Team</th>
-                  <th>Division</th>
-                  <th>Games</th>
-                  <th>Avg Days</th>
-                  <th>Deviation</th>
-                  <th>Min</th>
-                  <th>Max</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.teamReports.map((team: TeamGameSpacingReport) => {
-                  const deviation = team.totalGames >= 2
-                    ? Math.abs(team.averageDaysBetweenGames - overallAvg)
-                    : 0;
-                  return (
-                    <tr key={team.teamId}>
-                      <td>{team.teamName}</td>
-                      <td>{team.divisionName}</td>
-                      <td>{team.totalGames}</td>
-                      <td>{team.averageDaysBetweenGames || '-'}</td>
-                      <td className={deviation > 1.5 ? styles.cellWarning : ''}>
-                        {team.totalGames >= 2 ? `±${deviation.toFixed(1)}` : '-'}
-                      </td>
-                      <td>{team.minDaysBetweenGames || '-'}</td>
-                      <td>{team.maxDaysBetweenGames || '-'}</td>
-                      <td>
-                        <span className={team.passed ? styles.statusPass : styles.statusFail}>
-                          {team.passed ? '✓' : '✗'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            Array.from(teamsByDivision.entries()).map(([divisionId, { divisionName, teams }]) => {
+              const divisionStats = getDivisionStats(teams);
+              return (
+                <div key={divisionId} className={styles.divisionReport}>
+                  <div
+                    className={styles.divisionHeader}
+                    onClick={() => toggleDivision(divisionId)}
+                  >
+                    <span className={divisionStats.passed ? styles.statusPass : styles.statusFail}>
+                      {divisionStats.passed ? '✓' : '✗'}
+                    </span>
+                    <span className={styles.divisionName}>{divisionName}</span>
+                    <span className={styles.complianceRate}>
+                      Avg: {divisionStats.avg} days
+                    </span>
+                    <span className={styles.expandIcon}>
+                      {expandedDivisions.has(divisionId) ? '▼' : '▶'}
+                    </span>
+                  </div>
+
+                  {expandedDivisions.has(divisionId) && (
+                    <div className={styles.divisionContent}>
+                      {teams.map((team) => {
+                        const gapDistribution = computeGapDistribution(team.gameGaps || []);
+                        const gapKeys = Object.keys(gapDistribution).map(Number).sort((a, b) => a - b);
+                        const isTeamExpanded = expandedTeams.has(team.teamId);
+
+                        return (
+                          <div key={team.teamId} className={styles.teamReport}>
+                            <div
+                              className={styles.teamHeader}
+                              onClick={() => toggleTeam(team.teamId)}
+                            >
+                              <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                                {team.passed ? '✓' : '✗'}
+                              </span>
+                              <span className={styles.teamName}>{team.teamName}</span>
+                              <span className={styles.teamGameCount}>
+                                {team.totalGames} games, avg {team.averageDaysBetweenGames || 0} days
+                              </span>
+                              <span className={styles.expandIcon}>
+                                {isTeamExpanded ? '▼' : '▶'}
+                              </span>
+                            </div>
+
+                            {isTeamExpanded && (
+                              <div className={styles.teamDetails}>
+                                <div className={styles.spacingStats}>
+                                  <span>Min: {team.minDaysBetweenGames || '-'} days</span>
+                                  <span>Max: {team.maxDaysBetweenGames || '-'} days</span>
+                                  <span>Avg: {team.averageDaysBetweenGames || '-'} days</span>
+                                </div>
+
+                                {gapKeys.length > 0 ? (
+                                  <div className={styles.gapDistribution}>
+                                    <div className={styles.gapDistributionLabel}>Gap Distribution:</div>
+                                    <div className={styles.gapBars}>
+                                      {gapKeys.map((gap) => (
+                                        <div key={gap} className={styles.gapBar}>
+                                          <div className={styles.gapBarLabel}>{gap}d</div>
+                                          <div
+                                            className={`${styles.gapBarFill} ${gap <= 2 ? styles.gapBarWarning : ''}`}
+                                            style={{ width: `${Math.min(gapDistribution[gap] * 30, 100)}px` }}
+                                          >
+                                            {gapDistribution[gap]}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className={styles.noData}>Not enough games to show gap distribution</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}
