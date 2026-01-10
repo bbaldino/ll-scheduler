@@ -16,11 +16,14 @@ import type {
   DivisionMatchupReport,
   TeamMatchupReport,
   OpponentMatchup,
+  GameSlotEfficiencyReport,
+  IsolatedGameSlot,
   ScheduledEvent,
   Team,
   Division,
   DivisionConfig,
   Season,
+  SeasonField,
   GameDayPreference,
 } from '@ll-scheduler/shared';
 import { listScheduledEvents } from './scheduled-events.js';
@@ -28,6 +31,7 @@ import { getSeasonById } from './seasons.js';
 import { listTeams } from './teams.js';
 import { listDivisions } from './divisions.js';
 import { listDivisionConfigsBySeasonId } from './division-configs.js';
+import { listSeasonFields } from './season-fields.js';
 
 /**
  * Main evaluation function that runs all checks on a schedule
@@ -42,17 +46,19 @@ export async function evaluateSchedule(
     throw new Error('Season not found');
   }
 
-  const [events, teams, divisions, divisionConfigs] = await Promise.all([
+  const [events, teams, divisions, divisionConfigs, seasonFields] = await Promise.all([
     listScheduledEvents(db, { seasonId }),
     listTeams(db, seasonId),
     listDivisions(db),
     listDivisionConfigsBySeasonId(db, seasonId),
+    listSeasonFields(db, seasonId),
   ]);
 
   // Create lookup maps
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const divisionMap = new Map(divisions.map((d) => [d.id, d]));
   const configByDivision = new Map(divisionConfigs.map((c) => [c.divisionId, c]));
+  const fieldMap = new Map(seasonFields.map((f) => [f.fieldId, f]));
 
   // Run all evaluations
   const weeklyRequirements = evaluateWeeklyRequirements(
@@ -78,6 +84,7 @@ export async function evaluateSchedule(
   );
   const gameSpacing = evaluateGameSpacing(events, teams, divisionMap);
   const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, season);
+  const gameSlotEfficiency = evaluateGameSlotEfficiency(events, teamMap, divisionMap, fieldMap);
 
   // Calculate overall score
   const checks = [
@@ -87,6 +94,7 @@ export async function evaluateSchedule(
     gameDayPreferences.passed,
     gameSpacing.passed,
     matchupBalance.passed,
+    gameSlotEfficiency.passed,
   ];
   const passedCount = checks.filter(Boolean).length;
   const overallScore = Math.round((passedCount / checks.length) * 100);
@@ -101,6 +109,7 @@ export async function evaluateSchedule(
     gameDayPreferences,
     gameSpacing,
     matchupBalance,
+    gameSlotEfficiency,
   };
 }
 
@@ -939,5 +948,115 @@ function evaluateMatchupBalance(
       ? `All matchups balanced (max imbalance: ${maxOverallImbalance})`
       : `Matchup imbalance detected (max: ${maxOverallImbalance} games from ideal)`,
     divisionReports,
+  };
+}
+
+/**
+ * Check if two time ranges overlap
+ * Times are in HH:MM format
+ */
+function timesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
+  // Two ranges overlap if: start1 < end2 AND end1 > start2
+  return start1 < end2 && end1 > start2;
+}
+
+/**
+ * Evaluate game slot efficiency - tracks games that have no concurrent games running
+ * This helps assess how efficiently the snack shack and facilities are being used
+ */
+function evaluateGameSlotEfficiency(
+  events: ScheduledEvent[],
+  teamMap: Map<string, Team>,
+  divisionMap: Map<string, Division>,
+  fieldMap: Map<string, SeasonField>
+): GameSlotEfficiencyReport {
+  // Filter to only games
+  const games = events.filter((e) => e.eventType === 'game');
+
+  if (games.length === 0) {
+    return {
+      passed: true,
+      summary: 'No games scheduled',
+      totalGameSlots: 0,
+      isolatedSlots: 0,
+      concurrentSlots: 0,
+      efficiencyRate: 100,
+      isolatedSlotDetails: [],
+    };
+  }
+
+  // Group games by date
+  const gamesByDate = new Map<string, ScheduledEvent[]>();
+  for (const game of games) {
+    const existing = gamesByDate.get(game.date) || [];
+    existing.push(game);
+    gamesByDate.set(game.date, existing);
+  }
+
+  let isolatedGames = 0;
+  let concurrentGames = 0;
+  const isolatedSlotDetails: IsolatedGameSlot[] = [];
+
+  // For each game, check if any other game on the same day overlaps with it
+  for (const game of games) {
+    const sameDay = gamesByDate.get(game.date) || [];
+
+    // Check if this game overlaps with any other game on the same day
+    const hasOverlap = sameDay.some((other) => {
+      if (other.id === game.id) return false; // Skip self
+      return timesOverlap(game.startTime, game.endTime, other.startTime, other.endTime);
+    });
+
+    if (hasOverlap) {
+      concurrentGames++;
+    } else {
+      isolatedGames++;
+
+      // Look up names for the isolated game details
+      const homeTeam = game.homeTeamId ? teamMap.get(game.homeTeamId) : undefined;
+      const awayTeam = game.awayTeamId ? teamMap.get(game.awayTeamId) : undefined;
+      const division = divisionMap.get(game.divisionId);
+      const field = game.fieldId ? fieldMap.get(game.fieldId) : undefined;
+
+      isolatedSlotDetails.push({
+        date: game.date,
+        startTime: game.startTime,
+        endTime: game.endTime,
+        fieldId: game.fieldId || '',
+        fieldName: field?.fieldName || 'Unknown Field',
+        homeTeamName: homeTeam?.name || 'Unknown',
+        awayTeamName: awayTeam?.name || 'Unknown',
+        divisionName: division?.name || 'Unknown Division',
+      });
+    }
+  }
+
+  const totalGames = games.length;
+
+  // Calculate efficiency rate (percentage of games that have concurrent games)
+  const efficiencyRate = totalGames > 0
+    ? Math.round((concurrentGames / totalGames) * 100)
+    : 100;
+
+  // Sort isolated slot details by date and time for easier reading
+  isolatedSlotDetails.sort((a, b) => {
+    const dateCompare = a.date.localeCompare(b.date);
+    if (dateCompare !== 0) return dateCompare;
+    return a.startTime.localeCompare(b.startTime);
+  });
+
+  // Consider "passed" if efficiency rate is >= 70% (at most 30% isolated games)
+  const passed = efficiencyRate >= 70;
+
+  return {
+    passed,
+    summary: passed
+      ? `${efficiencyRate}% of games have concurrent games (${isolatedGames} isolated)`
+      : `Only ${efficiencyRate}% of games have concurrent games (${isolatedGames} isolated)`,
+    totalGameSlots: totalGames,
+    isolatedSlots: isolatedGames,
+    concurrentSlots: concurrentGames,
+    efficiencyRate,
+    isolatedSlotDetails,
   };
 }

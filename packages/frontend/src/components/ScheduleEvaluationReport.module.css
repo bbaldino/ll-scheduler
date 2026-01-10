@@ -607,3 +607,68 @@
 .gapBarFill.gapBarWarning {
   background: #ff9800;
 }
+
+/* Game Slot Efficiency Styles */
+.efficiencyStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.statLabel {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.statValue {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.statValue.statWarning {
+  color: #ef6c00;
+}
+
+.subHeader {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.isolatedSlotsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.isolatedSlotsTable th,
+.isolatedSlotsTable td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.isolatedSlotsTable th {
+  background: #f5f5f5;
+  font-weight: 600;
+  color: #555;
+}
+
+.isolatedSlotsTable tbody tr:hover {
+  background: #fafafa;
+}

@@ -15,6 +15,8 @@ import type {
   MatchupBalanceReport,
   DivisionMatchupReport,
   TeamMatchupReport,
+  GameSlotEfficiencyReport,
+  IsolatedGameSlot,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
 
@@ -108,6 +110,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.matchupBalance}
             expanded={expandedSections.has('matchupBalance')}
             onToggle={() => toggleSection('matchupBalance')}
+          />
+
+          {/* Game Slot Efficiency */}
+          <GameSlotEfficiencySection
+            report={result.gameSlotEfficiency}
+            expanded={expandedSections.has('gameSlotEfficiency')}
+            onToggle={() => toggleSection('gameSlotEfficiency')}
           />
         </div>
       </div>
@@ -791,6 +800,82 @@ function MatchupBalanceSection({
                 ))}
               </div>
             ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameSlotEfficiencySection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: GameSlotEfficiencyReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Game Slot Efficiency"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          <div className={styles.efficiencyStats}>
+            <div className={styles.statItem}>
+              <span className={styles.statLabel}>Total Games:</span>
+              <span className={styles.statValue}>{report.totalGameSlots}</span>
+            </div>
+            <div className={styles.statItem}>
+              <span className={styles.statLabel}>With Concurrent Games:</span>
+              <span className={styles.statValue}>{report.concurrentSlots}</span>
+            </div>
+            <div className={styles.statItem}>
+              <span className={styles.statLabel}>Isolated (no overlap):</span>
+              <span className={`${styles.statValue} ${report.isolatedSlots > 0 ? styles.statWarning : ''}`}>
+                {report.isolatedSlots}
+              </span>
+            </div>
+            <div className={styles.statItem}>
+              <span className={styles.statLabel}>Efficiency Rate:</span>
+              <span className={`${styles.statValue} ${report.efficiencyRate < 70 ? styles.statWarning : ''}`}>
+                {report.efficiencyRate}%
+              </span>
+            </div>
+          </div>
+
+          {report.isolatedSlotDetails.length > 0 && (
+            <>
+              <h4 className={styles.subHeader}>Isolated Games (no other games in progress)</h4>
+              <table className={styles.isolatedSlotsTable}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Field</th>
+                    <th>Matchup</th>
+                    <th>Division</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.isolatedSlotDetails.map((slot: IsolatedGameSlot, idx) => (
+                    <tr key={idx}>
+                      <td>{slot.date}</td>
+                      <td>{slot.startTime} - {slot.endTime}</td>
+                      <td>{slot.fieldName}</td>
+                      <td>{slot.homeTeamName} vs {slot.awayTeamName}</td>
+                      <td>{slot.divisionName}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       )}

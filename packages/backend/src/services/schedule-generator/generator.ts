@@ -24,6 +24,7 @@ import type {
   ScoringWeights,
   TeamSchedulingState,
   PlacementCandidate,
+  ScoredCandidate,
   WeekDefinition,
 } from '@ll-scheduler/shared';
 import { DEFAULT_SCORING_WEIGHTS } from '@ll-scheduler/shared';
@@ -168,6 +169,7 @@ export class ScheduleGenerator {
    * and process them during initializeDraftScheduling.
    */
   private existingEventsToProcess: ScheduledEvent[] = [];
+  private existingEventsCount: number = 0; // Track how many existing events were added to scheduledEvents
 
   public initializeWithExistingEvents(existingEvents: ScheduledEvent[]): void {
     this.existingEventsToProcess = existingEvents;
@@ -201,6 +203,11 @@ export class ScheduleGenerator {
       // Add to scheduled events
       this.scheduledEvents.push(draft);
 
+      // Add to scoring context for conflict detection
+      if (this.scoringContext) {
+        addEventToContext(this.scoringContext, draft);
+      }
+
       // Determine which week this event falls in
       const weekNumber = this.getWeekNumberForDate(event.date);
 
@@ -222,6 +229,9 @@ export class ScheduleGenerator {
         }
       }
     }
+
+    // Track how many existing events were added (so we can exclude them from getScheduledEvents)
+    this.existingEventsCount = this.existingEventsToProcess.length;
 
     this.log('info', 'general', `Initialized with existing: ${this.scheduledEvents.filter(e => e.eventType === 'game').length} games, ${this.scheduledEvents.filter(e => e.eventType === 'practice').length} practices, ${this.scheduledEvents.filter(e => e.eventType === 'cage').length} cage sessions`);
   }
@@ -1293,34 +1303,87 @@ export class ScheduleGenerator {
                   }
                 }
 
-                // Score all candidates
-                const scoredCandidates = filteredCandidates.map((c) =>
-                  calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
-                );
-                scoredCandidates.sort((a, b) => b.score - a.score);
-                const bestCandidate = scoredCandidates[0];
+                // Two-phase approach: try required days first, fall back to other days only if needed
+                let bestCandidate: ScoredCandidate | undefined;
+                let usedFallback = false;
 
-                // Log when a non-required day is selected despite required-day candidates existing
-                if (requiredDays.length > 0 && bestCandidate && !requiredDays.includes(bestCandidate.dayOfWeek)) {
-                  const requiredDayCandidates = scoredCandidates.filter(c => requiredDays.includes(c.dayOfWeek));
+                if (requiredDays.length > 0) {
+                  // Phase 1: Try required days only
+                  const requiredDayCandidates = filteredCandidates.filter(c => requiredDays.includes(c.dayOfWeek));
+
                   if (requiredDayCandidates.length > 0) {
-                    const bestRequired = requiredDayCandidates[0];
-                    const breakdown = bestRequired.scoreBreakdown;
-                    this.log('warning', 'game', `Non-required day selected for ${homeTeam.name} vs ${awayTeam.name}`, {
-                      selectedDate: bestCandidate.date,
-                      selectedDay: ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek],
-                      selectedScore: bestCandidate.score,
-                      bestRequiredDate: bestRequired.date,
-                      bestRequiredDay: ScheduleGenerator.DAY_NAMES[bestRequired.dayOfWeek],
-                      bestRequiredScore: bestRequired.score,
-                      requiredDayBreakdown: breakdown ? {
-                        gameDayPreference: breakdown.gameDayPreference,
-                        sameDayEvent: breakdown.sameDayEvent,
-                        dayGap: breakdown.dayGap,
-                        timeAdjacency: breakdown.timeAdjacency,
-                      } : undefined,
-                    }, `Game scheduled on ${ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek]} instead of required day. Required day score: ${bestRequired.score.toFixed(0)}, selected score: ${bestCandidate.score.toFixed(0)}`);
+                    const scoredRequired = requiredDayCandidates.map((c) =>
+                      calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+                    );
+                    scoredRequired.sort((a, b) => b.score - a.score);
+                    const bestRequired = scoredRequired[0];
+
+                    // Use required day if it doesn't have a hard constraint violation (sameDayEvent)
+                    if (bestRequired && bestRequired.score > -500000) {
+                      bestCandidate = bestRequired;
+                    } else {
+                      // Required day has hard constraint - need to fall back
+                      usedFallback = true;
+
+                      // Determine why required day was rejected for logging
+                      const breakdown = bestRequired?.scoreBreakdown;
+                      let reason = 'unknown';
+                      if (breakdown?.sameDayEvent && breakdown.sameDayEvent < -100000) {
+                        const homeHasGame = homeTeamState.fieldDatesUsed.has(bestRequired.date);
+                        const awayHasGame = awayTeamState.fieldDatesUsed.has(bestRequired.date);
+                        if (homeHasGame && awayHasGame) {
+                          reason = `Both ${homeTeam.name} and ${awayTeam.name} already have games on ${bestRequired.date}`;
+                        } else if (homeHasGame) {
+                          reason = `${homeTeam.name} already has a game on ${bestRequired.date}`;
+                        } else if (awayHasGame) {
+                          reason = `${awayTeam.name} already has a game on ${bestRequired.date}`;
+                        }
+                      }
+
+                      // Phase 2: Fall back to non-required days
+                      const nonRequiredCandidates = filteredCandidates.filter(c => !requiredDays.includes(c.dayOfWeek));
+                      if (nonRequiredCandidates.length > 0) {
+                        const scoredNonRequired = nonRequiredCandidates.map((c) =>
+                          calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+                        );
+                        scoredNonRequired.sort((a, b) => b.score - a.score);
+                        bestCandidate = scoredNonRequired[0];
+
+                        if (bestCandidate) {
+                          this.log('warning', 'game', `Non-required day selected for ${homeTeam.name} vs ${awayTeam.name}`, {
+                            selectedDate: bestCandidate.date,
+                            selectedDay: ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek],
+                            selectedScore: bestCandidate.score,
+                            bestRequiredDate: bestRequired?.date,
+                            bestRequiredDay: bestRequired ? ScheduleGenerator.DAY_NAMES[bestRequired.dayOfWeek] : undefined,
+                            bestRequiredScore: bestRequired?.score,
+                            reason,
+                            requiredDayBreakdown: breakdown ? {
+                              gameDayPreference: breakdown.gameDayPreference,
+                              sameDayEvent: breakdown.sameDayEvent,
+                              dayGap: breakdown.dayGap,
+                              timeAdjacency: breakdown.timeAdjacency,
+                            } : undefined,
+                          }, `Game scheduled on ${ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek]} instead of required day. Reason: ${reason}`);
+                        }
+                      }
+                    }
+                  } else {
+                    // No required day candidates available (shouldn't happen normally)
+                    usedFallback = true;
+                    const scoredCandidates = filteredCandidates.map((c) =>
+                      calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+                    );
+                    scoredCandidates.sort((a, b) => b.score - a.score);
+                    bestCandidate = scoredCandidates[0];
                   }
+                } else {
+                  // No required days configured - score all candidates normally
+                  const scoredCandidates = filteredCandidates.map((c) =>
+                    calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+                  );
+                  scoredCandidates.sort((a, b) => b.score - a.score);
+                  bestCandidate = scoredCandidates[0];
                 }
 
                 if (!bestCandidate) {
@@ -3668,42 +3731,45 @@ export class ScheduleGenerator {
    * Build the final result
    */
   private buildResult(success: boolean): GenerateScheduleResult {
+    // Only count newly created events, excluding existing events passed in for conflict detection
+    const newEvents = this.scheduledEvents.slice(this.existingEventsCount);
+    const newEventsCount = newEvents.length;
+
     return {
       success,
-      eventsCreated: this.scheduledEvents.length,
+      eventsCreated: newEventsCount,
       message: success
-        ? `Successfully generated ${this.scheduledEvents.length} events`
+        ? `Successfully generated ${newEventsCount} events`
         : 'Failed to generate schedule',
       errors: this.errors.length > 0 ? this.errors : undefined,
       warnings: this.warnings.length > 0 ? this.warnings : undefined,
       statistics: {
-        totalEvents: this.scheduledEvents.length,
+        totalEvents: newEventsCount,
         eventsByType: {
-          game: this.scheduledEvents.filter((e) => e.eventType === 'game').length,
-          practice: this.scheduledEvents.filter((e) => e.eventType === 'practice')
-            .length,
-          cage: this.scheduledEvents.filter((e) => e.eventType === 'cage').length,
+          game: newEvents.filter((e) => e.eventType === 'game').length,
+          practice: newEvents.filter((e) => e.eventType === 'practice').length,
+          cage: newEvents.filter((e) => e.eventType === 'cage').length,
         },
-        eventsByDivision: this.calculateEventsByDivision(),
-        averageEventsPerTeam: this.calculateAverageEventsPerTeam(),
+        eventsByDivision: this.calculateEventsByDivision(newEvents),
+        averageEventsPerTeam: this.calculateAverageEventsPerTeam(newEvents),
       },
       schedulingLog: this.schedulingLog.length > 0 ? this.schedulingLog : undefined,
     };
   }
 
-  private calculateEventsByDivision(): Record<string, number> {
+  private calculateEventsByDivision(events: ScheduledEventDraft[]): Record<string, number> {
     const result: Record<string, number> = {};
-    for (const event of this.scheduledEvents) {
+    for (const event of events) {
       result[event.divisionId] = (result[event.divisionId] || 0) + 1;
     }
     return result;
   }
 
-  private calculateAverageEventsPerTeam(): number {
+  private calculateAverageEventsPerTeam(events: ScheduledEventDraft[]): number {
     if (this.teams.length === 0) return 0;
 
     const eventCounts = new Map<string, number>();
-    for (const event of this.scheduledEvents) {
+    for (const event of events) {
       if (event.teamId) {
         eventCounts.set(event.teamId, (eventCounts.get(event.teamId) || 0) + 1);
       }
@@ -3720,9 +3786,10 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Get the scheduled events
+   * Get the newly scheduled events (excludes existing events that were passed in for conflict detection)
    */
   getScheduledEvents(): ScheduledEventDraft[] {
-    return this.scheduledEvents;
+    // Skip the existing events that were added at the beginning for conflict detection
+    return this.scheduledEvents.slice(this.existingEventsCount);
   }
 }

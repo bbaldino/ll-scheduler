@@ -17,6 +17,7 @@ export interface ScheduleEvaluationResult {
   gameDayPreferences: GameDayPreferencesReport;
   gameSpacing: GameSpacingReport;
   matchupBalance: MatchupBalanceReport;
+  gameSlotEfficiency: GameSlotEfficiencyReport;
 }
 
 // Weekly Requirements Report
@@ -166,6 +167,28 @@ export interface OpponentMatchup {
   gamesPlayed: number;
   homeGames: number; // Games where this team was home
   awayGames: number; // Games where this team was away
+}
+
+// Game Slot Efficiency Report - tracks time slots with single vs multiple concurrent games
+export interface GameSlotEfficiencyReport {
+  passed: boolean;
+  summary: string;
+  totalGameSlots: number; // Total number of unique time slots with games
+  isolatedSlots: number; // Time slots with only 1 game
+  concurrentSlots: number; // Time slots with 2+ games
+  efficiencyRate: number; // Percentage of slots that have multiple games (0-100)
+  isolatedSlotDetails: IsolatedGameSlot[]; // Details of each isolated game slot
+}
+
+export interface IsolatedGameSlot {
+  date: string;
+  startTime: string;
+  endTime: string;
+  fieldId: string;
+  fieldName: string;
+  homeTeamName: string;
+  awayTeamName: string;
+  divisionName: string;
 }
 
 // Request type for evaluate endpoint

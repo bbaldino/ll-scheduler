@@ -107,23 +107,21 @@ export async function generateSchedule(
     );
 
     // Load existing events for this season
-    const existingEvents = await listScheduledEvents(db, {
+    // When not clearing, load ALL events (all divisions) for conflict detection
+    // When clearing, we still need to know what events exist to delete them
+    const allExistingEvents = await listScheduledEvents(db, {
       seasonId: request.seasonId,
-      // If specific divisions requested, only load events for those divisions
-      ...(request.divisionIds && request.divisionIds.length > 0
-        ? { divisionId: request.divisionIds[0] } // Note: listScheduledEvents only supports single divisionId filter
-        : {}),
     });
 
-    // Filter to requested divisions if multiple were specified
-    const filteredExistingEvents = request.divisionIds && request.divisionIds.length > 1
-      ? existingEvents.filter(e => request.divisionIds!.includes(e.divisionId))
-      : existingEvents;
+    // Filter to requested divisions for deletion purposes only
+    const eventsToDelete = request.divisionIds && request.divisionIds.length > 0
+      ? allExistingEvents.filter(e => request.divisionIds!.includes(e.divisionId))
+      : allExistingEvents;
 
     // Clear existing events if requested (using batch for efficiency)
     if (request.clearExisting) {
-      if (filteredExistingEvents.length > 0) {
-        const deleteStatements = filteredExistingEvents.map((event) =>
+      if (eventsToDelete.length > 0) {
+        const deleteStatements = eventsToDelete.map((event) =>
           db.prepare('DELETE FROM scheduled_events WHERE id = ?').bind(event.id)
         );
         // Batch in chunks to avoid D1 limits
@@ -133,6 +131,12 @@ export async function generateSchedule(
         }
       }
     }
+
+    // For conflict detection when not clearing: use ALL existing events (including other divisions)
+    // After clearing: remaining events are those NOT in eventsToDelete
+    const eventsForConflictDetection = request.clearExisting
+      ? allExistingEvents.filter(e => !eventsToDelete.some(d => d.id === e.id))
+      : allExistingEvents;
 
     timings['clearExisting'] = Date.now() - startTime;
     startTime = Date.now();
@@ -154,11 +158,12 @@ export async function generateSchedule(
     timings['createGenerator'] = Date.now() - startTime;
     startTime = Date.now();
 
-    // If not clearing existing events, initialize the generator with them
-    // so it works around pre-scheduled events
-    if (!request.clearExisting && filteredExistingEvents.length > 0) {
-      verboseLog(`generateSchedule: Initializing with ${filteredExistingEvents.length} existing events`);
-      generator.initializeWithExistingEvents(filteredExistingEvents);
+    // Initialize the generator with existing events for conflict detection
+    // This includes ALL events in the season (from all divisions) so the generator
+    // can properly avoid double-booking resources
+    if (eventsForConflictDetection.length > 0) {
+      verboseLog(`generateSchedule: Initializing with ${eventsForConflictDetection.length} existing events for conflict detection`);
+      generator.initializeWithExistingEvents(eventsForConflictDetection);
     }
 
     timings['initExisting'] = Date.now() - startTime;
