@@ -6,6 +6,8 @@ import type {
   SeasonCage,
   Division,
   UpdateScheduledEventInput,
+  CreateScheduledEventInput,
+  EventType,
 } from '@ll-scheduler/shared';
 import styles from './CalendarView.module.css';
 
@@ -29,9 +31,11 @@ interface CalendarViewProps {
   seasonFields: SeasonField[];
   seasonCages: SeasonCage[];
   divisions: Division[];
+  seasonId?: string; // Required for creating events
   initialDate?: string; // ISO date string to start the calendar on
   seasonMilestones?: SeasonMilestones; // Key season dates to annotate
   onEventClick?: (event: ScheduledEvent) => void;
+  onEventCreate?: (input: CreateScheduledEventInput) => Promise<void>;
   onEventUpdate?: (id: string, input: UpdateScheduledEventInput) => Promise<void>;
   onEventDelete?: (id: string) => Promise<void>;
 }
@@ -48,9 +52,11 @@ export default function CalendarView({
   seasonFields,
   seasonCages,
   divisions,
+  seasonId,
   initialDate,
   seasonMilestones,
   onEventClick,
+  onEventCreate,
   onEventUpdate,
   onEventDelete,
 }: CalendarViewProps) {
@@ -63,6 +69,15 @@ export default function CalendarView({
   });
   const [editingEvent, setEditingEvent] = useState<ScheduledEvent | null>(null);
   const [editFormData, setEditFormData] = useState<UpdateScheduledEventInput>({});
+
+  // Create event state
+  const [creatingForDate, setCreatingForDate] = useState<string | null>(null);
+  const [createFormData, setCreateFormData] = useState<Partial<CreateScheduledEventInput>>({
+    eventType: 'practice',
+    startTime: '09:00',
+    endTime: '10:00',
+  });
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const handleEventClick = (event: ScheduledEvent) => {
     if (onEventUpdate) {
@@ -114,6 +129,64 @@ export default function CalendarView({
   const closeModal = () => {
     setEditingEvent(null);
     setEditFormData({});
+  };
+
+  // Create event handlers
+  const handleDayClick = (dateStr: string) => {
+    if (!onEventCreate || !seasonId) return;
+    setCreatingForDate(dateStr);
+    setCreateFormData({
+      eventType: 'practice',
+      startTime: '09:00',
+      endTime: '10:00',
+    });
+    setCreateError(null);
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onEventCreate || !seasonId || !creatingForDate) return;
+
+    if (!createFormData.divisionId) {
+      setCreateError('Please select a division');
+      return;
+    }
+
+    try {
+      await onEventCreate({
+        seasonId,
+        divisionId: createFormData.divisionId,
+        eventType: createFormData.eventType || 'practice',
+        date: creatingForDate,
+        startTime: createFormData.startTime || '09:00',
+        endTime: createFormData.endTime || '10:00',
+        fieldId: createFormData.fieldId,
+        cageId: createFormData.cageId,
+        homeTeamId: createFormData.homeTeamId,
+        awayTeamId: createFormData.awayTeamId,
+        teamId: createFormData.teamId,
+      });
+      setCreatingForDate(null);
+      setCreateFormData({
+        eventType: 'practice',
+        startTime: '09:00',
+        endTime: '10:00',
+      });
+      setCreateError(null);
+    } catch (error) {
+      console.error('Failed to create event:', error);
+      setCreateError('Failed to create event');
+    }
+  };
+
+  const closeCreateModal = () => {
+    setCreatingForDate(null);
+    setCreateFormData({
+      eventType: 'practice',
+      startTime: '09:00',
+      endTime: '10:00',
+    });
+    setCreateError(null);
   };
 
   const getTeamName = (teamId?: string) => {
@@ -370,7 +443,8 @@ export default function CalendarView({
                 key={index}
                 className={`${styles.dayCell} ${!date ? styles.emptyDay : ''} ${
                   date && date.toDateString() === new Date().toDateString() ? styles.today : ''
-                }`}
+                } ${date && onEventCreate ? styles.clickable : ''}`}
+                onClick={() => date && handleDayClick(dateStr)}
               >
                 {date && (
                   <>
@@ -389,7 +463,10 @@ export default function CalendarView({
                         <div
                           key={event.id}
                           className={`${styles.eventItem} ${styles[event.eventType]}`}
-                          onClick={() => handleEventClick(event)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEventClick(event);
+                          }}
                           title={formatEventSummary(event)}
                         >
                           {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
@@ -429,7 +506,10 @@ export default function CalendarView({
 
             return (
               <div key={date.toISOString()} className={styles.dayColumn}>
-                <div className={styles.weekDayHeader}>
+                <div
+                  className={`${styles.weekDayHeader} ${onEventCreate ? styles.clickable : ''}`}
+                  onClick={() => handleDayClick(dateStr)}
+                >
                   <div className={styles.weekDayName}>{DAYS_OF_WEEK[date.getDay()]}</div>
                   <div className={`${styles.weekDayDate} ${
                     date.toDateString() === new Date().toDateString() ? styles.today : ''
@@ -766,6 +846,253 @@ export default function CalendarView({
                   </button>
                 )}
                 <button type="button" className={styles.cancelButton} onClick={closeModal}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Event Modal */}
+      {creatingForDate && (
+        <div className={styles.modalOverlay} onClick={closeCreateModal}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <h3>Create Event - {new Date(creatingForDate + 'T00:00:00').toLocaleDateString()}</h3>
+              <button className={styles.closeButton} onClick={closeCreateModal}>
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleCreate} className={styles.editForm}>
+              {createError && (
+                <div className={styles.formError}>{createError}</div>
+              )}
+
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label>Event Type *</label>
+                  <select
+                    value={createFormData.eventType || 'practice'}
+                    onChange={(e) =>
+                      setCreateFormData({
+                        ...createFormData,
+                        eventType: e.target.value as EventType,
+                        // Reset type-specific fields when changing type
+                        fieldId: undefined,
+                        cageId: undefined,
+                        homeTeamId: undefined,
+                        awayTeamId: undefined,
+                        teamId: undefined,
+                      })
+                    }
+                  >
+                    <option value="practice">Practice</option>
+                    <option value="game">Game</option>
+                    <option value="cage">Cage Time</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Division *</label>
+                  <select
+                    value={createFormData.divisionId || ''}
+                    onChange={(e) =>
+                      setCreateFormData({
+                        ...createFormData,
+                        divisionId: e.target.value,
+                        // Reset team selections when division changes
+                        fieldId: undefined,
+                        cageId: undefined,
+                        homeTeamId: undefined,
+                        awayTeamId: undefined,
+                        teamId: undefined,
+                      })
+                    }
+                    required
+                  >
+                    <option value="">Select Division</option>
+                    {divisions.map((div) => (
+                      <option key={div.id} value={div.id}>
+                        {div.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label>Start Time *</label>
+                  <input
+                    type="time"
+                    value={createFormData.startTime || '09:00'}
+                    onChange={(e) =>
+                      setCreateFormData({ ...createFormData, startTime: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>End Time *</label>
+                  <input
+                    type="time"
+                    value={createFormData.endTime || '10:00'}
+                    onChange={(e) =>
+                      setCreateFormData({ ...createFormData, endTime: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Game-specific fields */}
+              {createFormData.eventType === 'game' && createFormData.divisionId && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Home Team *</label>
+                    <select
+                      value={createFormData.homeTeamId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, homeTeamId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Team</option>
+                      {teams
+                        .filter((t) => t.divisionId === createFormData.divisionId)
+                        .map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Away Team *</label>
+                    <select
+                      value={createFormData.awayTeamId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, awayTeamId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Team</option>
+                      {teams
+                        .filter((t) => t.divisionId === createFormData.divisionId)
+                        .map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Field *</label>
+                    <select
+                      value={createFormData.fieldId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, fieldId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Field</option>
+                      {seasonFields.map((sf) => (
+                        <option key={sf.fieldId} value={sf.fieldId}>
+                          {sf.field?.name || sf.fieldId}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Practice-specific fields */}
+              {createFormData.eventType === 'practice' && createFormData.divisionId && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Team *</label>
+                    <select
+                      value={createFormData.teamId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, teamId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Team</option>
+                      {teams
+                        .filter((t) => t.divisionId === createFormData.divisionId)
+                        .map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Field *</label>
+                    <select
+                      value={createFormData.fieldId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, fieldId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Field</option>
+                      {seasonFields.map((sf) => (
+                        <option key={sf.fieldId} value={sf.fieldId}>
+                          {sf.field?.name || sf.fieldId}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Cage-specific fields */}
+              {createFormData.eventType === 'cage' && createFormData.divisionId && (
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Team *</label>
+                    <select
+                      value={createFormData.teamId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, teamId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Team</option>
+                      {teams
+                        .filter((t) => t.divisionId === createFormData.divisionId)
+                        .map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Cage *</label>
+                    <select
+                      value={createFormData.cageId || ''}
+                      onChange={(e) =>
+                        setCreateFormData({ ...createFormData, cageId: e.target.value })
+                      }
+                      required
+                    >
+                      <option value="">Select Cage</option>
+                      {seasonCages.map((sc) => (
+                        <option key={sc.cageId} value={sc.cageId}>
+                          {sc.cage?.name || sc.cageId}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.saveButton}>Create</button>
+                <button type="button" className={styles.cancelButton} onClick={closeCreateModal}>
                   Cancel
                 </button>
               </div>

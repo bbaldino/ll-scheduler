@@ -109,6 +109,14 @@
   background: #e3f2fd;
 }
 
+.dayCell.clickable {
+  cursor: pointer;
+}
+
+.dayCell.clickable:hover {
+  background: #f0f7ff;
+}
+
 .dayNumber {
   font-weight: 600;
   margin-bottom: 0.25rem;
@@ -210,6 +218,14 @@
   text-align: center;
   border-bottom: 1px solid #e0e0e0;
   background: #f9f9f9;
+}
+
+.weekDayHeader.clickable {
+  cursor: pointer;
+}
+
+.weekDayHeader.clickable:hover {
+  background: #f0f7ff;
 }
 
 .weekDayName {
@@ -449,6 +465,15 @@
 
 .editForm {
   padding: 1.5rem;
+}
+
+.formError {
+  background: #ffebee;
+  border: 1px solid #ef9a9a;
+  color: #c62828;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
 }
 
 .formRow {

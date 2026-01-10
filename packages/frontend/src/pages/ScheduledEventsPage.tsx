@@ -311,7 +311,9 @@ export default function ScheduledEventsPage() {
           <button onClick={handleEvaluate} disabled={isEvaluating}>
             {isEvaluating ? 'Evaluating...' : 'Evaluate Schedule'}
           </button>
-          <button onClick={() => setIsCreating(true)}>Create Event</button>
+          {viewMode === 'list' && (
+            <button onClick={() => setIsCreating(true)}>Create Event</button>
+          )}
         </div>
       </div>
 
@@ -403,7 +405,7 @@ export default function ScheduledEventsPage() {
         )}
       </div>
 
-      {isCreating && (
+      {isCreating && viewMode === 'list' && (
         <form onSubmit={handleCreate} className={styles.form}>
           <h3>Create New Event</h3>
           <div className={styles.formRow}>
@@ -641,12 +643,17 @@ export default function ScheduledEventsPage() {
             seasonFields={seasonFields}
             seasonCages={seasonCages}
             divisions={divisions}
+            seasonId={currentSeason?.id}
             initialDate={currentSeason?.startDate}
             seasonMilestones={currentSeason ? {
               startDate: currentSeason.startDate,
               gamesStartDate: currentSeason.gamesStartDate,
               endDate: currentSeason.endDate,
             } : undefined}
+            onEventCreate={async (input) => {
+              await createScheduledEvent(input);
+              await loadEvents();
+            }}
             onEventUpdate={handleCalendarUpdate}
             onEventDelete={handleCalendarDelete}
           />
