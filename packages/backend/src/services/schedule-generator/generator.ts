@@ -481,6 +481,12 @@ export class ScheduleGenerator {
       console.log(`  scheduleGames: ${Date.now() - stepStart}ms`);
       verboseLog(`✓ Games scheduled: ${this.scheduledEvents.filter(e => e.eventType === 'game').length}`);
 
+      // Step 4b: Rebalance home/away for scheduled games
+      // This fixes imbalances caused by games that failed to schedule
+      stepStart = Date.now();
+      this.rebalanceScheduledHomeAway();
+      console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
+
       // Step 5: Schedule practices
       verboseLog('\n' + '-'.repeat(80));
       verboseLog('SCHEDULING PRACTICES');
@@ -1035,8 +1041,8 @@ export class ScheduleGenerator {
 
       verboseLog(`  Total matchups assigned: ${matchups.length}`);
 
-      // Assign optimal home/away for all matchups
-      this.assignOptimalHomeAway(matchups, divisionTeams);
+      // Home/away is already assigned by generateRoundRobinMatchups
+      // which balances within each pairing and uses overall balance as tiebreaker
 
       // Log the distribution
       const weekCounts = new Map<number, number>();
@@ -1934,120 +1940,6 @@ export class ScheduleGenerator {
     return result;
   }
 
-  /**
-   * Assign optimal home/away for all matchups.
-   *
-   * Strategy: Group matchups by team pair, then assign home/away to balance
-   * within each pair. Use overall team balance as tiebreaker.
-   *
-   * For N games between teams A and B:
-   * - If N is even: each team gets N/2 home games
-   * - If N is odd: one team gets (N+1)/2, other gets (N-1)/2
-   *   The team with fewer total home games gets the extra one
-   */
-  private assignOptimalHomeAway(
-    matchups: Array<GameMatchup & { targetWeek: number }>,
-    teams: Team[]
-  ): void {
-    // Helper to create a canonical key for a team pairing (order-independent)
-    const getPairingKey = (teamA: string, teamB: string): string => {
-      return teamA < teamB ? `${teamA}-${teamB}` : `${teamB}-${teamA}`;
-    };
-
-    // Group matchups by team pair
-    const matchupsByPair = new Map<string, Array<GameMatchup & { targetWeek: number }>>();
-    for (const m of matchups) {
-      const key = getPairingKey(m.homeTeamId, m.awayTeamId);
-      if (!matchupsByPair.has(key)) {
-        matchupsByPair.set(key, []);
-      }
-      matchupsByPair.get(key)!.push(m);
-    }
-
-    // Track overall home game count per team (for tiebreaking)
-    const teamHomeCount = new Map<string, number>();
-    for (const team of teams) {
-      teamHomeCount.set(team.id, 0);
-    }
-
-    // For each pair, assign home/away optimally
-    for (const [, pairMatchups] of matchupsByPair) {
-      const totalGames = pairMatchups.length;
-      if (totalGames === 0) continue;
-
-      // Get the two teams involved
-      const teamA = pairMatchups[0].homeTeamId;
-      const teamB = pairMatchups[0].awayTeamId;
-
-      // Calculate how many home games each team should get
-      const homeGamesEach = Math.floor(totalGames / 2);
-      const extraGame = totalGames % 2;
-
-      // Decide who gets the extra home game (if odd number of games)
-      // Give it to the team with fewer total home games so far
-      let teamAHomeGames = homeGamesEach;
-      let teamBHomeGames = homeGamesEach;
-
-      if (extraGame > 0) {
-        const teamATotal = teamHomeCount.get(teamA) || 0;
-        const teamBTotal = teamHomeCount.get(teamB) || 0;
-        if (teamATotal <= teamBTotal) {
-          teamAHomeGames++;
-        } else {
-          teamBHomeGames++;
-        }
-      }
-
-      // Assign home/away to each matchup in this pair
-      let teamAHomeAssigned = 0;
-      let teamBHomeAssigned = 0;
-
-      for (const matchup of pairMatchups) {
-        // Determine who should be home for this game
-        let homeTeam: string;
-        let awayTeam: string;
-
-        if (teamAHomeAssigned < teamAHomeGames) {
-          homeTeam = teamA;
-          awayTeam = teamB;
-          teamAHomeAssigned++;
-        } else {
-          homeTeam = teamB;
-          awayTeam = teamA;
-          teamBHomeAssigned++;
-        }
-
-        // Update the matchup
-        matchup.homeTeamId = homeTeam;
-        matchup.awayTeamId = awayTeam;
-      }
-
-      // Update overall home counts
-      teamHomeCount.set(teamA, (teamHomeCount.get(teamA) || 0) + teamAHomeAssigned);
-      teamHomeCount.set(teamB, (teamHomeCount.get(teamB) || 0) + teamBHomeAssigned);
-    }
-
-    // Log the results
-    let maxTeamImbalance = 0;
-    let maxMatchupImbalance = 0;
-
-    for (const team of teams) {
-      const home = teamHomeCount.get(team.id) || 0;
-      const away = matchups.filter(m => m.awayTeamId === team.id).length;
-      maxTeamImbalance = Math.max(maxTeamImbalance, Math.abs(home - away));
-    }
-
-    for (const [, pairMatchups] of matchupsByPair) {
-      if (pairMatchups.length < 2) continue;
-      const teamA = pairMatchups[0].homeTeamId;
-      const teamAHome = pairMatchups.filter(m => m.homeTeamId === teamA).length;
-      const teamAAway = pairMatchups.filter(m => m.awayTeamId === teamA).length;
-      maxMatchupImbalance = Math.max(maxMatchupImbalance, Math.abs(teamAHome - teamAAway));
-    }
-
-    verboseLog(`  Home/away assignment: team imbalance=${maxTeamImbalance}, matchup imbalance=${maxMatchupImbalance}`);
-  }
-
   private getWeeksToTry(targetWeek: number, totalWeeks: number): number[] {
     const weeks: number[] = [targetWeek];
     let offset = 1;
@@ -2064,6 +1956,369 @@ export class ScheduleGenerator {
     }
 
     return weeks;
+  }
+
+  /**
+   * Rebalance home/away assignments for scheduled games.
+   * This runs after scheduling to fix imbalances caused by games that failed to schedule.
+   *
+   * Strategy:
+   * 1. Group scheduled games by team pairing
+   * 2. For each pairing with imbalance > 1, swap some games
+   * 3. Use overall team balance as secondary consideration
+   */
+  private rebalanceScheduledHomeAway(): void {
+    console.log('  [Rebalancing] Starting home/away rebalance...');
+    verboseLog('\n--- Rebalancing Home/Away for Scheduled Games ---');
+
+    // Get only scheduled games (not practices/cages)
+    const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+
+    if (scheduledGames.length === 0) {
+      console.log('  [Rebalancing] No games to rebalance');
+      verboseLog('  No games to rebalance');
+      return;
+    }
+    console.log(`  [Rebalancing] Found ${scheduledGames.length} games to check`);
+
+    // Helper to create a canonical key for a team pairing
+    // Use | as delimiter since team IDs contain hyphens
+    const getPairingKey = (teamA: string, teamB: string): string => {
+      return teamA < teamB ? `${teamA}|${teamB}` : `${teamB}|${teamA}`;
+    };
+
+    // Group games by team pairing
+    const gamesByPair = new Map<string, typeof scheduledGames>();
+    for (const game of scheduledGames) {
+      if (!game.homeTeamId || !game.awayTeamId) continue;
+      const key = getPairingKey(game.homeTeamId, game.awayTeamId);
+      if (!gamesByPair.has(key)) {
+        gamesByPair.set(key, []);
+      }
+      gamesByPair.get(key)!.push(game);
+    }
+
+    // Track overall team home/away counts
+    const teamHomeCount = new Map<string, number>();
+    const teamAwayCount = new Map<string, number>();
+
+    for (const game of scheduledGames) {
+      if (!game.homeTeamId || !game.awayTeamId) continue;
+      teamHomeCount.set(game.homeTeamId, (teamHomeCount.get(game.homeTeamId) || 0) + 1);
+      teamAwayCount.set(game.awayTeamId, (teamAwayCount.get(game.awayTeamId) || 0) + 1);
+    }
+
+    // Log initial state
+    verboseLog('  Initial per-pairing balance:');
+    let initialPairingIssues = 0;
+    for (const [key, games] of gamesByPair) {
+      const [teamA, teamB] = key.split('|');
+      const teamAHome = games.filter(g => g.homeTeamId === teamA).length;
+      const teamBHome = games.filter(g => g.homeTeamId === teamB).length;
+      const diff = Math.abs(teamAHome - teamBHome);
+      if (diff > 1) {
+        initialPairingIssues++;
+        verboseLog(`    ${key}: ${teamA} home ${teamAHome}x, ${teamB} home ${teamBHome}x (imbalanced)`);
+      }
+    }
+
+    if (initialPairingIssues === 0) {
+      console.log('  [Rebalancing] All pairings already balanced (no diff > 1)');
+      verboseLog('  All pairings already balanced');
+      // Don't return - still need to check overall team balance in Phase 2
+    } else {
+      console.log(`  [Rebalancing] Found ${initialPairingIssues} imbalanced pairings (diff > 1), rebalancing...`);
+      verboseLog(`  Found ${initialPairingIssues} imbalanced pairings, rebalancing...`);
+    }
+
+    // Rebalance each pairing (Phase 1 - only if there are issues)
+    let swapsMade = 0;
+    for (const [key, games] of gamesByPair) {
+      const [teamA, teamB] = key.split('|');
+      const teamAGames = games.filter(g => g.homeTeamId === teamA);
+      const teamBGames = games.filter(g => g.homeTeamId === teamB);
+
+      const teamAHome = teamAGames.length;
+      const teamBHome = teamBGames.length;
+      const totalGames = games.length;
+      const idealEach = Math.floor(totalGames / 2);
+
+      // How many games should each team be home for?
+      // For even total: each gets totalGames/2
+      // For odd total: one gets ceil, other gets floor - decide by overall balance
+      let targetAHome = idealEach;
+      let targetBHome = idealEach;
+
+      if (totalGames % 2 === 1) {
+        // Give the extra home game to the team with fewer overall home games
+        const teamAOverallHome = teamHomeCount.get(teamA) || 0;
+        const teamBOverallHome = teamHomeCount.get(teamB) || 0;
+        const teamAOverallAway = teamAwayCount.get(teamA) || 0;
+        const teamBOverallAway = teamAwayCount.get(teamB) || 0;
+
+        const teamAImbalance = teamAOverallHome - teamAOverallAway;
+        const teamBImbalance = teamBOverallHome - teamBOverallAway;
+
+        if (teamAImbalance <= teamBImbalance) {
+          targetAHome = idealEach + 1;
+        } else {
+          targetBHome = idealEach + 1;
+        }
+      }
+
+      // Swap games if needed
+      while (teamAGames.length > targetAHome && teamBGames.length < targetBHome) {
+        // Swap a game from teamA home to teamB home
+        const gameToSwap = teamAGames.pop()!;
+        const temp = gameToSwap.homeTeamId;
+        gameToSwap.homeTeamId = gameToSwap.awayTeamId;
+        gameToSwap.awayTeamId = temp;
+        teamBGames.push(gameToSwap);
+
+        // Update overall counts
+        teamHomeCount.set(teamA, (teamHomeCount.get(teamA) || 0) - 1);
+        teamAwayCount.set(teamA, (teamAwayCount.get(teamA) || 0) + 1);
+        teamHomeCount.set(teamB, (teamHomeCount.get(teamB) || 0) + 1);
+        teamAwayCount.set(teamB, (teamAwayCount.get(teamB) || 0) - 1);
+
+        swapsMade++;
+      }
+
+      while (teamBGames.length > targetBHome && teamAGames.length < targetAHome) {
+        // Swap a game from teamB home to teamA home
+        const gameToSwap = teamBGames.pop()!;
+        const temp = gameToSwap.homeTeamId;
+        gameToSwap.homeTeamId = gameToSwap.awayTeamId;
+        gameToSwap.awayTeamId = temp;
+        teamAGames.push(gameToSwap);
+
+        // Update overall counts
+        teamHomeCount.set(teamB, (teamHomeCount.get(teamB) || 0) - 1);
+        teamAwayCount.set(teamB, (teamAwayCount.get(teamB) || 0) + 1);
+        teamHomeCount.set(teamA, (teamHomeCount.get(teamA) || 0) + 1);
+        teamAwayCount.set(teamA, (teamAwayCount.get(teamA) || 0) - 1);
+
+        swapsMade++;
+      }
+    }
+
+    // Log final state
+    console.log(`  [Rebalancing] Made ${swapsMade} home/away swaps`);
+    verboseLog(`  Made ${swapsMade} home/away swaps`);
+
+    // Verify final balance
+    let finalPairingIssues = 0;
+    for (const [key, games] of gamesByPair) {
+      const [teamA] = key.split('|');
+      const teamAHome = games.filter(g => g.homeTeamId === teamA).length;
+      const teamBHome = games.length - teamAHome;
+      const diff = Math.abs(teamAHome - teamBHome);
+      if (diff > 1) {
+        finalPairingIssues++;
+      }
+    }
+
+    verboseLog(`  Final pairing issues: ${finalPairingIssues}`);
+
+    // Recalculate team home/away counts after per-pairing rebalancing
+    teamHomeCount.clear();
+    teamAwayCount.clear();
+    for (const game of scheduledGames) {
+      if (!game.homeTeamId || !game.awayTeamId) continue;
+      teamHomeCount.set(game.homeTeamId, (teamHomeCount.get(game.homeTeamId) || 0) + 1);
+      teamAwayCount.set(game.awayTeamId, (teamAwayCount.get(game.awayTeamId) || 0) + 1);
+    }
+
+    // Phase 2: Fix overall team balance
+    // A team passes if |homeGames - awayGames| <= 1
+    // To fix imbalanced teams, we need to swap games where:
+    // 1. The swap doesn't break per-pairing balance (diff stays <= 1)
+    // 2. The swap improves overall balance for the imbalanced team
+    console.log('  [Rebalancing] Phase 2: Fixing overall team balance...');
+
+    const getTeamImbalance = (teamId: string): number => {
+      return (teamHomeCount.get(teamId) || 0) - (teamAwayCount.get(teamId) || 0);
+    };
+
+    // Find teams with overall imbalance > 1
+    const imbalancedTeams: Array<{ teamId: string; imbalance: number }> = [];
+    const allTeamIds = new Set<string>();
+    for (const game of scheduledGames) {
+      if (game.homeTeamId) allTeamIds.add(game.homeTeamId);
+      if (game.awayTeamId) allTeamIds.add(game.awayTeamId);
+    }
+
+    for (const teamId of allTeamIds) {
+      const imbalance = getTeamImbalance(teamId);
+      if (Math.abs(imbalance) > 1) {
+        imbalancedTeams.push({ teamId, imbalance });
+      }
+    }
+
+    // Log ALL teams after recalculation to see the full picture
+    console.log('  [Rebalancing] All teams after Phase 1:');
+    for (const teamId of allTeamIds) {
+      const teamState = this.teamSchedulingStates.get(teamId);
+      const teamName = teamState?.teamName || teamId;
+      const divSuffix = teamState?.divisionId?.slice(-8) || '?';
+      const home = teamHomeCount.get(teamId) || 0;
+      const away = teamAwayCount.get(teamId) || 0;
+      const diff = Math.abs(home - away);
+      const status = diff > 1 ? '⚠' : '✓';
+      console.log(`    ${teamName} (${divSuffix}): ${home} home, ${away} away (diff: ${diff}) ${status}`);
+    }
+
+    if (imbalancedTeams.length === 0) {
+      console.log('  [Rebalancing] All teams already have balanced overall home/away');
+    } else {
+      console.log(`  [Rebalancing] Found ${imbalancedTeams.length} teams with overall imbalance > 1:`);
+      for (const { teamId, imbalance } of imbalancedTeams) {
+        const teamState = this.teamSchedulingStates.get(teamId);
+        const teamName = teamState?.teamName || teamId;
+        const home = teamHomeCount.get(teamId) || 0;
+        const away = teamAwayCount.get(teamId) || 0;
+        console.log(`    ${teamName} (${teamState?.divisionId?.slice(-8) || '?'}): ${home} home, ${away} away (imbalance: ${imbalance})`);
+      }
+
+      let overallSwaps = 0;
+
+      // For each imbalanced team, try to find a swap that helps without breaking per-pairing balance
+      for (const { teamId } of imbalancedTeams) {
+        const teamState = this.teamSchedulingStates.get(teamId);
+        const teamName = teamState?.teamName || teamId;
+
+        // Re-check current imbalance - it may have changed due to previous swaps
+        const currentImbalance = getTeamImbalance(teamId);
+        if (Math.abs(currentImbalance) <= 1) {
+          // Team is now balanced due to earlier swaps, skip
+          continue;
+        }
+
+        if (currentImbalance > 1) {
+          // Team has too many home games - need to swap a home game to away
+          // Find a game where this team is home and the opponent has too few home games
+          const homeGames = scheduledGames.filter(g => g.homeTeamId === teamId);
+          console.log(`    Looking for swaps for ${teamName} (${homeGames.length} home games)...`);
+
+          for (const game of homeGames) {
+            if (!game.awayTeamId) continue;
+
+            const opponentId = game.awayTeamId;
+            const opponentImbalance = getTeamImbalance(opponentId);
+            const opponentState = this.teamSchedulingStates.get(opponentId);
+            const opponentName = opponentState?.teamName || opponentId;
+
+            // Check if swapping would help both teams or at least not hurt opponent
+            if (opponentImbalance < 0) {
+              // Opponent has too many away games, swap would help both!
+
+              // Check that per-pairing balance isn't broken by this swap
+              const pairKey = getPairingKey(teamId, opponentId);
+              const pairGames = gamesByPair.get(pairKey) || [];
+              const teamHomesInPair = pairGames.filter(g => g.homeTeamId === teamId).length;
+              const opponentHomesInPair = pairGames.filter(g => g.homeTeamId === opponentId).length;
+
+              // After swap: teamHomesInPair - 1, opponentHomesInPair + 1
+              const newDiff = Math.abs((teamHomesInPair - 1) - (opponentHomesInPair + 1));
+
+              console.log(`      vs ${opponentName}: oppImbalance=${opponentImbalance}, pairBalance=${teamHomesInPair}-${opponentHomesInPair}, newDiff=${newDiff}`);
+
+              if (newDiff <= 1) {
+                // Safe to swap
+                const temp = game.homeTeamId;
+                game.homeTeamId = game.awayTeamId;
+                game.awayTeamId = temp;
+
+                // Update counts
+                teamHomeCount.set(teamId, (teamHomeCount.get(teamId) || 0) - 1);
+                teamAwayCount.set(teamId, (teamAwayCount.get(teamId) || 0) + 1);
+                teamHomeCount.set(opponentId, (teamHomeCount.get(opponentId) || 0) + 1);
+                teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) - 1);
+
+                overallSwaps++;
+                verboseLog(`    Swapped game: ${teamName} was home, now away (vs ${opponentId})`);
+
+                // Check if this team is now balanced
+                if (Math.abs(getTeamImbalance(teamId)) <= 1) {
+                  break;
+                }
+              }
+            }
+          }
+        } else if (currentImbalance < -1) {
+          // Team has too many away games - need to swap an away game to home
+          const awayGames = scheduledGames.filter(g => g.awayTeamId === teamId);
+
+          for (const game of awayGames) {
+            if (!game.homeTeamId) continue;
+
+            const opponentId = game.homeTeamId;
+            const opponentImbalance = getTeamImbalance(opponentId);
+
+            // Check if swapping would help both teams or at least not hurt opponent
+            if (opponentImbalance > 0) {
+              // Opponent has too many home games, swap would help both!
+
+              // Check that per-pairing balance isn't broken by this swap
+              const pairKey = getPairingKey(teamId, opponentId);
+              const pairGames = gamesByPair.get(pairKey) || [];
+              const teamHomesInPair = pairGames.filter(g => g.homeTeamId === teamId).length;
+              const opponentHomesInPair = pairGames.filter(g => g.homeTeamId === opponentId).length;
+
+              // After swap: teamHomesInPair + 1, opponentHomesInPair - 1
+              const newDiff = Math.abs((teamHomesInPair + 1) - (opponentHomesInPair - 1));
+
+              if (newDiff <= 1) {
+                // Safe to swap
+                const temp = game.homeTeamId;
+                game.homeTeamId = game.awayTeamId;
+                game.awayTeamId = temp;
+
+                // Update counts
+                teamHomeCount.set(teamId, (teamHomeCount.get(teamId) || 0) + 1);
+                teamAwayCount.set(teamId, (teamAwayCount.get(teamId) || 0) - 1);
+                teamHomeCount.set(opponentId, (teamHomeCount.get(opponentId) || 0) - 1);
+                teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) + 1);
+
+                overallSwaps++;
+                verboseLog(`    Swapped game: ${teamName} was away, now home (vs ${opponentId})`);
+
+                // Check if this team is now balanced
+                if (Math.abs(getTeamImbalance(teamId)) <= 1) {
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      console.log(`  [Rebalancing] Made ${overallSwaps} overall balance swaps`);
+    }
+
+    // Log final team balance
+    console.log('  [Rebalancing] Final per-team balance:');
+    verboseLog('  Final per-team balance:');
+
+    let teamsWithImbalance = 0;
+    for (const teamId of allTeamIds) {
+      const home = teamHomeCount.get(teamId) || 0;
+      const away = teamAwayCount.get(teamId) || 0;
+      const diff = Math.abs(home - away);
+      const status = diff <= 1 ? '✓' : (diff <= 2 ? '~' : '⚠');
+      const teamState = this.teamSchedulingStates.get(teamId);
+      const teamName = teamState?.teamName || teamId;
+      const divSuffix = teamState?.divisionId?.slice(-8) || '?';
+      if (diff > 1) {
+        teamsWithImbalance++;
+        console.log(`    ${teamName} (${divSuffix}): ${home} home, ${away} away (diff: ${diff}) ${status}`);
+      }
+      verboseLog(`    ${teamName} (${divSuffix}): ${home} home, ${away} away (diff: ${diff}) ${status}`);
+    }
+
+    if (teamsWithImbalance === 0) {
+      console.log('    All teams balanced (diff <= 1)');
+    }
   }
 
   /**
