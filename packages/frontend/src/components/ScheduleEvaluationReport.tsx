@@ -283,6 +283,36 @@ function HomeAwayBalanceSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
+
+  // Group teams by division
+  const teamsByDivision = new Map<string, { divisionName: string; teams: TeamHomeAwayReport[] }>();
+  for (const team of report.teamReports) {
+    if (!teamsByDivision.has(team.divisionId)) {
+      teamsByDivision.set(team.divisionId, { divisionName: team.divisionName, teams: [] });
+    }
+    teamsByDivision.get(team.divisionId)!.teams.push(team);
+  }
+
+  // Calculate division-level stats
+  const getDivisionStats = (teams: TeamHomeAwayReport[]) => {
+    const passed = teams.every(t => t.passed);
+    const maxBalance = Math.max(...teams.map(t => t.balance));
+    return { passed, maxBalance };
+  };
+
   return (
     <div className={styles.section}>
       <SectionHeader
@@ -294,41 +324,66 @@ function HomeAwayBalanceSection({
       />
       {expanded && (
         <div className={styles.sectionContent}>
-          {report.teamReports.length === 0 ? (
+          {teamsByDivision.size === 0 ? (
             <p className={styles.noData}>No team data available</p>
           ) : (
-            <table className={styles.balanceTable}>
-              <thead>
-                <tr>
-                  <th>Team</th>
-                  <th>Division</th>
-                  <th>Home</th>
-                  <th>Away</th>
-                  <th>Total</th>
-                  <th>Balance</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.teamReports.map((team: TeamHomeAwayReport) => (
-                  <tr key={team.teamId}>
-                    <td>{team.teamName}</td>
-                    <td>{team.divisionName}</td>
-                    <td>{team.homeGames}</td>
-                    <td>{team.awayGames}</td>
-                    <td>{team.totalGames}</td>
-                    <td className={team.balance > 1 ? styles.cellWarning : ''}>
-                      {team.balance > 0 ? `±${team.balance}` : '0'}
-                    </td>
-                    <td>
-                      <span className={team.passed ? styles.statusPass : styles.statusFail}>
-                        {team.passed ? '✓' : '✗'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            Array.from(teamsByDivision.entries()).map(([divisionId, { divisionName, teams }]) => {
+              const divisionStats = getDivisionStats(teams);
+              return (
+                <div key={divisionId} className={styles.divisionReport}>
+                  <div
+                    className={styles.divisionHeader}
+                    onClick={() => toggleDivision(divisionId)}
+                  >
+                    <span className={divisionStats.passed ? styles.statusPass : styles.statusFail}>
+                      {divisionStats.passed ? '✓' : '✗'}
+                    </span>
+                    <span className={styles.divisionName}>{divisionName}</span>
+                    <span className={styles.complianceRate}>
+                      Max imbalance: ±{divisionStats.maxBalance}
+                    </span>
+                    <span className={styles.expandIcon}>
+                      {expandedDivisions.has(divisionId) ? '▼' : '▶'}
+                    </span>
+                  </div>
+
+                  {expandedDivisions.has(divisionId) && (
+                    <div className={styles.divisionContent}>
+                      <table className={styles.balanceTable}>
+                        <thead>
+                          <tr>
+                            <th>Team</th>
+                            <th>Home</th>
+                            <th>Away</th>
+                            <th>Total</th>
+                            <th>Balance</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {teams.map((team: TeamHomeAwayReport) => (
+                            <tr key={team.teamId}>
+                              <td>{team.teamName}</td>
+                              <td>{team.homeGames}</td>
+                              <td>{team.awayGames}</td>
+                              <td>{team.totalGames}</td>
+                              <td className={team.balance > 1 ? styles.cellWarning : ''}>
+                                {team.balance > 0 ? `±${team.balance}` : '0'}
+                              </td>
+                              <td>
+                                <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                                  {team.passed ? '✓' : '✗'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}
@@ -776,19 +831,31 @@ function MatchupBalanceSection({
                               <th>Games</th>
                               <th>Home</th>
                               <th>Away</th>
+                              <th>H/A Balance</th>
                             </tr>
                           </thead>
                           <tbody>
                             {team.opponents.map((opp) => {
                               const diff = Math.abs(opp.gamesPlayed - division.idealGamesPerMatchup);
+                              const homeAwayDiff = Math.abs(opp.homeGames - opp.awayGames);
+                              // Imbalance is bad if one team is home significantly more often
+                              // For 2 games: diff > 0 is unavoidable; for 3+: diff > 1 is bad
+                              const homeAwayImbalanced = opp.gamesPlayed >= 2 && homeAwayDiff > 1;
                               return (
                                 <tr key={opp.opponentId}>
                                   <td>{opp.opponentName}</td>
                                   <td className={diff > 1 ? styles.cellWarning : ''}>
                                     {opp.gamesPlayed}
                                   </td>
-                                  <td>{opp.homeGames}</td>
-                                  <td>{opp.awayGames}</td>
+                                  <td className={homeAwayImbalanced ? styles.cellWarning : ''}>
+                                    {opp.homeGames}
+                                  </td>
+                                  <td className={homeAwayImbalanced ? styles.cellWarning : ''}>
+                                    {opp.awayGames}
+                                  </td>
+                                  <td className={homeAwayImbalanced ? styles.cellWarning : styles.cellOk}>
+                                    {homeAwayImbalanced ? `⚠ ${homeAwayDiff > 1 ? 'Unbalanced' : ''}` : '✓'}
+                                  </td>
                                 </tr>
                               );
                             })}

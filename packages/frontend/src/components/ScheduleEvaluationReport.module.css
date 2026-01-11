@@ -258,6 +258,10 @@
   color: #e65100;
 }
 
+.cellOk {
+  color: #2e7d32;
+}
+
 /* Violation Styles */
 .violationsList {
   display: flex;

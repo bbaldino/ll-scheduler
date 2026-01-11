@@ -1035,8 +1035,8 @@ export class ScheduleGenerator {
 
       verboseLog(`  Total matchups assigned: ${matchups.length}`);
 
-      // Rebalance home/away if needed (when we use partial cycles)
-      this.rebalanceHomeAway(matchups, divisionTeams);
+      // Assign optimal home/away for all matchups
+      this.assignOptimalHomeAway(matchups, divisionTeams);
 
       // Log the distribution
       const weekCounts = new Map<number, number>();
@@ -1476,10 +1476,10 @@ export class ScheduleGenerator {
           }
         }
 
-        // If there are shortfalls, create a warning
-        if (weeklyShortfalls.length > 0) {
-          const totalExpected = this.getTotalGamesPerTeam(division.divisionId, gameWeeks);
-          const totalShortfall = totalExpected - teamState.gamesScheduled;
+        // If there's a total shortfall, create a warning
+        const totalExpected = this.getTotalGamesPerTeam(division.divisionId, gameWeeks);
+        const totalShortfall = totalExpected - teamState.gamesScheduled;
+        if (totalShortfall > 0) {
 
           // Build summary with week details
           let summary = `${team.name} (${division.divisionName}) is short ${totalShortfall} game${totalShortfall > 1 ? 's' : ''} (${teamState.gamesScheduled}/${totalExpected}).`;
@@ -1935,93 +1935,117 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Rebalance home/away assignments to minimize imbalance.
-   * This is needed when we use partial round-robin cycles.
+   * Assign optimal home/away for all matchups.
    *
-   * Strategy: For teams with imbalance > 1, find matchups where swapping
-   * home/away would improve overall balance.
+   * Strategy: Group matchups by team pair, then assign home/away to balance
+   * within each pair. Use overall team balance as tiebreaker.
+   *
+   * For N games between teams A and B:
+   * - If N is even: each team gets N/2 home games
+   * - If N is odd: one team gets (N+1)/2, other gets (N-1)/2
+   *   The team with fewer total home games gets the extra one
    */
-  private rebalanceHomeAway(
+  private assignOptimalHomeAway(
     matchups: Array<GameMatchup & { targetWeek: number }>,
     teams: Team[]
   ): void {
-    // Calculate current balance
-    const getBalance = () => {
-      const homeCount = new Map<string, number>();
-      const awayCount = new Map<string, number>();
-      for (const m of matchups) {
-        homeCount.set(m.homeTeamId, (homeCount.get(m.homeTeamId) || 0) + 1);
-        awayCount.set(m.awayTeamId, (awayCount.get(m.awayTeamId) || 0) + 1);
+    // Helper to create a canonical key for a team pairing (order-independent)
+    const getPairingKey = (teamA: string, teamB: string): string => {
+      return teamA < teamB ? `${teamA}-${teamB}` : `${teamB}-${teamA}`;
+    };
+
+    // Group matchups by team pair
+    const matchupsByPair = new Map<string, Array<GameMatchup & { targetWeek: number }>>();
+    for (const m of matchups) {
+      const key = getPairingKey(m.homeTeamId, m.awayTeamId);
+      if (!matchupsByPair.has(key)) {
+        matchupsByPair.set(key, []);
       }
-      return { homeCount, awayCount };
-    };
-
-    const getImbalance = (teamId: string, homeCount: Map<string, number>, awayCount: Map<string, number>) => {
-      return (homeCount.get(teamId) || 0) - (awayCount.get(teamId) || 0);
-    };
-
-    const getMaxImbalance = (homeCount: Map<string, number>, awayCount: Map<string, number>) => {
-      let max = 0;
-      for (const team of teams) {
-        max = Math.max(max, Math.abs(getImbalance(team.id, homeCount, awayCount)));
-      }
-      return max;
-    };
-
-    let { homeCount, awayCount } = getBalance();
-    let maxImbalance = getMaxImbalance(homeCount, awayCount);
-
-    if (maxImbalance <= 1) {
-      verboseLog(`  Home/away balance OK (max imbalance: ${maxImbalance})`);
-      return;
+      matchupsByPair.get(key)!.push(m);
     }
 
-    verboseLog(`  Rebalancing home/away (initial max imbalance: ${maxImbalance})...`);
+    // Track overall home game count per team (for tiebreaking)
+    const teamHomeCount = new Map<string, number>();
+    for (const team of teams) {
+      teamHomeCount.set(team.id, 0);
+    }
 
-    // Try swapping matchups to reduce imbalance
-    let improved = true;
-    let iterations = 0;
-    const maxIterations = matchups.length * 2; // Safety limit
+    // For each pair, assign home/away optimally
+    for (const [, pairMatchups] of matchupsByPair) {
+      const totalGames = pairMatchups.length;
+      if (totalGames === 0) continue;
 
-    while (improved && iterations < maxIterations && maxImbalance > 1) {
-      improved = false;
-      iterations++;
+      // Get the two teams involved
+      const teamA = pairMatchups[0].homeTeamId;
+      const teamB = pairMatchups[0].awayTeamId;
 
-      for (const matchup of matchups) {
-        const homeImbalance = getImbalance(matchup.homeTeamId, homeCount, awayCount);
-        const awayImbalance = getImbalance(matchup.awayTeamId, homeCount, awayCount);
+      // Calculate how many home games each team should get
+      const homeGamesEach = Math.floor(totalGames / 2);
+      const extraGame = totalGames % 2;
 
-        // If home team has too many home games and away team has too few (or vice versa),
-        // swapping would help both
-        if (homeImbalance > 0 && awayImbalance < 0) {
-          // Swap: home team loses a home game, away team gains one
-          const newHomeImbalance = homeImbalance - 2; // -1 home, +1 away = -2
-          const newAwayImbalance = awayImbalance + 2; // +1 home, -1 away = +2
+      // Decide who gets the extra home game (if odd number of games)
+      // Give it to the team with fewer total home games so far
+      let teamAHomeGames = homeGamesEach;
+      let teamBHomeGames = homeGamesEach;
 
-          // Only swap if it improves or maintains the max imbalance
-          const currentMax = Math.max(Math.abs(homeImbalance), Math.abs(awayImbalance));
-          const newMax = Math.max(Math.abs(newHomeImbalance), Math.abs(newAwayImbalance));
-
-          if (newMax < currentMax) {
-            // Perform swap
-            const temp = matchup.homeTeamId;
-            matchup.homeTeamId = matchup.awayTeamId;
-            matchup.awayTeamId = temp;
-
-            // Update counts
-            homeCount.set(matchup.homeTeamId, (homeCount.get(matchup.homeTeamId) || 0) + 1);
-            homeCount.set(matchup.awayTeamId, (homeCount.get(matchup.awayTeamId) || 0) - 1);
-            awayCount.set(matchup.awayTeamId, (awayCount.get(matchup.awayTeamId) || 0) + 1);
-            awayCount.set(matchup.homeTeamId, (awayCount.get(matchup.homeTeamId) || 0) - 1);
-
-            improved = true;
-            maxImbalance = getMaxImbalance(homeCount, awayCount);
-          }
+      if (extraGame > 0) {
+        const teamATotal = teamHomeCount.get(teamA) || 0;
+        const teamBTotal = teamHomeCount.get(teamB) || 0;
+        if (teamATotal <= teamBTotal) {
+          teamAHomeGames++;
+        } else {
+          teamBHomeGames++;
         }
       }
+
+      // Assign home/away to each matchup in this pair
+      let teamAHomeAssigned = 0;
+      let teamBHomeAssigned = 0;
+
+      for (const matchup of pairMatchups) {
+        // Determine who should be home for this game
+        let homeTeam: string;
+        let awayTeam: string;
+
+        if (teamAHomeAssigned < teamAHomeGames) {
+          homeTeam = teamA;
+          awayTeam = teamB;
+          teamAHomeAssigned++;
+        } else {
+          homeTeam = teamB;
+          awayTeam = teamA;
+          teamBHomeAssigned++;
+        }
+
+        // Update the matchup
+        matchup.homeTeamId = homeTeam;
+        matchup.awayTeamId = awayTeam;
+      }
+
+      // Update overall home counts
+      teamHomeCount.set(teamA, (teamHomeCount.get(teamA) || 0) + teamAHomeAssigned);
+      teamHomeCount.set(teamB, (teamHomeCount.get(teamB) || 0) + teamBHomeAssigned);
     }
 
-    verboseLog(`  Rebalancing complete after ${iterations} iterations (final max imbalance: ${maxImbalance})`);
+    // Log the results
+    let maxTeamImbalance = 0;
+    let maxMatchupImbalance = 0;
+
+    for (const team of teams) {
+      const home = teamHomeCount.get(team.id) || 0;
+      const away = matchups.filter(m => m.awayTeamId === team.id).length;
+      maxTeamImbalance = Math.max(maxTeamImbalance, Math.abs(home - away));
+    }
+
+    for (const [, pairMatchups] of matchupsByPair) {
+      if (pairMatchups.length < 2) continue;
+      const teamA = pairMatchups[0].homeTeamId;
+      const teamAHome = pairMatchups.filter(m => m.homeTeamId === teamA).length;
+      const teamAAway = pairMatchups.filter(m => m.awayTeamId === teamA).length;
+      maxMatchupImbalance = Math.max(maxMatchupImbalance, Math.abs(teamAHome - teamAAway));
+    }
+
+    verboseLog(`  Home/away assignment: team imbalance=${maxTeamImbalance}, matchup imbalance=${maxMatchupImbalance}`);
   }
 
   private getWeeksToTry(targetWeek: number, totalWeeks: number): number[] {
