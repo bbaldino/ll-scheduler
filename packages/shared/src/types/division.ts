@@ -38,6 +38,16 @@ export interface GameWeekOverride {
 }
 
 /**
+ * Division-specific blackout date
+ * Allows blocking specific event types on specific dates for a division
+ */
+export interface DivisionBlackout {
+  date: string; // ISO date (YYYY-MM-DD)
+  blockedEventTypes: ('game' | 'practice' | 'cage')[]; // Which event types to block
+  reason?: string; // Optional reason (e.g., "Easter", "Spring break")
+}
+
+/**
  * DivisionConfig represents season-specific configuration for a division
  * This allows the same division to have different rules in different seasons
  */
@@ -56,6 +66,7 @@ export interface DivisionConfig {
   fieldPreferences?: string[]; // Ordered list of field IDs, first = most preferred
   gameWeekOverrides?: GameWeekOverride[]; // Per-week game count overrides
   maxGamesPerSeason?: number; // Maximum total games per team for the season (limits round-robin matchups)
+  blackoutDates?: DivisionBlackout[]; // Division-specific blackout dates
   createdAt: string;
   updatedAt: string;
 }
@@ -74,6 +85,7 @@ export interface CreateDivisionConfigInput {
   fieldPreferences?: string[];
   gameWeekOverrides?: GameWeekOverride[];
   maxGamesPerSeason?: number;
+  blackoutDates?: DivisionBlackout[];
 }
 
 export interface UpdateDivisionConfigInput {
@@ -88,4 +100,5 @@ export interface UpdateDivisionConfigInput {
   fieldPreferences?: string[];
   gameWeekOverrides?: GameWeekOverride[];
   maxGamesPerSeason?: number;
+  blackoutDates?: DivisionBlackout[];
 }

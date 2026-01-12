@@ -1,4 +1,4 @@
-import type { Season, CreateSeasonInput, UpdateSeasonInput } from '@ll-scheduler/shared';
+import type { Season, CreateSeasonInput, UpdateSeasonInput, SeasonBlackout } from '@ll-scheduler/shared';
 import { generateId } from '../utils/id.js';
 
 interface SeasonRow {
@@ -14,10 +14,21 @@ interface SeasonRow {
 }
 
 function rowToSeason(row: SeasonRow): Season {
-  let blackoutDates: string[] | undefined;
+  let blackoutDates: SeasonBlackout[] | undefined;
   if (row.blackout_dates) {
     try {
-      blackoutDates = JSON.parse(row.blackout_dates);
+      const parsed = JSON.parse(row.blackout_dates);
+      // Handle both old format (string[]) and new format (SeasonBlackout[])
+      if (Array.isArray(parsed)) {
+        blackoutDates = parsed.map((item: string | SeasonBlackout) => {
+          if (typeof item === 'string') {
+            // Old format: just a date string
+            return { date: item };
+          }
+          // New format: { date, reason? }
+          return item;
+        });
+      }
     } catch {
       blackoutDates = undefined;
     }

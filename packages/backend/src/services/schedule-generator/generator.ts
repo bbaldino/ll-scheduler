@@ -564,7 +564,7 @@ export class ScheduleGenerator {
     const allDatesRaw = getDateRange(this.season.startDate, this.season.endDate);
 
     // Filter out season-level blackout dates
-    const blackoutSet = new Set(this.season.blackoutDates || []);
+    const blackoutSet = new Set((this.season.blackoutDates || []).map(b => b.date));
     const allDates = allDatesRaw.filter(date => !blackoutSet.has(date));
 
     if (blackoutSet.size > 0) {
@@ -1143,10 +1143,35 @@ export class ScheduleGenerator {
         const weekDatesSet = new Set(week.dates);
         const weekSlots = this.gameFieldSlots.filter((rs) =>
           weekDatesSet.has(rs.slot.date) &&
-          this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId)
+          this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId) &&
+          !this.isDateBlockedForDivision(rs.slot.date, 'game', division.divisionId)
         );
         fieldSlotsByWeek.set(i, weekSlots);
       }
+
+      // Log available game slots for this division (sanity check)
+      const allDivisionSlots = this.gameFieldSlots.filter(rs =>
+        this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId) &&
+        !this.isDateBlockedForDivision(rs.slot.date, 'game', division.divisionId)
+      );
+      const slotsByDayOfWeek = new Map<number, number>();
+      for (const slot of allDivisionSlots) {
+        const count = slotsByDayOfWeek.get(slot.slot.dayOfWeek) || 0;
+        slotsByDayOfWeek.set(slot.slot.dayOfWeek, count + 1);
+      }
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const slotBreakdown: Record<string, number> = {};
+      for (const [day, count] of slotsByDayOfWeek.entries()) {
+        slotBreakdown[dayNames[day]] = count;
+      }
+      const slotSummary = Object.entries(slotBreakdown).map(([day, count]) => `${day}: ${count}`).join(', ');
+      verboseLog(`  Game slots for ${division.divisionName}: ${allDivisionSlots.length} total, ${division.matchups.length} games needed (${slotSummary})`);
+      this.log('info', 'game', `Game slot availability for ${division.divisionName}`, {
+        divisionId: division.divisionId,
+        totalGameSlots: allDivisionSlots.length,
+        gamesNeeded: division.matchups.length,
+        slotsByDayOfWeek: slotBreakdown,
+      }, `${division.divisionName}: ${allDivisionSlots.length} game slots available, ${division.matchups.length} games to schedule`);
 
       // Get the required/preferred days for this division
       const gameDayPrefs = this.scoringContext?.gameDayPreferences.get(division.divisionId) || [];
@@ -2495,8 +2520,10 @@ export class ScheduleGenerator {
           }
 
           // Filter pre-computed week slots to those compatible with this team's division
+          // and not blocked by division blackouts
           const weekSlots = allWeekSlots.filter((rs) =>
-            this.isFieldCompatibleWithDivision(rs.resourceId, teamState.divisionId)
+            this.isFieldCompatibleWithDivision(rs.resourceId, teamState.divisionId) &&
+            !this.isDateBlockedForDivision(rs.slot.date, 'practice', teamState.divisionId)
           );
 
           // Generate placement candidates - enable logging when no candidates found
@@ -2751,12 +2778,14 @@ export class ScheduleGenerator {
       return false;
     }
 
-    // Filter practice field slots to only those within this week and compatible with the division
+    // Filter practice field slots to only those within this week, compatible with the division,
+    // and not blocked by division blackouts
     const allSlotsInWeek = this.practiceFieldSlots.filter(
       rs => rs.slot.date >= week.startDate && rs.slot.date <= week.endDate
     );
     const fieldSlots = allSlotsInWeek.filter(
-      rs => this.isFieldCompatibleWithDivision(rs.resourceId, divisionId)
+      rs => this.isFieldCompatibleWithDivision(rs.resourceId, divisionId) &&
+            !this.isDateBlockedForDivision(rs.slot.date, 'practice', divisionId)
     );
 
     verboseLog(`      Field availability windows in this week: ${fieldSlots.length}`);
@@ -2912,6 +2941,12 @@ export class ScheduleGenerator {
       if (fieldHasEventOnDate) {
         return false;
       }
+    }
+
+    // Check if this date is blocked for practice or cage for this division
+    if (this.isDateBlockedForDivision(date, 'practice', divisionId) ||
+        this.isDateBlockedForDivision(date, 'cage', divisionId)) {
+      return false;
     }
 
     // Get available cages for this date that are compatible with the division
@@ -3178,9 +3213,11 @@ export class ScheduleGenerator {
           }
 
           // Filter pre-computed week cage slots to those compatible with this team's division
+          // and not blocked by division blackouts
           const weekSlots = allWeekCageSlots
             .filter((rs) =>
-              this.isCageCompatibleWithDivision(rs.resourceId, teamState.divisionId)
+              this.isCageCompatibleWithDivision(rs.resourceId, teamState.divisionId) &&
+              !this.isDateBlockedForDivision(rs.slot.date, 'cage', teamState.divisionId)
             )
             .map((rs) => ({
               ...rs,
@@ -3409,11 +3446,13 @@ export class ScheduleGenerator {
 
     const config = this.divisionConfigs.get(divisionId);
 
-    // Filter cage slots to only those within this week and compatible with the division
+    // Filter cage slots to only those within this week, compatible with the division,
+    // and not blocked by division blackouts
     const filteredCageSlots = this.cageSlots.filter(
       rs => rs.slot.date >= week.startDate &&
       rs.slot.date <= week.endDate &&
-      this.isCageCompatibleWithDivision(rs.resourceId, divisionId)
+      this.isCageCompatibleWithDivision(rs.resourceId, divisionId) &&
+      !this.isDateBlockedForDivision(rs.slot.date, 'cage', divisionId)
     );
     verboseLog(`      Cage availability windows in this week: ${filteredCageSlots.length}`);
 
@@ -3563,6 +3602,24 @@ export class ScheduleGenerator {
   }
 
   /**
+   * Check if a date is blocked for a specific event type for a division.
+   * Uses division config's blackoutDates to check if the date/event type is blocked.
+   */
+  private isDateBlockedForDivision(
+    date: string,
+    eventType: 'game' | 'practice' | 'cage',
+    divisionId: string
+  ): boolean {
+    const config = this.divisionConfigs.get(divisionId);
+    if (!config || !config.blackoutDates || config.blackoutDates.length === 0) {
+      return false;
+    }
+    return config.blackoutDates.some(
+      (blackout) => blackout.date === date && blackout.blockedEventTypes.includes(eventType)
+    );
+  }
+
+  /**
    * Compute the available slots for each team needing events this round.
    * This is used for scarcity-aware scoring - we want to avoid taking slots
    * that are another team's only option.
@@ -3581,10 +3638,12 @@ export class ScheduleGenerator {
 
       // Filter slots to this week and compatible with division
       // For practices (field events), only check fieldDatesUsed since cage + field on same day is OK
+      // Also exclude dates blocked by division blackouts
       const teamWeekSlots = resourceSlots.filter((rs) =>
         week.dates.includes(rs.slot.date) &&
         this.isFieldCompatibleWithDivision(rs.resourceId, teamState.divisionId) &&
-        !teamState.fieldDatesUsed.has(rs.slot.date) // Team can't have two field events on same day
+        !teamState.fieldDatesUsed.has(rs.slot.date) && // Team can't have two field events on same day
+        !this.isDateBlockedForDivision(rs.slot.date, 'practice', teamState.divisionId)
       );
 
       const durationHours = config.practiceDurationHours;

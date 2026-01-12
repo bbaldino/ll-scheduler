@@ -20,6 +20,7 @@ interface DivisionConfigRow {
   field_preferences: string | null; // JSON string
   game_week_overrides: string | null; // JSON string
   max_games_per_season: number | null;
+  blackout_dates: string | null; // JSON string
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +41,7 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     fieldPreferences: row.field_preferences ? JSON.parse(row.field_preferences) : undefined,
     gameWeekOverrides: row.game_week_overrides ? JSON.parse(row.game_week_overrides) : undefined,
     maxGamesPerSeason: row.max_games_per_season || undefined,
+    blackoutDates: row.blackout_dates ? JSON.parse(row.blackout_dates) : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -91,8 +93,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, blackout_dates, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -109,6 +111,7 @@ export async function createDivisionConfig(
       input.fieldPreferences ? JSON.stringify(input.fieldPreferences) : null,
       input.gameWeekOverrides ? JSON.stringify(input.gameWeekOverrides) : null,
       input.maxGamesPerSeason || null,
+      input.blackoutDates ? JSON.stringify(input.blackoutDates) : null,
       now,
       now
     )
@@ -178,6 +181,10 @@ export async function updateDivisionConfig(
   if (input.maxGamesPerSeason !== undefined) {
     updates.push('max_games_per_season = ?');
     values.push(input.maxGamesPerSeason || null);
+  }
+  if (input.blackoutDates !== undefined) {
+    updates.push('blackout_dates = ?');
+    values.push(input.blackoutDates ? JSON.stringify(input.blackoutDates) : null);
   }
 
   if (updates.length === 0) {
