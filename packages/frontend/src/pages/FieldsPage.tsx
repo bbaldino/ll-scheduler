@@ -10,9 +10,11 @@ import {
   deleteSeasonField,
   fetchFieldAvailabilities,
   createFieldAvailability,
+  updateFieldAvailability,
   deleteFieldAvailability,
   fetchFieldDateOverrides,
   createFieldDateOverride,
+  updateFieldDateOverride,
   deleteFieldDateOverride,
 } from '../api/fields';
 import { fetchDivisions } from '../api/divisions';
@@ -66,6 +68,10 @@ export default function FieldsPage() {
     endTime: undefined,
     reason: '',
   });
+
+  // Edit state
+  const [editingAvailabilityId, setEditingAvailabilityId] = useState<string | null>(null);
+  const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
 
   useEffect(() => {
     loadGlobalFields();
@@ -233,6 +239,42 @@ export default function FieldsPage() {
     }
   };
 
+  const handleStartEditAvailability = (avail: FieldAvailability) => {
+    setEditingAvailabilityId(avail.id);
+    setAvailabilityFormData({
+      dayOfWeek: avail.dayOfWeek,
+      startTime: avail.startTime,
+      endTime: avail.endTime,
+    });
+  };
+
+  const handleUpdateAvailability = async (seasonFieldId: string) => {
+    if (!editingAvailabilityId) return;
+    try {
+      await updateFieldAvailability(editingAvailabilityId, availabilityFormData);
+      await loadSeasonFieldAvailabilities(seasonFieldId);
+      setEditingAvailabilityId(null);
+      // Reset form to defaults
+      setAvailabilityFormData({
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '17:00',
+      });
+    } catch (error) {
+      console.error('Failed to update availability:', error);
+      alert('Failed to update availability');
+    }
+  };
+
+  const handleCancelEditAvailability = () => {
+    setEditingAvailabilityId(null);
+    setAvailabilityFormData({
+      dayOfWeek: 1,
+      startTime: '09:00',
+      endTime: '17:00',
+    });
+  };
+
   const handleDeleteAvailability = async (seasonFieldId: string, availabilityId: string) => {
     try {
       await deleteFieldAvailability(availabilityId);
@@ -261,6 +303,47 @@ export default function FieldsPage() {
       console.error('Failed to create override:', error);
       alert('Failed to create override');
     }
+  };
+
+  const handleStartEditOverride = (override: FieldDateOverride) => {
+    setEditingOverrideId(override.id);
+    setOverrideFormData({
+      date: override.date,
+      overrideType: override.overrideType,
+      startTime: override.startTime,
+      endTime: override.endTime,
+      reason: override.reason || '',
+    });
+  };
+
+  const handleUpdateOverride = async (seasonFieldId: string) => {
+    if (!editingOverrideId) return;
+    try {
+      await updateFieldDateOverride(editingOverrideId, overrideFormData);
+      await loadSeasonFieldOverrides(seasonFieldId);
+      setEditingOverrideId(null);
+      setOverrideFormData({
+        date: '',
+        overrideType: 'blackout',
+        startTime: undefined,
+        endTime: undefined,
+        reason: '',
+      });
+    } catch (error) {
+      console.error('Failed to update override:', error);
+      alert('Failed to update override');
+    }
+  };
+
+  const handleCancelEditOverride = () => {
+    setEditingOverrideId(null);
+    setOverrideFormData({
+      date: '',
+      overrideType: 'blackout',
+      startTime: undefined,
+      endTime: undefined,
+      reason: '',
+    });
   };
 
   const handleDeleteOverride = async (seasonFieldId: string, overrideId: string) => {
@@ -532,7 +615,7 @@ export default function FieldsPage() {
 
                         <div className={styles.seasonFieldManagementForms}>
                           <div className={styles.availabilitySection}>
-                            <h4>Weekly Availability</h4>
+                            <h4>Weekly Availability {editingAvailabilityId && <span className={styles.editingLabel}>(Editing)</span>}</h4>
                             <div className={styles.availabilityForm}>
                               <select
                                 value={availabilityFormData.dayOfWeek}
@@ -564,20 +647,36 @@ export default function FieldsPage() {
                                   setAvailabilityFormData({ ...availabilityFormData, endTime: e.target.value })
                                 }
                               />
-                              <button type="button" onClick={() => handleCreateAvailability(seasonField.id)}>
-                                Add
-                              </button>
+                              {editingAvailabilityId ? (
+                                <>
+                                  <button type="button" onClick={() => handleUpdateAvailability(seasonField.id)}>
+                                    Save
+                                  </button>
+                                  <button type="button" onClick={handleCancelEditAvailability}>
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button type="button" onClick={() => handleCreateAvailability(seasonField.id)}>
+                                  Add
+                                </button>
+                              )}
                             </div>
                             {availabilities[seasonField.id]?.length > 0 && (
                               <div className={styles.availabilityList}>
                                 {availabilities[seasonField.id].map((avail) => (
-                                  <div key={avail.id} className={styles.availabilityItem}>
+                                  <div key={avail.id} className={`${styles.availabilityItem} ${editingAvailabilityId === avail.id ? styles.editing : ''}`}>
                                     <span>
                                       {DAYS_OF_WEEK[avail.dayOfWeek]} {formatTime12Hour(avail.startTime)} - {formatTime12Hour(avail.endTime)}
                                     </span>
-                                    <button onClick={() => handleDeleteAvailability(seasonField.id, avail.id)}>
-                                      Delete
-                                    </button>
+                                    <div className={styles.itemActions}>
+                                      <button onClick={() => handleStartEditAvailability(avail)}>
+                                        Edit
+                                      </button>
+                                      <button onClick={() => handleDeleteAvailability(seasonField.id, avail.id)}>
+                                        Delete
+                                      </button>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -585,7 +684,7 @@ export default function FieldsPage() {
                           </div>
 
                           <div className={styles.availabilitySection}>
-                            <h4>Date Overrides</h4>
+                            <h4>Date Overrides {editingOverrideId && <span className={styles.editingLabel}>(Editing)</span>}</h4>
                             <div className={styles.overrideForm}>
                               <input
                                 type="date"
@@ -633,22 +732,38 @@ export default function FieldsPage() {
                                 }
                                 placeholder="Reason (optional)"
                               />
-                              <button type="button" onClick={() => handleCreateOverride(seasonField.id)}>
-                                Add
-                              </button>
+                              {editingOverrideId ? (
+                                <>
+                                  <button type="button" onClick={() => handleUpdateOverride(seasonField.id)}>
+                                    Save
+                                  </button>
+                                  <button type="button" onClick={handleCancelEditOverride}>
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button type="button" onClick={() => handleCreateOverride(seasonField.id)}>
+                                  Add
+                                </button>
+                              )}
                             </div>
                             {overrides[seasonField.id]?.length > 0 && (
                               <div className={styles.availabilityList}>
                                 {overrides[seasonField.id].map((override) => (
-                                  <div key={override.id} className={styles.availabilityItem}>
+                                  <div key={override.id} className={`${styles.availabilityItem} ${editingOverrideId === override.id ? styles.editing : ''}`}>
                                     <span>
                                       {override.date} - {override.overrideType === 'blackout' ? 'Blackout' : 'Added'}
                                       {override.startTime && override.endTime && ` (${formatTime12Hour(override.startTime)} - ${formatTime12Hour(override.endTime)})`}
                                       {override.reason && ` - ${override.reason}`}
                                     </span>
-                                    <button onClick={() => handleDeleteOverride(seasonField.id, override.id)}>
-                                      Delete
-                                    </button>
+                                    <div className={styles.itemActions}>
+                                      <button onClick={() => handleStartEditOverride(override)}>
+                                        Edit
+                                      </button>
+                                      <button onClick={() => handleDeleteOverride(seasonField.id, override.id)}>
+                                        Delete
+                                      </button>
+                                    </div>
                                   </div>
                                 ))}
                               </div>

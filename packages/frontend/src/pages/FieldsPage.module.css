@@ -363,3 +363,26 @@
   font-size: 0.9em;
   min-width: 200px;
 }
+
+/* Edit mode styles */
+.editingLabel {
+  font-size: 0.8em;
+  font-weight: normal;
+  color: #1976d2;
+  margin-left: 0.5rem;
+}
+
+.availabilityItem.editing {
+  background-color: #e3f2fd;
+  border-color: #1976d2;
+}
+
+.itemActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.itemActions button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85em;
+}
