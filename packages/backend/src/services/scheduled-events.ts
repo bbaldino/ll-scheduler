@@ -162,6 +162,62 @@ export async function createScheduledEvent(
   return event;
 }
 
+/**
+ * Bulk create scheduled events.
+ * Returns the number of events created.
+ */
+export async function createScheduledEventsBulk(
+  db: D1Database,
+  events: CreateScheduledEventInput[]
+): Promise<number> {
+  if (events.length === 0) {
+    return 0;
+  }
+
+  const BATCH_SIZE = 50;
+  const now = new Date().toISOString();
+
+  const insertStatements = events.map((input) => {
+    const id = generateId();
+    const status = input.status || 'scheduled';
+
+    return db
+      .prepare(
+        `INSERT INTO scheduled_events (
+          id, season_id, division_id, event_type, date, start_time, end_time,
+          status, notes, field_id, cage_id, home_team_id, away_team_id, team_id,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id,
+        input.seasonId,
+        input.divisionId,
+        input.eventType,
+        input.date,
+        input.startTime,
+        input.endTime,
+        status,
+        input.notes || null,
+        input.fieldId || null,
+        input.cageId || null,
+        input.homeTeamId || null,
+        input.awayTeamId || null,
+        input.teamId || null,
+        now,
+        now
+      );
+  });
+
+  // Batch inserts in chunks of 50 to respect D1 limits
+  for (let i = 0; i < insertStatements.length; i += BATCH_SIZE) {
+    const chunk = insertStatements.slice(i, i + BATCH_SIZE);
+    await db.batch(chunk);
+  }
+
+  return events.length;
+}
+
 export async function updateScheduledEvent(
   db: D1Database,
   id: string,

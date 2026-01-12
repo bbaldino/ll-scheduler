@@ -54,6 +54,20 @@ export async function createScheduledEvent(
   return response.json();
 }
 
+export async function createScheduledEventsBulk(
+  events: CreateScheduledEventInput[]
+): Promise<{ createdCount: number }> {
+  const response = await fetch(`${API_BASE}/scheduled-events/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(events),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to create scheduled events');
+  }
+  return response.json();
+}
+
 export async function updateScheduledEvent(
   id: string,
   input: UpdateScheduledEventInput

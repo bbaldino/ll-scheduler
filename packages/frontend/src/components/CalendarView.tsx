@@ -36,6 +36,7 @@ interface CalendarViewProps {
   seasonMilestones?: SeasonMilestones; // Key season dates to annotate
   onEventClick?: (event: ScheduledEvent) => void;
   onEventCreate?: (input: CreateScheduledEventInput) => Promise<void>;
+  onEventCreateBulk?: (inputs: CreateScheduledEventInput[]) => Promise<{ createdCount: number }>;
   onEventUpdate?: (id: string, input: UpdateScheduledEventInput) => Promise<void>;
   onEventDelete?: (id: string) => Promise<void>;
 }
@@ -57,6 +58,7 @@ export default function CalendarView({
   seasonMilestones,
   onEventClick,
   onEventCreate,
+  onEventCreateBulk,
   onEventUpdate,
   onEventDelete,
 }: CalendarViewProps) {
@@ -78,6 +80,13 @@ export default function CalendarView({
     endTime: '10:00',
   });
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Recurrence state
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringDays, setRecurringDays] = useState<number[]>([]); // 0=Sun, 1=Mon, ..., 6=Sat
+  const [recurringEndType, setRecurringEndType] = useState<'date' | 'count'>('count');
+  const [recurringEndDate, setRecurringEndDate] = useState('');
+  const [recurringCount, setRecurringCount] = useState(8);
 
   const handleEventClick = (event: ScheduledEvent) => {
     if (onEventUpdate) {
@@ -131,6 +140,42 @@ export default function CalendarView({
     setEditFormData({});
   };
 
+  // Generate dates for recurring events
+  const generateRecurringDates = (
+    startDate: string,
+    daysOfWeek: number[],
+    endCondition: { type: 'date'; endDate: string } | { type: 'count'; count: number }
+  ): string[] => {
+    const dates: string[] = [];
+    const start = new Date(startDate + 'T00:00:00');
+    const maxDates = 100; // Safety limit
+
+    if (endCondition.type === 'date') {
+      const end = new Date(endCondition.endDate + 'T23:59:59');
+      const current = new Date(start);
+
+      while (current <= end && dates.length < maxDates) {
+        if (daysOfWeek.includes(current.getDay())) {
+          dates.push(current.toISOString().split('T')[0]);
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    } else {
+      const current = new Date(start);
+      let count = 0;
+
+      while (count < endCondition.count && dates.length < maxDates) {
+        if (daysOfWeek.includes(current.getDay())) {
+          dates.push(current.toISOString().split('T')[0]);
+          count++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    return dates;
+  };
+
   // Create event handlers
   const handleDayClick = (dateStr: string) => {
     if (!onEventCreate || !seasonId) return;
@@ -141,6 +186,11 @@ export default function CalendarView({
       endTime: '10:00',
     });
     setCreateError(null);
+    setIsRecurring(false);
+    setRecurringDays([]);
+    setRecurringEndType('count');
+    setRecurringEndDate('');
+    setRecurringCount(8);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -153,19 +203,72 @@ export default function CalendarView({
     }
 
     try {
-      await onEventCreate({
-        seasonId,
-        divisionId: createFormData.divisionId,
-        eventType: createFormData.eventType || 'practice',
-        date: creatingForDate,
-        startTime: createFormData.startTime || '09:00',
-        endTime: createFormData.endTime || '10:00',
-        fieldId: createFormData.fieldId,
-        cageId: createFormData.cageId,
-        homeTeamId: createFormData.homeTeamId,
-        awayTeamId: createFormData.awayTeamId,
-        teamId: createFormData.teamId,
-      });
+      if (isRecurring) {
+        // Validate recurrence settings
+        if (recurringDays.length === 0) {
+          setCreateError('Please select at least one day of the week for recurring events.');
+          return;
+        }
+        if (recurringEndType === 'date' && !recurringEndDate) {
+          setCreateError('Please select an end date for recurring events.');
+          return;
+        }
+        if (recurringEndType === 'count' && recurringCount < 1) {
+          setCreateError('Please enter a valid number of occurrences.');
+          return;
+        }
+
+        if (!onEventCreateBulk) {
+          setCreateError('Bulk creation not available');
+          return;
+        }
+
+        // Generate all dates
+        const dates = generateRecurringDates(
+          creatingForDate,
+          recurringDays,
+          recurringEndType === 'date'
+            ? { type: 'date', endDate: recurringEndDate }
+            : { type: 'count', count: recurringCount }
+        );
+
+        if (dates.length === 0) {
+          setCreateError('No dates match the selected pattern. Please check your settings.');
+          return;
+        }
+
+        // Create events for all dates
+        const events = dates.map((date) => ({
+          seasonId,
+          divisionId: createFormData.divisionId!,
+          eventType: createFormData.eventType || 'practice',
+          date,
+          startTime: createFormData.startTime || '09:00',
+          endTime: createFormData.endTime || '10:00',
+          fieldId: createFormData.fieldId,
+          cageId: createFormData.cageId,
+          homeTeamId: createFormData.homeTeamId,
+          awayTeamId: createFormData.awayTeamId,
+          teamId: createFormData.teamId,
+        } as CreateScheduledEventInput));
+
+        const result = await onEventCreateBulk(events);
+        alert(`Created ${result.createdCount} events.`);
+      } else {
+        await onEventCreate({
+          seasonId,
+          divisionId: createFormData.divisionId,
+          eventType: createFormData.eventType || 'practice',
+          date: creatingForDate,
+          startTime: createFormData.startTime || '09:00',
+          endTime: createFormData.endTime || '10:00',
+          fieldId: createFormData.fieldId,
+          cageId: createFormData.cageId,
+          homeTeamId: createFormData.homeTeamId,
+          awayTeamId: createFormData.awayTeamId,
+          teamId: createFormData.teamId,
+        });
+      }
       setCreatingForDate(null);
       setCreateFormData({
         eventType: 'practice',
@@ -173,6 +276,8 @@ export default function CalendarView({
         endTime: '10:00',
       });
       setCreateError(null);
+      setIsRecurring(false);
+      setRecurringDays([]);
     } catch (error) {
       console.error('Failed to create event:', error);
       setCreateError('Failed to create event');
@@ -187,6 +292,11 @@ export default function CalendarView({
       endTime: '10:00',
     });
     setCreateError(null);
+    setIsRecurring(false);
+    setRecurringDays([]);
+    setRecurringEndType('count');
+    setRecurringEndDate('');
+    setRecurringCount(8);
   };
 
   const getTeamName = (teamId?: string) => {
@@ -943,6 +1053,86 @@ export default function CalendarView({
                     required
                   />
                 </div>
+              </div>
+
+              {/* Recurrence Section */}
+              <div className={styles.recurrenceSection}>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={isRecurring}
+                    onChange={(e) => setIsRecurring(e.target.checked)}
+                  />
+                  Make recurring
+                </label>
+
+                {isRecurring && (
+                  <div className={styles.recurrenceOptions}>
+                    <div className={styles.formGroup}>
+                      <label>Repeat on days:</label>
+                      <div className={styles.dayCheckboxes}>
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                          <label key={day} className={styles.dayCheckbox}>
+                            <input
+                              type="checkbox"
+                              checked={recurringDays.includes(index)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setRecurringDays([...recurringDays, index].sort());
+                                } else {
+                                  setRecurringDays(recurringDays.filter((d) => d !== index));
+                                }
+                              }}
+                            />
+                            {day}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className={styles.formGroup}>
+                      <label>End:</label>
+                      <div className={styles.endCondition}>
+                        <label className={styles.radioLabel}>
+                          <input
+                            type="radio"
+                            name="calendarRecurringEndType"
+                            checked={recurringEndType === 'count'}
+                            onChange={() => setRecurringEndType('count')}
+                          />
+                          After
+                          <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={recurringCount}
+                            onChange={(e) => setRecurringCount(parseInt(e.target.value) || 1)}
+                            disabled={recurringEndType !== 'count'}
+                            className={styles.countInput}
+                          />
+                          occurrences
+                        </label>
+                        <label className={styles.radioLabel}>
+                          <input
+                            type="radio"
+                            name="calendarRecurringEndType"
+                            checked={recurringEndType === 'date'}
+                            onChange={() => setRecurringEndType('date')}
+                          />
+                          On date
+                          <input
+                            type="date"
+                            value={recurringEndDate}
+                            onChange={(e) => setRecurringEndDate(e.target.value)}
+                            disabled={recurringEndType !== 'date'}
+                            min={creatingForDate || ''}
+                            className={styles.endDateInput}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Game-specific fields */}

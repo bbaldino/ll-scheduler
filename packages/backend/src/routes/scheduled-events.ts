@@ -5,6 +5,7 @@ import {
   listScheduledEvents,
   getScheduledEventById,
   createScheduledEvent,
+  createScheduledEventsBulk,
   updateScheduledEvent,
   deleteScheduledEvent,
   deleteScheduledEventsBulk,
@@ -47,6 +48,27 @@ router.post('/', async (c) => {
   const input: CreateScheduledEventInput = await c.req.json();
   const event = await createScheduledEvent(c.env.DB, input);
   return c.json(event, 201);
+});
+
+// POST /api/scheduled-events/bulk - Bulk create scheduled events
+router.post('/bulk', async (c) => {
+  const events: CreateScheduledEventInput[] = await c.req.json();
+
+  if (!Array.isArray(events)) {
+    return c.json({ error: 'Request body must be an array of events' }, 400);
+  }
+
+  if (events.length === 0) {
+    return c.json({ createdCount: 0 });
+  }
+
+  // Limit to prevent abuse (100 events max per request)
+  if (events.length > 100) {
+    return c.json({ error: 'Cannot create more than 100 events at once' }, 400);
+  }
+
+  const createdCount = await createScheduledEventsBulk(c.env.DB, events);
+  return c.json({ createdCount }, 201);
 });
 
 // PUT /api/scheduled-events/:id - Update a scheduled event

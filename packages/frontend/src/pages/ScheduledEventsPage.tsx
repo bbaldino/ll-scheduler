@@ -6,6 +6,7 @@ import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
 import {
   fetchScheduledEvents,
   createScheduledEvent,
+  createScheduledEventsBulk,
   updateScheduledEvent,
   deleteScheduledEvent,
 } from '../api/scheduled-events';
@@ -76,6 +77,13 @@ export default function ScheduledEventsPage() {
     status: 'scheduled',
   });
 
+  // Recurrence state
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringDays, setRecurringDays] = useState<number[]>([]); // 0=Sun, 1=Mon, ..., 6=Sat
+  const [recurringEndType, setRecurringEndType] = useState<'date' | 'count'>('count');
+  const [recurringEndDate, setRecurringEndDate] = useState('');
+  const [recurringCount, setRecurringCount] = useState(8);
+
   const [editFormData, setEditFormData] = useState<UpdateScheduledEventInput>({});
 
   useEffect(() => {
@@ -122,10 +130,86 @@ export default function ScheduledEventsPage() {
     }
   };
 
+  // Generate dates for recurring events
+  const generateRecurringDates = (
+    startDate: string,
+    daysOfWeek: number[],
+    endCondition: { type: 'date'; endDate: string } | { type: 'count'; count: number }
+  ): string[] => {
+    const dates: string[] = [];
+    const start = new Date(startDate + 'T00:00:00');
+    const maxDates = 100; // Safety limit
+
+    if (endCondition.type === 'date') {
+      const end = new Date(endCondition.endDate + 'T23:59:59');
+      const current = new Date(start);
+
+      while (current <= end && dates.length < maxDates) {
+        if (daysOfWeek.includes(current.getDay())) {
+          dates.push(current.toISOString().split('T')[0]);
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    } else {
+      const current = new Date(start);
+      let count = 0;
+
+      while (count < endCondition.count && dates.length < maxDates) {
+        if (daysOfWeek.includes(current.getDay())) {
+          dates.push(current.toISOString().split('T')[0]);
+          count++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    return dates;
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createScheduledEvent(formData);
+      if (isRecurring) {
+        // Validate recurrence settings
+        if (recurringDays.length === 0) {
+          alert('Please select at least one day of the week for recurring events.');
+          return;
+        }
+        if (recurringEndType === 'date' && !recurringEndDate) {
+          alert('Please select an end date for recurring events.');
+          return;
+        }
+        if (recurringEndType === 'count' && recurringCount < 1) {
+          alert('Please enter a valid number of occurrences.');
+          return;
+        }
+
+        // Generate all dates
+        const dates = generateRecurringDates(
+          formData.date,
+          recurringDays,
+          recurringEndType === 'date'
+            ? { type: 'date', endDate: recurringEndDate }
+            : { type: 'count', count: recurringCount }
+        );
+
+        if (dates.length === 0) {
+          alert('No dates match the selected pattern. Please check your settings.');
+          return;
+        }
+
+        // Create events for all dates
+        const events = dates.map((date) => ({
+          ...formData,
+          seasonId: currentSeason!.id,
+          date,
+        }));
+
+        const result = await createScheduledEventsBulk(events);
+        alert(`Created ${result.createdCount} events.`);
+      } else {
+        await createScheduledEvent({ ...formData, seasonId: currentSeason!.id });
+      }
       await loadEvents();
       setIsCreating(false);
       resetForm();
@@ -199,6 +283,11 @@ export default function ScheduledEventsPage() {
       endTime: '18:00',
       status: 'scheduled',
     });
+    setIsRecurring(false);
+    setRecurringDays([]);
+    setRecurringEndType('count');
+    setRecurringEndDate('');
+    setRecurringCount(8);
   };
 
   const handleEvaluate = async () => {
@@ -442,7 +531,7 @@ export default function ScheduledEventsPage() {
 
           <div className={styles.formRow}>
             <div className={styles.formGroup}>
-              <label>Date *</label>
+              <label>{isRecurring ? 'Start Date *' : 'Date *'}</label>
               <input
                 type="date"
                 value={formData.date}
@@ -468,6 +557,86 @@ export default function ScheduledEventsPage() {
                 required
               />
             </div>
+          </div>
+
+          {/* Recurrence Section */}
+          <div className={styles.recurrenceSection}>
+            <label className={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={isRecurring}
+                onChange={(e) => setIsRecurring(e.target.checked)}
+              />
+              Make recurring
+            </label>
+
+            {isRecurring && (
+              <div className={styles.recurrenceOptions}>
+                <div className={styles.formGroup}>
+                  <label>Repeat on days:</label>
+                  <div className={styles.dayCheckboxes}>
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                      <label key={day} className={styles.dayCheckbox}>
+                        <input
+                          type="checkbox"
+                          checked={recurringDays.includes(index)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setRecurringDays([...recurringDays, index].sort());
+                            } else {
+                              setRecurringDays(recurringDays.filter((d) => d !== index));
+                            }
+                          }}
+                        />
+                        {day}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label>End:</label>
+                  <div className={styles.endCondition}>
+                    <label className={styles.radioLabel}>
+                      <input
+                        type="radio"
+                        name="recurringEndType"
+                        checked={recurringEndType === 'count'}
+                        onChange={() => setRecurringEndType('count')}
+                      />
+                      After
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={recurringCount}
+                        onChange={(e) => setRecurringCount(parseInt(e.target.value) || 1)}
+                        disabled={recurringEndType !== 'count'}
+                        className={styles.countInput}
+                      />
+                      occurrences
+                    </label>
+                    <label className={styles.radioLabel}>
+                      <input
+                        type="radio"
+                        name="recurringEndType"
+                        checked={recurringEndType === 'date'}
+                        onChange={() => setRecurringEndType('date')}
+                      />
+                      On date
+                      <input
+                        type="date"
+                        value={recurringEndDate}
+                        onChange={(e) => setRecurringEndDate(e.target.value)}
+                        disabled={recurringEndType !== 'date'}
+                        min={formData.date}
+                        className={styles.endDateInput}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {formData.eventType === 'game' && (
@@ -653,6 +822,11 @@ export default function ScheduledEventsPage() {
             onEventCreate={async (input) => {
               await createScheduledEvent(input);
               await loadEvents();
+            }}
+            onEventCreateBulk={async (inputs) => {
+              const result = await createScheduledEventsBulk(inputs);
+              await loadEvents();
+              return result;
             }}
             onEventUpdate={handleCalendarUpdate}
             onEventDelete={handleCalendarDelete}
