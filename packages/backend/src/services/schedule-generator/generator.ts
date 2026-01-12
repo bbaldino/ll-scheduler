@@ -1264,11 +1264,36 @@ export class ScheduleGenerator {
       }
       const slotSummary = Object.entries(slotBreakdown).map(([day, count]) => `${day}: ${count}`).join(', ');
       verboseLog(`  Game slots for ${division.divisionName}: ${allDivisionSlots.length} total, ${division.matchups.length} games needed (${slotSummary})`);
+
+      // Build detailed slot list grouped by date
+      const slotsByDate = new Map<string, Array<{ field: string; time: string }>>();
+      for (const slot of allDivisionSlots) {
+        const dateSlots = slotsByDate.get(slot.slot.date) || [];
+        dateSlots.push({
+          field: slot.resourceName,
+          time: `${slot.slot.startTime}-${slot.slot.endTime}`,
+        });
+        slotsByDate.set(slot.slot.date, dateSlots);
+      }
+      // Format as array sorted by date
+      const detailedSlots = Array.from(slotsByDate.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, slots]) => {
+          const dayName = dayNames[getDayOfWeek(date)].substring(0, 3);
+          const slotList = slots.map(s => `${s.field} ${s.time}`).join(', ');
+          return `${date} (${dayName}): ${slotList}`;
+        });
+      verboseLog(`    Available slots by date:`);
+      for (const line of detailedSlots) {
+        verboseLog(`      ${line}`);
+      }
+
       this.log('info', 'game', `Game slot availability for ${division.divisionName}`, {
         divisionId: division.divisionId,
         totalGameSlots: allDivisionSlots.length,
         gamesNeeded: division.matchups.length,
         slotsByDayOfWeek: slotBreakdown,
+        detailedSlots,
       }, `${division.divisionName}: ${allDivisionSlots.length} game slots available, ${division.matchups.length} games to schedule`);
 
       // Get the required/preferred days for this division
