@@ -629,6 +629,53 @@ export class ScheduleGenerator {
   }
 
   /**
+   * Apply a blackout override to a time window and return remaining usable windows.
+   * If blackout has no times, returns empty array (full day blocked).
+   * If blackout has times, returns the portions of the window not covered by the blackout.
+   */
+  private applyBlackoutToTimeWindow(
+    windowStart: string,
+    windowEnd: string,
+    blackoutStart: string | undefined,
+    blackoutEnd: string | undefined
+  ): Array<{ startTime: string; endTime: string }> {
+    // If blackout has no times, it blocks the entire day
+    if (!blackoutStart || !blackoutEnd) {
+      return [];
+    }
+
+    const windowStartMins = timeToMinutes(windowStart);
+    const windowEndMins = timeToMinutes(windowEnd);
+    const blackoutStartMins = timeToMinutes(blackoutStart);
+    const blackoutEndMins = timeToMinutes(blackoutEnd);
+
+    // If blackout doesn't overlap with window, return full window
+    if (blackoutEndMins <= windowStartMins || blackoutStartMins >= windowEndMins) {
+      return [{ startTime: windowStart, endTime: windowEnd }];
+    }
+
+    const result: Array<{ startTime: string; endTime: string }> = [];
+
+    // Time before the blackout
+    if (blackoutStartMins > windowStartMins) {
+      result.push({
+        startTime: windowStart,
+        endTime: minutesToTime(Math.min(blackoutStartMins, windowEndMins)),
+      });
+    }
+
+    // Time after the blackout
+    if (blackoutEndMins < windowEndMins) {
+      result.push({
+        startTime: minutesToTime(Math.max(blackoutEndMins, windowStartMins)),
+        endTime: windowEnd,
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Build field slots for a given date range
    * @param excludePracticeOnly - if true, skip fields marked as practice-only (for game slots)
    */
@@ -651,10 +698,36 @@ export class ScheduleGenerator {
             (o) => o.seasonFieldId === seasonField.id && o.date === date
           );
 
+          // Handle blackout overrides - may block entire day or just a time window
           if (override?.overrideType === 'blackout') {
+            const remainingWindows = this.applyBlackoutToTimeWindow(
+              avail.startTime,
+              avail.endTime,
+              override.startTime,
+              override.endTime
+            );
+
+            // Create slots for any remaining time windows after applying blackout
+            for (const window of remainingWindows) {
+              const duration = calculateDuration(window.startTime, window.endTime);
+              targetSlots.push({
+                resourceType: 'field',
+                resourceId: seasonField.fieldId,
+                resourceName: seasonField.field?.name || seasonField.fieldId,
+                slot: {
+                  date,
+                  dayOfWeek,
+                  startTime: window.startTime,
+                  endTime: window.endTime,
+                  duration,
+                },
+                singleEventOnly: avail.singleEventOnly,
+              });
+            }
             continue;
           }
 
+          // Handle 'added' overrides or no override - use override times if available
           const startTime = override?.startTime || avail.startTime;
           const endTime = override?.endTime || avail.endTime;
           const duration = calculateDuration(startTime, endTime);
@@ -696,10 +769,35 @@ export class ScheduleGenerator {
             (o) => o.seasonCageId === seasonCage.id && o.date === date
           );
 
+          // Handle blackout overrides - may block entire day or just a time window
           if (override?.overrideType === 'blackout') {
+            const remainingWindows = this.applyBlackoutToTimeWindow(
+              avail.startTime,
+              avail.endTime,
+              override.startTime,
+              override.endTime
+            );
+
+            // Create slots for any remaining time windows after applying blackout
+            for (const window of remainingWindows) {
+              const duration = calculateDuration(window.startTime, window.endTime);
+              this.cageSlots.push({
+                resourceType: 'cage',
+                resourceId: seasonCage.cageId,
+                resourceName: seasonCage.cage?.name || seasonCage.cageId,
+                slot: {
+                  date,
+                  dayOfWeek,
+                  startTime: window.startTime,
+                  endTime: window.endTime,
+                  duration,
+                },
+              });
+            }
             continue;
           }
 
+          // Handle 'added' overrides or no override - use override times if available
           const startTime = override?.startTime || avail.startTime;
           const endTime = override?.endTime || avail.endTime;
           const duration = calculateDuration(startTime, endTime);
