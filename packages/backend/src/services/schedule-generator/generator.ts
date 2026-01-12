@@ -658,6 +658,8 @@ export class ScheduleGenerator {
           const startTime = override?.startTime || avail.startTime;
           const endTime = override?.endTime || avail.endTime;
           const duration = calculateDuration(startTime, endTime);
+          // Use override's singleEventOnly if set, otherwise use availability's
+          const singleEventOnly = override?.singleEventOnly || avail.singleEventOnly;
 
           targetSlots.push({
             resourceType: 'field',
@@ -670,6 +672,7 @@ export class ScheduleGenerator {
               endTime,
               duration,
             },
+            singleEventOnly,
           });
         }
       }
@@ -2790,6 +2793,32 @@ export class ScheduleGenerator {
         continue;
       }
 
+      // Check if this slot is single-event-only and already has an event
+      if (rs.singleEventOnly) {
+        let fieldHasEventOnDate = false;
+        if (this.scoringContext?.eventsByDateResource) {
+          const key = `${rs.slot.date}-${rs.resourceId}`;
+          const fieldEvents = this.scoringContext.eventsByDateResource.get(key);
+          fieldHasEventOnDate = fieldEvents !== undefined && fieldEvents.length > 0;
+        } else {
+          fieldHasEventOnDate = this.scheduledEvents.some(event =>
+            event.date === rs.slot.date && event.fieldId === rs.resourceId
+          );
+        }
+
+        if (fieldHasEventOnDate) {
+          skipReasons['single_event_slot_taken'] = (skipReasons['single_event_slot_taken'] || 0) + 1;
+          if (skipDetails.length < 10) {
+            skipDetails.push({
+              date: rs.slot.date,
+              field: rs.resourceName,
+              reason: `${rs.resourceName} on ${dayName} is single-event-only and already has an event`,
+            });
+          }
+          continue;
+        }
+      }
+
       // Normal practice scheduling
       const availableTime = this.findAvailableTimeInWindow(
         rs.resourceId,
@@ -2867,6 +2896,23 @@ export class ScheduleGenerator {
   ): boolean {
     const date = fieldSlot.slot.date;
     const dayOfWeek = fieldSlot.slot.dayOfWeek;
+
+    // Check if this slot is single-event-only and already has an event
+    if (fieldSlot.singleEventOnly) {
+      let fieldHasEventOnDate = false;
+      if (this.scoringContext?.eventsByDateResource) {
+        const key = `${date}-${fieldSlot.resourceId}`;
+        const fieldEvents = this.scoringContext.eventsByDateResource.get(key);
+        fieldHasEventOnDate = fieldEvents !== undefined && fieldEvents.length > 0;
+      } else {
+        fieldHasEventOnDate = this.scheduledEvents.some(event =>
+          event.date === date && event.fieldId === fieldSlot.resourceId
+        );
+      }
+      if (fieldHasEventOnDate) {
+        return false;
+      }
+    }
 
     // Get available cages for this date that are compatible with the division
     const availableCageSlots = this.cageSlots.filter(

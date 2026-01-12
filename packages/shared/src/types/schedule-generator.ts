@@ -121,6 +121,7 @@ export interface ResourceSlot {
   resourceId: string;
   resourceName: string;
   slot: TimeSlot;
+  singleEventOnly?: boolean; // If true, only one event can be scheduled in this availability window
 }
 
 /**

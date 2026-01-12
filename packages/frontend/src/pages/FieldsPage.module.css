@@ -128,6 +128,16 @@
   text-transform: uppercase;
 }
 
+.singleEventBadge {
+  font-size: 0.75em;
+  font-weight: 500;
+  padding: 0.15rem 0.4rem;
+  background-color: #e3f2fd;
+  color: #1565c0;
+  border-radius: 4px;
+  margin-left: 0.5rem;
+}
+
 .practiceOnlySection {
   margin-bottom: 0.75rem;
   padding: 0.5rem;

@@ -60,6 +60,7 @@ export default function FieldsPage() {
     dayOfWeek: 1,
     startTime: '09:00',
     endTime: '17:00',
+    singleEventOnly: false,
   });
   const [overrideFormData, setOverrideFormData] = useState<Omit<CreateFieldDateOverrideInput, 'seasonFieldId'>>({
     date: '',
@@ -67,6 +68,7 @@ export default function FieldsPage() {
     startTime: undefined,
     endTime: undefined,
     reason: '',
+    singleEventOnly: false,
   });
 
   // Edit state
@@ -245,6 +247,7 @@ export default function FieldsPage() {
       dayOfWeek: avail.dayOfWeek,
       startTime: avail.startTime,
       endTime: avail.endTime,
+      singleEventOnly: avail.singleEventOnly,
     });
   };
 
@@ -259,6 +262,7 @@ export default function FieldsPage() {
         dayOfWeek: 1,
         startTime: '09:00',
         endTime: '17:00',
+        singleEventOnly: false,
       });
     } catch (error) {
       console.error('Failed to update availability:', error);
@@ -272,6 +276,7 @@ export default function FieldsPage() {
       dayOfWeek: 1,
       startTime: '09:00',
       endTime: '17:00',
+      singleEventOnly: false,
     });
   };
 
@@ -298,6 +303,7 @@ export default function FieldsPage() {
         startTime: undefined,
         endTime: undefined,
         reason: '',
+        singleEventOnly: false,
       });
     } catch (error) {
       console.error('Failed to create override:', error);
@@ -313,6 +319,7 @@ export default function FieldsPage() {
       startTime: override.startTime,
       endTime: override.endTime,
       reason: override.reason || '',
+      singleEventOnly: override.singleEventOnly,
     });
   };
 
@@ -328,6 +335,7 @@ export default function FieldsPage() {
         startTime: undefined,
         endTime: undefined,
         reason: '',
+        singleEventOnly: false,
       });
     } catch (error) {
       console.error('Failed to update override:', error);
@@ -343,6 +351,7 @@ export default function FieldsPage() {
       startTime: undefined,
       endTime: undefined,
       reason: '',
+      singleEventOnly: false,
     });
   };
 
@@ -367,6 +376,7 @@ export default function FieldsPage() {
           dayOfWeek: avail.dayOfWeek,
           startTime: avail.startTime,
           endTime: avail.endTime,
+          singleEventOnly: avail.singleEventOnly,
         });
       }
 
@@ -379,6 +389,7 @@ export default function FieldsPage() {
           startTime: override.startTime,
           endTime: override.endTime,
           reason: override.reason,
+          singleEventOnly: override.singleEventOnly,
         });
       }
 
@@ -557,6 +568,7 @@ export default function FieldsPage() {
                               {availabilities[seasonField.id].map((avail) => (
                                 <li key={avail.id}>
                                   {DAYS_OF_WEEK[avail.dayOfWeek]} {formatTime12Hour(avail.startTime)} - {formatTime12Hour(avail.endTime)}
+                                  {avail.singleEventOnly && ' (single event)'}
                                 </li>
                               ))}
                             </ul>
@@ -575,6 +587,7 @@ export default function FieldsPage() {
                                   {override.date} - {override.overrideType === 'blackout' ? 'Blackout' : 'Added'}
                                   {override.startTime && override.endTime && ` (${formatTime12Hour(override.startTime)} - ${formatTime12Hour(override.endTime)})`}
                                   {override.reason && ` - ${override.reason}`}
+                                  {override.singleEventOnly && ' (single event)'}
                                 </li>
                               ))}
                             </ul>
@@ -647,6 +660,16 @@ export default function FieldsPage() {
                                   setAvailabilityFormData({ ...availabilityFormData, endTime: e.target.value })
                                 }
                               />
+                              <label className={styles.checkboxLabel}>
+                                <input
+                                  type="checkbox"
+                                  checked={availabilityFormData.singleEventOnly || false}
+                                  onChange={(e) =>
+                                    setAvailabilityFormData({ ...availabilityFormData, singleEventOnly: e.target.checked })
+                                  }
+                                />
+                                <span>Single event only</span>
+                              </label>
                               {editingAvailabilityId ? (
                                 <>
                                   <button type="button" onClick={() => handleUpdateAvailability(seasonField.id)}>
@@ -668,6 +691,7 @@ export default function FieldsPage() {
                                   <div key={avail.id} className={`${styles.availabilityItem} ${editingAvailabilityId === avail.id ? styles.editing : ''}`}>
                                     <span>
                                       {DAYS_OF_WEEK[avail.dayOfWeek]} {formatTime12Hour(avail.startTime)} - {formatTime12Hour(avail.endTime)}
+                                      {avail.singleEventOnly && <span className={styles.singleEventBadge}>Single Event</span>}
                                     </span>
                                     <div className={styles.itemActions}>
                                       <button onClick={() => handleStartEditAvailability(avail)}>
@@ -732,6 +756,18 @@ export default function FieldsPage() {
                                 }
                                 placeholder="Reason (optional)"
                               />
+                              {overrideFormData.overrideType === 'added' && (
+                                <label className={styles.checkboxLabel}>
+                                  <input
+                                    type="checkbox"
+                                    checked={overrideFormData.singleEventOnly || false}
+                                    onChange={(e) =>
+                                      setOverrideFormData({ ...overrideFormData, singleEventOnly: e.target.checked })
+                                    }
+                                  />
+                                  <span>Single event only</span>
+                                </label>
+                              )}
                               {editingOverrideId ? (
                                 <>
                                   <button type="button" onClick={() => handleUpdateOverride(seasonField.id)}>
@@ -755,6 +791,7 @@ export default function FieldsPage() {
                                       {override.date} - {override.overrideType === 'blackout' ? 'Blackout' : 'Added'}
                                       {override.startTime && override.endTime && ` (${formatTime12Hour(override.startTime)} - ${formatTime12Hour(override.endTime)})`}
                                       {override.reason && ` - ${override.reason}`}
+                                      {override.singleEventOnly && <span className={styles.singleEventBadge}>Single Event</span>}
                                     </span>
                                     <div className={styles.itemActions}>
                                       <button onClick={() => handleStartEditOverride(override)}>

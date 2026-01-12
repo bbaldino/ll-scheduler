@@ -546,6 +546,16 @@ export function generateCandidatesForTeamEvent(
       continue;
     }
 
+    // Skip single-event-only slots that already have an event
+    if (slot.singleEventOnly) {
+      const key = `${slot.slot.date}-${slot.resourceId}`;
+      const existingEvents = context.eventsByDateResource?.get(key);
+      if (existingEvents && existingEvents.length > 0) {
+        stats.rejected.push('single_event_only_slot_taken');
+        continue;
+      }
+    }
+
     // Generate candidates at 30-minute intervals within the slot
     const [startH, startM] = slot.slot.startTime.split(':').map(Number);
     const [endH, endM] = slot.slot.endTime.split(':').map(Number);
@@ -624,6 +634,15 @@ export function generateCandidatesForGame(
 
   for (const slot of weekSlots) {
     if (slot.slot.duration < durationHours) continue;
+
+    // Skip single-event-only slots that already have an event
+    if (slot.singleEventOnly) {
+      const key = `${slot.slot.date}-${slot.resourceId}`;
+      const existingEvents = context.eventsByDateResource?.get(key);
+      if (existingEvents && existingEvents.length > 0) {
+        continue;
+      }
+    }
 
     const [startH, startM] = slot.slot.startTime.split(':').map(Number);
     const [endH, endM] = slot.slot.endTime.split(':').map(Number);

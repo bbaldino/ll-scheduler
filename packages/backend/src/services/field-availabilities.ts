@@ -11,6 +11,7 @@ interface FieldAvailabilityRow {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  single_event_only: number;
   created_at: string;
   updated_at: string;
 }
@@ -22,6 +23,7 @@ function rowToFieldAvailability(row: FieldAvailabilityRow): FieldAvailability {
     dayOfWeek: row.day_of_week,
     startTime: row.start_time,
     endTime: row.end_time,
+    singleEventOnly: Boolean(row.single_event_only),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -88,13 +90,14 @@ export async function createFieldAvailability(
 ): Promise<FieldAvailability> {
   const id = generateId();
   const now = new Date().toISOString();
+  const singleEventOnly = input.singleEventOnly ? 1 : 0;
 
   await db
     .prepare(
-      `INSERT INTO field_availabilities (id, season_field_id, day_of_week, start_time, end_time, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO field_availabilities (id, season_field_id, day_of_week, start_time, end_time, single_event_only, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, input.seasonFieldId, input.dayOfWeek, input.startTime, input.endTime, now, now)
+    .bind(id, input.seasonFieldId, input.dayOfWeek, input.startTime, input.endTime, singleEventOnly, now, now)
     .run();
 
   const availability = await getFieldAvailabilityById(db, id);
@@ -129,6 +132,10 @@ export async function updateFieldAvailability(
   if (input.endTime !== undefined) {
     updates.push('end_time = ?');
     values.push(input.endTime);
+  }
+  if (input.singleEventOnly !== undefined) {
+    updates.push('single_event_only = ?');
+    values.push(input.singleEventOnly ? 1 : 0);
   }
 
   if (updates.length === 0) {
