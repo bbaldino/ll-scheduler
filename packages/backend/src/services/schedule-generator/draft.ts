@@ -612,6 +612,14 @@ export function generateCandidatesForTeamEvent(
       continue;
     }
 
+    // Check if team has a GAME on this date - games block all other events
+    // (practices and cage sessions should not be scheduled on game days)
+    if (teamState.gameDates.includes(slot.slot.date)) {
+      rejectionStats.teamAlreadyHasEvent++;
+      stats.rejected.push('team_has_game');
+      continue;
+    }
+
     // Skip single-event-only slots that already have an event
     if (slot.singleEventOnly) {
       const key = `${slot.slot.date}-${slot.resourceId}`;
@@ -704,11 +712,27 @@ export function generateCandidatesForGame(
     gameDayPrefs.filter(p => p.priority === 'avoid').map(p => p.dayOfWeek)
   );
 
+  // Get team states for checking existing events
+  const homeTeamState = context.teamStates.get(matchup.homeTeamId);
+  const awayTeamState = context.teamStates.get(matchup.awayTeamId);
+
   for (const slot of weekSlots) {
     if (slot.slot.duration < durationHours) continue;
 
     // Skip days marked as 'avoid' - this is a hard blocker, not just a negative weight
     if (avoidDays.has(slot.slot.dayOfWeek)) continue;
+
+    // Skip dates where either team already has any event (practice, cage, or paired practice)
+    // Games should not be scheduled on days when a team has other activities
+    const homeHasEvent = homeTeamState && (
+      homeTeamState.fieldDatesUsed.has(slot.slot.date) ||
+      homeTeamState.cageDatesUsed.has(slot.slot.date)
+    );
+    const awayHasEvent = awayTeamState && (
+      awayTeamState.fieldDatesUsed.has(slot.slot.date) ||
+      awayTeamState.cageDatesUsed.has(slot.slot.date)
+    );
+    if (homeHasEvent || awayHasEvent) continue;
 
     // Skip single-event-only slots that already have an event
     if (slot.singleEventOnly) {
