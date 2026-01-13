@@ -78,6 +78,81 @@ import {
 } from './draft.js';
 
 /**
+ * Check if two matchups share a team (would conflict if scheduled on same day)
+ */
+function sharesTeam(a: GameMatchup, b: GameMatchup): boolean {
+  return a.homeTeamId === b.homeTeamId ||
+         a.homeTeamId === b.awayTeamId ||
+         a.awayTeamId === b.homeTeamId ||
+         a.awayTeamId === b.awayTeamId;
+}
+
+/**
+ * Find optimal matchups to prioritize for required-day (e.g., Saturday) scheduling.
+ * Uses exhaustive search to find the maximum number of non-conflicting matchups
+ * (no shared teams) that can fit within the required-day capacity.
+ *
+ * This ensures we fill Saturday slots optimally before scheduling remaining games
+ * on other days of the week.
+ */
+function findRequiredDayOptimalMatchups<T extends GameMatchup>(
+  matchups: T[],
+  requiredDayCapacity: number
+): { requiredDayMatchups: T[], otherMatchups: T[] } {
+  if (requiredDayCapacity === 0 || matchups.length === 0) {
+    return { requiredDayMatchups: [], otherMatchups: matchups };
+  }
+
+  // Find the maximum independent set of matchups (no shared teams)
+  // Use recursive backtracking since matchup count is small (typically 6-10)
+  let bestSelection: number[] = [];
+
+  function backtrack(index: number, currentSelection: number[], usedTeams: Set<string>): void {
+    // Prune: can't possibly beat best even if we select all remaining
+    if (currentSelection.length + (matchups.length - index) <= bestSelection.length) {
+      return;
+    }
+
+    // Update best if current is better
+    if (currentSelection.length > bestSelection.length) {
+      bestSelection = [...currentSelection];
+    }
+
+    // Stop if we've reached capacity
+    if (currentSelection.length >= requiredDayCapacity) {
+      return;
+    }
+
+    // Try each remaining matchup
+    for (let i = index; i < matchups.length; i++) {
+      const m = matchups[i];
+      if (!usedTeams.has(m.homeTeamId) && !usedTeams.has(m.awayTeamId)) {
+        // Select this matchup
+        usedTeams.add(m.homeTeamId);
+        usedTeams.add(m.awayTeamId);
+        currentSelection.push(i);
+
+        backtrack(i + 1, currentSelection, usedTeams);
+
+        // Unselect this matchup
+        currentSelection.pop();
+        usedTeams.delete(m.homeTeamId);
+        usedTeams.delete(m.awayTeamId);
+      }
+    }
+  }
+
+  backtrack(0, [], new Set());
+
+  // Convert best selection to matchup arrays
+  const selectedSet = new Set(bestSelection);
+  const requiredDayMatchups = matchups.filter((_, i) => selectedSet.has(i));
+  const otherMatchups = matchups.filter((_, i) => !selectedSet.has(i));
+
+  return { requiredDayMatchups, otherMatchups };
+}
+
+/**
  * Main schedule generator
  * Generates optimal schedules for games, practices, and cage sessions
  * Uses season.gamesStartDate to determine when games can be scheduled
@@ -1407,10 +1482,22 @@ export class ScheduleGenerator {
           verboseLog(`  Week ${weekNum + 1}: Required-day scarcity - ${requiredDayGameCapacity} game slots for ${allMatchupsThisWeek.length} matchups`);
         }
 
-        // Sort matchups to balance fairness:
+        // Reorder matchups to maximize required-day (Saturday) slot utilization
+        // Matchups that can fill required-day slots without team conflicts go first
+        // This ensures we fill Saturday before scheduling remaining games on weekdays
+        const { requiredDayMatchups, otherMatchups: nonRequiredDayMatchups } = findRequiredDayOptimalMatchups(
+          allMatchupsThisWeek,
+          requiredDayGameCapacity
+        );
+
+        if (requiredDayMatchups.length > 0) {
+          verboseLog(`  Week ${weekNum + 1}: Prioritizing ${requiredDayMatchups.length} matchups for required-day slots`);
+        }
+
+        // Sort function for fairness balancing:
         // 1. Teams with more short rest games go first (so they get first pick of non-short-rest slots)
         // 2. Teams with fewer preferred-day games go first (matters when there's scarcity)
-        const sortedMatchups = [...allMatchupsThisWeek].sort((a, b) => {
+        const fairnessSort = (a: typeof allMatchupsThisWeek[0], b: typeof allMatchupsThisWeek[0]) => {
           // First priority: teams with more short rest games should go first
           const aMaxShortRest = Math.max(
             this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0,
@@ -1434,7 +1521,13 @@ export class ScheduleGenerator {
             preferredDayGames.get(b.awayTeamId) || 0
           );
           return aMinGames - bMinGames;
-        });
+        };
+
+        // Sort each group separately, then concatenate
+        // This preserves the required-day-first ordering while still applying fairness within each group
+        const sortedRequiredDayMatchups = [...requiredDayMatchups].sort(fairnessSort);
+        const sortedOtherMatchups = [...nonRequiredDayMatchups].sort(fairnessSort);
+        const sortedMatchups = [...sortedRequiredDayMatchups, ...sortedOtherMatchups];
 
         // Track how many required-day slots we've used this week
         let requiredDaySlotsUsedThisWeek = 0;
