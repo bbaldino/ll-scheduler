@@ -239,6 +239,44 @@ function WeeklyRequirementsSection({
 
                   {expandedDivisions.has(divisionId) && (
                     <div className={styles.divisionContent}>
+                      {/* Division summary table */}
+                      <div className={styles.divisionSummary}>
+                        <table className={styles.summaryTable}>
+                          <thead>
+                            <tr>
+                              <th>Team</th>
+                              <th>Games</th>
+                              <th>Practices</th>
+                              <th>Cages</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {teams.map((team: TeamWeeklyReport) => {
+                              const totalGames = team.weeks.reduce((sum, w) => sum + w.gamesScheduled, 0);
+                              const totalPractices = team.weeks.reduce((sum, w) => sum + w.practicesScheduled, 0);
+                              const totalCages = team.weeks.reduce((sum, w) => sum + w.cagesScheduled, 0);
+                              const gamesRequired = team.weeks.reduce((sum, w) => sum + w.gamesRequired, 0);
+                              const practicesRequired = team.weeks.reduce((sum, w) => sum + w.practicesRequired, 0);
+                              const cagesRequired = team.weeks.reduce((sum, w) => sum + w.cagesRequired, 0);
+                              return (
+                                <tr key={team.teamId}>
+                                  <td>{team.teamName}</td>
+                                  <td className={totalGames < gamesRequired ? styles.cellWarning : ''}>
+                                    {totalGames}/{gamesRequired}
+                                  </td>
+                                  <td className={totalPractices < practicesRequired ? styles.cellWarning : ''}>
+                                    {totalPractices}/{practicesRequired}
+                                  </td>
+                                  <td className={cagesRequired > 0 && totalCages < cagesRequired ? styles.cellWarning : ''}>
+                                    {totalCages}/{cagesRequired}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
                       {teams.map((team: TeamWeeklyReport) => (
                         <div key={team.teamId} className={styles.teamReport}>
                           <div
