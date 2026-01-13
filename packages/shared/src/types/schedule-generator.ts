@@ -320,7 +320,8 @@ export interface TeamSchedulingState {
   practicesScheduled: number;
   cagesScheduled: number;
   // Per-week tracking
-  eventsPerWeek: Map<number, { games: number; practices: number; cages: number }>;
+  // spilloverGames tracks games that spilled over from previous weeks (don't count against quota)
+  eventsPerWeek: Map<number, { games: number; practices: number; cages: number; spilloverGames: number }>;
   // Day distribution tracking
   dayOfWeekUsage: Map<number, number>; // dayOfWeek -> count of events
   // Home/away tracking for games

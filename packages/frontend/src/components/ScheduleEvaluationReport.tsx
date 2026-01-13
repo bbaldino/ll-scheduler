@@ -160,7 +160,20 @@ function WeeklyRequirementsSection({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
 
   const toggleTeam = (teamId: string) => {
     setExpandedTeams((prev) => {
@@ -174,6 +187,22 @@ function WeeklyRequirementsSection({
     });
   };
 
+  // Group teams by division
+  const teamsByDivision = new Map<string, { divisionName: string; teams: TeamWeeklyReport[] }>();
+  for (const team of report.teamReports) {
+    if (!teamsByDivision.has(team.divisionId)) {
+      teamsByDivision.set(team.divisionId, { divisionName: team.divisionName, teams: [] });
+    }
+    teamsByDivision.get(team.divisionId)!.teams.push(team);
+  }
+
+  // Calculate division-level stats
+  const getDivisionStats = (teams: TeamWeeklyReport[]) => {
+    const passed = teams.every(t => t.passed);
+    const totalIssues = teams.reduce((sum, t) => sum + t.issues.length, 0);
+    return { passed, totalIssues };
+  };
+
   return (
     <div className={styles.section}>
       <SectionHeader
@@ -185,88 +214,104 @@ function WeeklyRequirementsSection({
       />
       {expanded && (
         <div className={styles.sectionContent}>
-          {report.teamReports.length === 0 ? (
+          {teamsByDivision.size === 0 ? (
             <p className={styles.noData}>No team data available</p>
           ) : (
-            report.teamReports.map((team: TeamWeeklyReport) => (
-              <div key={team.teamId} className={styles.teamReport}>
-                <div
-                  className={styles.teamHeader}
-                  onClick={() => toggleTeam(team.teamId)}
-                >
-                  <span className={team.passed ? styles.statusPass : styles.statusFail}>
-                    {team.passed ? '✓' : '✗'}
-                  </span>
-                  <span className={styles.teamName}>
-                    {team.teamName} ({team.divisionName})
-                  </span>
-                  {team.issues.length > 0 && (
-                    <span className={styles.issueCount}>{team.issues.length} issues</span>
-                  )}
-                  <span className={styles.expandIcon}>
-                    {expandedTeams.has(team.teamId) ? '▼' : '▶'}
-                  </span>
-                </div>
-                {expandedTeams.has(team.teamId) && (
-                  <div className={styles.teamDetails}>
-                    {team.issues.length > 0 && (
-                      <div className={styles.issuesList}>
-                        {team.issues.map((issue, idx) => (
-                          <div key={idx} className={styles.issue}>
-                            {issue}
-                          </div>
-                        ))}
-                      </div>
+            Array.from(teamsByDivision.entries()).map(([divisionId, { divisionName, teams }]) => {
+              const divisionStats = getDivisionStats(teams);
+              return (
+                <div key={divisionId} className={styles.divisionReport}>
+                  <div
+                    className={styles.divisionHeader}
+                    onClick={() => toggleDivision(divisionId)}
+                  >
+                    <span className={divisionStats.passed ? styles.statusPass : styles.statusFail}>
+                      {divisionStats.passed ? '✓' : '✗'}
+                    </span>
+                    <span className={styles.divisionName}>{divisionName}</span>
+                    {divisionStats.totalIssues > 0 && (
+                      <span className={styles.issueCount}>{divisionStats.totalIssues} issues</span>
                     )}
-                    <table className={styles.weekTable}>
-                      <thead>
-                        <tr>
-                          <th>Week</th>
-                          <th>Games</th>
-                          <th>Practices</th>
-                          <th>Cages</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {team.weeks.map((week) => (
-                          <tr key={week.weekStart}>
-                            <td>{week.weekStart}</td>
-                            <td
-                              className={
-                                week.gamesScheduled < week.gamesRequired
-                                  ? styles.cellWarning
-                                  : ''
-                              }
-                            >
-                              {week.gamesScheduled}/{week.gamesRequired}
-                            </td>
-                            <td
-                              className={
-                                week.practicesScheduled < week.practicesRequired
-                                  ? styles.cellWarning
-                                  : ''
-                              }
-                            >
-                              {week.practicesScheduled}/{week.practicesRequired}
-                            </td>
-                            <td
-                              className={
-                                week.cagesRequired > 0 &&
-                                week.cagesScheduled < week.cagesRequired
-                                  ? styles.cellWarning
-                                  : ''
-                              }
-                            >
-                              {week.cagesScheduled}/{week.cagesRequired}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <span className={styles.expandIcon}>
+                      {expandedDivisions.has(divisionId) ? '▼' : '▶'}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))
+
+                  {expandedDivisions.has(divisionId) && (
+                    <div className={styles.divisionContent}>
+                      {teams.map((team: TeamWeeklyReport) => (
+                        <div key={team.teamId} className={styles.teamReport}>
+                          <div
+                            className={styles.teamHeader}
+                            onClick={() => toggleTeam(team.teamId)}
+                          >
+                            <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                              {team.passed ? '✓' : '✗'}
+                            </span>
+                            <span className={styles.teamName}>{team.teamName}</span>
+                            {team.issues.length > 0 && (
+                              <span className={styles.issueCount}>{team.issues.length} issues</span>
+                            )}
+                            <span className={styles.expandIcon}>
+                              {expandedTeams.has(team.teamId) ? '▼' : '▶'}
+                            </span>
+                          </div>
+                          {expandedTeams.has(team.teamId) && (
+                            <div className={styles.teamDetails}>
+                              <table className={styles.weekTable}>
+                                <thead>
+                                  <tr>
+                                    <th>Week</th>
+                                    <th>Games</th>
+                                    <th>Practices</th>
+                                    <th>Cages</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {team.weeks.map((week) => (
+                                    <tr key={week.weekStart}>
+                                      <td>{week.weekStart}</td>
+                                      <td
+                                        className={
+                                          week.gamesScheduled < week.gamesRequired
+                                            ? styles.cellWarning
+                                            : ''
+                                        }
+                                      >
+                                        {week.gamesScheduled}/{week.gamesRequired}
+                                      </td>
+                                      <td
+                                        className={
+                                          week.practicesScheduled < week.practicesRequired
+                                            ? styles.cellWarning
+                                            : ''
+                                        }
+                                      >
+                                        {week.practicesScheduled}/{week.practicesRequired}
+                                      </td>
+                                      <td
+                                        className={
+                                          week.cagesRequired > 0 &&
+                                          week.cagesScheduled < week.cagesRequired
+                                            ? styles.cellWarning
+                                            : ''
+                                        }
+                                      >
+                                        {week.cagesScheduled}/{week.cagesRequired}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}

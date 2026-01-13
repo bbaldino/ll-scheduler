@@ -441,13 +441,15 @@ export function initializeTeamState(
 /**
  * Update team state after scheduling an event
  * For games, isHomeTeam indicates if this team is home, and opponentId is the other team
+ * isSpillover indicates if this is a spillover game (from a previous week) - these don't count against weekly quota
  */
 export function updateTeamStateAfterScheduling(
   teamState: TeamSchedulingState,
   event: ScheduledEventDraft,
   weekNumber: number,
   isHomeTeam?: boolean,
-  opponentId?: string
+  opponentId?: string,
+  isSpillover?: boolean
 ): void {
   // Update event type counts
   switch (event.eventType) {
@@ -500,12 +502,16 @@ export function updateTeamStateAfterScheduling(
 
   // Update week tracking
   if (!teamState.eventsPerWeek.has(weekNumber)) {
-    teamState.eventsPerWeek.set(weekNumber, { games: 0, practices: 0, cages: 0 });
+    teamState.eventsPerWeek.set(weekNumber, { games: 0, practices: 0, cages: 0, spilloverGames: 0 });
   }
   const weekEvents = teamState.eventsPerWeek.get(weekNumber)!;
   switch (event.eventType) {
     case 'game':
       weekEvents.games++;
+      // Track spillover games separately - they don't count against weekly quota
+      if (isSpillover) {
+        weekEvents.spilloverGames++;
+      }
       break;
     case 'practice':
       weekEvents.practices++;
@@ -994,7 +1000,7 @@ export function teamNeedsEventInWeek(
   weekNumber: number,
   config: { practicesPerWeek: number; gamesPerWeek: number; cageSessionsPerWeek: number }
 ): boolean {
-  const weekEvents = teamState.eventsPerWeek.get(weekNumber) || { games: 0, practices: 0, cages: 0 };
+  const weekEvents = teamState.eventsPerWeek.get(weekNumber) || { games: 0, practices: 0, cages: 0, spilloverGames: 0 };
 
   switch (eventType) {
     case 'game':

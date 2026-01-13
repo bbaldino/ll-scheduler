@@ -1462,19 +1462,21 @@ export class ScheduleGenerator {
           failureReason = 'target_week_not_found';
         } else {
           // Check if either team has already met their games-per-week quota for THIS week
-          // Note: For spillover games, we're more lenient - allow scheduling even if it exceeds
-          // the original week's quota, as long as we don't create back-to-back games
-          const homeGamesThisWeek = homeTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-          const awayGamesThisWeek = awayTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+          // Spillover games don't count against the quota - they're "extra" games from previous weeks
+          const homeWeekEvents = homeTeamState.eventsPerWeek.get(week.weekNumber);
+          const awayWeekEvents = awayTeamState.eventsPerWeek.get(week.weekNumber);
+          // Regular games = total games - spillover games (spillover games don't count against quota)
+          const homeRegularGamesThisWeek = (homeWeekEvents?.games || 0) - (homeWeekEvents?.spilloverGames || 0);
+          const awayRegularGamesThisWeek = (awayWeekEvents?.games || 0) - (awayWeekEvents?.spilloverGames || 0);
           // Use current week (weekNum) for quota lookup, not original target week
           const gamesPerWeekQuota = this.getGamesPerWeekForDivision(division.divisionId, weekNum + 1);
-          // For spillover, allow up to quota + 1 to accommodate the delayed game
           const isSpillover = matchup.originalWeek !== undefined && matchup.originalWeek !== weekNum;
-          const effectiveQuota = isSpillover ? gamesPerWeekQuota + 1 : gamesPerWeekQuota;
-          if (homeGamesThisWeek >= effectiveQuota) {
-            failureReason = `${homeTeam.name} already at quota (${homeGamesThisWeek}/${effectiveQuota})`;
-          } else if (awayGamesThisWeek >= effectiveQuota) {
-            failureReason = `${awayTeam.name} already at quota (${awayGamesThisWeek}/${effectiveQuota})`;
+          // For regular games, enforce quota strictly. For spillover games, allow them as "extra"
+          // (spillover games themselves don't count against quota, so we just check regular games)
+          if (!isSpillover && homeRegularGamesThisWeek >= gamesPerWeekQuota) {
+            failureReason = `${homeTeam.name} already at quota (${homeRegularGamesThisWeek}/${gamesPerWeekQuota})`;
+          } else if (!isSpillover && awayRegularGamesThisWeek >= gamesPerWeekQuota) {
+            failureReason = `${awayTeam.name} already at quota (${awayRegularGamesThisWeek}/${gamesPerWeekQuota})`;
           } else {
             // Use pre-filtered field slots for this week (not target week)
             const currentWeekFieldSlots = fieldSlotsByWeek.get(weekNum) || [];
@@ -1628,16 +1630,18 @@ export class ScheduleGenerator {
                   this.scheduledEvents.push(eventDraft);
                   addEventToContext(this.scoringContext!, eventDraft);
 
-                  // Update both team states
-                  updateTeamStateAfterScheduling(homeTeamState, eventDraft, week.weekNumber, true, awayTeamState.teamId);
-                  updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId);
+                  // Determine if this is a spillover game (from a previous week)
+                  const originalWeek = (matchup as any).originalWeek ?? matchup.targetWeek;
+                  const isSpilloverGame = originalWeek !== weekNum;
+
+                  // Update both team states - pass isSpilloverGame so spillover games don't count against quota
+                  updateTeamStateAfterScheduling(homeTeamState, eventDraft, week.weekNumber, true, awayTeamState.teamId, isSpilloverGame);
+                  updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId, isSpilloverGame);
 
                   // Update resource usage
                   updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, division.config.gameDurationHours);
 
                   const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
-                  const originalWeek = (matchup as any).originalWeek ?? matchup.targetWeek;
-                  const isSpilloverGame = originalWeek !== weekNum;
                   const spilloverNote = isSpilloverGame ? ` (spillover from week ${originalWeek + 1})` : '';
 
                   verboseLog(`  ✅ ${homeTeam.name} vs ${awayTeam.name}: Week ${week.weekNumber + 1} ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName}${spilloverNote}`);
@@ -2872,7 +2876,7 @@ export class ScheduleGenerator {
       for (const ts of teamsNeedingPractices) {
         const config = this.divisionConfigs.get(ts.divisionId);
         if (config) {
-          const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
+          const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0, spilloverGames: 0 };
           totalPracticesNeeded += config.practicesPerWeek - weekEvents.practices;
         }
       }
@@ -3104,7 +3108,7 @@ export class ScheduleGenerator {
           if (unscheduledTeams.length > 0) {
             verboseLog(`  ⚠️  Teams that still need practices this week but couldn't be scheduled:`);
             for (const ts of unscheduledTeams) {
-              const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
+              const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0, spilloverGames: 0 };
               const cfg = this.divisionConfigs.get(ts.divisionId);
               verboseLog(`      - ${ts.teamName}: has ${weekEvents.practices}/${cfg?.practicesPerWeek || '?'} practices, field dates: [${Array.from(ts.fieldDatesUsed).sort().join(', ')}]`);
 
@@ -3775,7 +3779,7 @@ export class ScheduleGenerator {
           });
           if (unscheduledTeams.length > 0) {
             for (const ts of unscheduledTeams) {
-              const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
+              const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0, spilloverGames: 0 };
               const cfg = this.divisionConfigs.get(ts.divisionId);
               this.log('error', 'cage', `Failed to schedule cage session for ${ts.teamName} in week ${week.weekNumber + 1}`, {
                 teamId: ts.teamId,

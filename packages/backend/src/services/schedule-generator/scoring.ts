@@ -206,7 +206,7 @@ export function calculateWeekBalanceRaw(
   const weekNum = getWeekNumber(date, context.weekDefinitions);
   if (weekNum === -1) return 0.5; // Unknown week, neutral score
 
-  const weekEvents = teamState.eventsPerWeek.get(weekNum) || { games: 0, practices: 0, cages: 0 };
+  const weekEvents = teamState.eventsPerWeek.get(weekNum) || { games: 0, practices: 0, cages: 0, spilloverGames: 0 };
   const config = context.divisionConfigs.get(teamState.divisionId);
   if (!config) return 0.5;
 
