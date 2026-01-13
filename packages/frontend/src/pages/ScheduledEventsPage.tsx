@@ -33,6 +33,7 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
   game: 'Game',
   practice: 'Practice',
   cage: 'Cage Time',
+  paired_practice: 'Paired Practice',
 };
 
 const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
@@ -232,6 +233,8 @@ export default function ScheduledEventsPage() {
       homeTeamId: event.homeTeamId,
       awayTeamId: event.awayTeamId,
       teamId: event.teamId,
+      team1Id: event.team1Id,
+      team2Id: event.team2Id,
     });
   };
 
@@ -339,7 +342,9 @@ export default function ScheduledEventsPage() {
         (e) =>
           e.teamId === filterTeam ||
           e.homeTeamId === filterTeam ||
-          e.awayTeamId === filterTeam
+          e.awayTeamId === filterTeam ||
+          e.team1Id === filterTeam ||
+          e.team2Id === filterTeam
       );
     }
 
@@ -428,6 +433,7 @@ export default function ScheduledEventsPage() {
             <option value="game">Games</option>
             <option value="practice">Practices</option>
             <option value="cage">Cage Time</option>
+            <option value="paired_practice">Paired Practice</option>
           </select>
         </div>
         <div className={styles.filterGroup}>
@@ -510,6 +516,7 @@ export default function ScheduledEventsPage() {
                 <option value="practice">Practice</option>
                 <option value="game">Game</option>
                 <option value="cage">Cage Time</option>
+                <option value="paired_practice">Paired Practice</option>
               </select>
             </div>
             <div className={styles.formGroup}>
@@ -779,6 +786,83 @@ export default function ScheduledEventsPage() {
             </>
           )}
 
+          {formData.eventType === 'paired_practice' && (
+            <>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label>Team 1 *</label>
+                  <select
+                    value={formData.team1Id || ''}
+                    onChange={(e) => setFormData({ ...formData, team1Id: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Team</option>
+                    {teams
+                      .filter((t) => t.divisionId === formData.divisionId)
+                      .map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Team 2 *</label>
+                  <select
+                    value={formData.team2Id || ''}
+                    onChange={(e) => setFormData({ ...formData, team2Id: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Team</option>
+                    {teams
+                      .filter((t) => t.divisionId === formData.divisionId && t.id !== formData.team1Id)
+                      .map((team) => (
+                        <option key={team.id} value={team.id}>
+                          {team.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+              <div className={styles.formRow}>
+                <div className={styles.formGroup}>
+                  <label>Field *</label>
+                  <select
+                    value={formData.fieldId || ''}
+                    onChange={(e) => setFormData({ ...formData, fieldId: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Field</option>
+                    {seasonFields
+                      .filter((sf) => sf.divisionCompatibility?.includes(formData.divisionId) ?? true)
+                      .map((sf) => (
+                        <option key={sf.fieldId} value={sf.fieldId}>
+                          {sf.fieldName || sf.field?.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Cage *</label>
+                  <select
+                    value={formData.cageId || ''}
+                    onChange={(e) => setFormData({ ...formData, cageId: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Cage</option>
+                    {seasonCages
+                      .filter((sc) => sc.divisionCompatibility?.includes(formData.divisionId) ?? true)
+                      .map((sc) => (
+                        <option key={sc.cageId} value={sc.cageId}>
+                          {sc.cageName || sc.cage?.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+
           <div className={styles.formGroup}>
             <label>Notes</label>
             <textarea
@@ -941,6 +1025,76 @@ export default function ScheduledEventsPage() {
                             </div>
                           </div>
                         )}
+                        {/* Field and cage selection for paired practice */}
+                        {event.eventType === 'paired_practice' && (
+                          <>
+                            <div className={styles.formRow}>
+                              <div className={styles.formGroup}>
+                                <label>Team 1</label>
+                                <span className={styles.teamDisplay}>
+                                  {getTeamName(editFormData.team1Id || event.team1Id)}
+                                </span>
+                              </div>
+                              <div className={styles.formGroup}>
+                                <label>Team 2</label>
+                                <span className={styles.teamDisplay}>
+                                  {getTeamName(editFormData.team2Id || event.team2Id)}
+                                </span>
+                              </div>
+                              <div className={styles.formGroup}>
+                                <button
+                                  type="button"
+                                  className={styles.swapButton}
+                                  onClick={() => {
+                                    const currentTeam1 = editFormData.team1Id || event.team1Id;
+                                    const currentTeam2 = editFormData.team2Id || event.team2Id;
+                                    setEditFormData({
+                                      ...editFormData,
+                                      team1Id: currentTeam2,
+                                      team2Id: currentTeam1,
+                                    });
+                                  }}
+                                >
+                                  Swap Teams
+                                </button>
+                              </div>
+                            </div>
+                            <div className={styles.formRow}>
+                              <div className={styles.formGroup}>
+                                <label>Field</label>
+                                <select
+                                  value={editFormData.fieldId || event.fieldId || ''}
+                                  onChange={(e) =>
+                                    setEditFormData({ ...editFormData, fieldId: e.target.value })
+                                  }
+                                >
+                                  <option value="">Select Field</option>
+                                  {seasonFields.map((sf) => (
+                                    <option key={sf.id} value={sf.fieldId}>
+                                      {sf.field?.name || sf.fieldId}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className={styles.formGroup}>
+                                <label>Cage</label>
+                                <select
+                                  value={editFormData.cageId || event.cageId || ''}
+                                  onChange={(e) =>
+                                    setEditFormData({ ...editFormData, cageId: e.target.value })
+                                  }
+                                >
+                                  <option value="">Select Cage</option>
+                                  {seasonCages.map((sc) => (
+                                    <option key={sc.id} value={sc.cageId}>
+                                      {sc.cage?.name || sc.cageId}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </>
+                        )}
                         {/* Home/Away swap for games */}
                         {event.eventType === 'game' && (
                           <div className={styles.formRow}>
@@ -1030,6 +1184,19 @@ export default function ScheduledEventsPage() {
                             <>
                               <p>
                                 <strong>Team:</strong> {getTeamName(event.teamId)}
+                              </p>
+                              <p>
+                                <strong>Cage:</strong> {getCageName(event.cageId)}
+                              </p>
+                            </>
+                          )}
+                          {event.eventType === 'paired_practice' && (
+                            <>
+                              <p>
+                                <strong>Teams:</strong> {getTeamName(event.team1Id)} / {getTeamName(event.team2Id)}
+                              </p>
+                              <p>
+                                <strong>Field:</strong> {getFieldName(event.fieldId)}
                               </p>
                               <p>
                                 <strong>Cage:</strong> {getCageName(event.cageId)}

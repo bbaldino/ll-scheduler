@@ -74,6 +74,7 @@ import {
   formatDateStr,
   generateRoundRobinMatchups,
   assignMatchupsToWeeks,
+  generateTeamPairingsForWeek,
 } from './draft.js';
 
 /**
@@ -198,6 +199,8 @@ export class ScheduleGenerator {
         homeTeamId: event.homeTeamId,
         awayTeamId: event.awayTeamId,
         teamId: event.teamId,
+        team1Id: event.team1Id,
+        team2Id: event.team2Id,
       };
 
       // Add to scheduled events
@@ -221,6 +224,17 @@ export class ScheduleGenerator {
         }
         if (awayState) {
           updateTeamStateAfterScheduling(awayState, draft, weekNumber, false, event.homeTeamId);
+        }
+      } else if (event.eventType === 'paired_practice' && event.team1Id && event.team2Id) {
+        // Paired practice: update states for both teams
+        const team1State = this.teamSchedulingStates.get(event.team1Id);
+        const team2State = this.teamSchedulingStates.get(event.team2Id);
+
+        if (team1State) {
+          updateTeamStateAfterScheduling(team1State, draft, weekNumber);
+        }
+        if (team2State) {
+          updateTeamStateAfterScheduling(team2State, draft, weekNumber);
         }
       } else if (event.teamId) {
         const teamState = this.teamSchedulingStates.get(event.teamId);
@@ -486,6 +500,15 @@ export class ScheduleGenerator {
       stepStart = Date.now();
       this.rebalanceScheduledHomeAway();
       console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
+
+      // Step 4c: Schedule Sunday paired practices (before regular practices)
+      verboseLog('\n' + '-'.repeat(80));
+      verboseLog('SCHEDULING SUNDAY PAIRED PRACTICES');
+      verboseLog('-'.repeat(80));
+      stepStart = Date.now();
+      await this.scheduleSundayPairedPractices();
+      console.log(`  scheduleSundayPairedPractices: ${Date.now() - stepStart}ms`);
+      verboseLog(`✓ Paired practices scheduled: ${this.scheduledEvents.filter(e => e.eventType === 'paired_practice').length}`);
 
       // Step 5: Schedule practices
       verboseLog('\n' + '-'.repeat(80));
@@ -2473,6 +2496,219 @@ export class ScheduleGenerator {
   }
 
   /**
+   * Schedule Sunday paired practices for divisions that have it enabled.
+   * Each paired practice involves 2 teams sharing a field + cage for a time block,
+   * rotating between field and cage during the session.
+   */
+  private async scheduleSundayPairedPractices(): Promise<void> {
+    verboseLog('\n--- Scheduling Sunday Paired Practices ---');
+    this.log('info', 'paired_practice', 'Starting Sunday paired practice scheduling');
+
+    // Find divisions with Sunday paired practice enabled
+    const divisionsWithPairedPractice: Array<{
+      divisionId: string;
+      config: DivisionConfig;
+      teams: Team[];
+    }> = [];
+
+    for (const [divisionId, config] of this.divisionConfigs.entries()) {
+      if (config.sundayPairedPracticeEnabled) {
+        const divisionTeams = this.teams.filter((t) => t.divisionId === divisionId);
+        if (divisionTeams.length >= 2) {
+          divisionsWithPairedPractice.push({
+            divisionId,
+            config,
+            teams: divisionTeams,
+          });
+          const divName = this.divisionNames.get(divisionId) || divisionId;
+          this.log('info', 'paired_practice', `Division ${divName} has Sunday paired practice enabled`, {
+            teamCount: divisionTeams.length,
+            durationHours: config.sundayPairedPracticeDurationHours,
+            fieldId: config.sundayPairedPracticeFieldId,
+            cageId: config.sundayPairedPracticeCageId,
+          });
+        }
+      }
+    }
+
+    if (divisionsWithPairedPractice.length === 0) {
+      verboseLog('No divisions have Sunday paired practice enabled');
+      return;
+    }
+
+    // Get all Sundays in the season
+    const sundays: string[] = [];
+    const allDates = getDateRange(this.season.startDate, this.season.endDate);
+    for (const date of allDates) {
+      const dayOfWeek = parseLocalDate(date).getDay();
+      if (dayOfWeek === 0) {
+        // Check if date is not blacked out at season level
+        const isSeasonBlackout = this.season.blackoutDates?.some((b) => b.date === date);
+        if (!isSeasonBlackout) {
+          sundays.push(date);
+        }
+      }
+    }
+
+    verboseLog(`Found ${sundays.length} Sundays in season for paired practices`);
+
+    // Schedule for each Sunday and each division
+    for (const sunday of sundays) {
+      const weekNumber = getWeekNumberForDate(sunday, this.weekDefinitions);
+
+      for (const { divisionId, config, teams } of divisionsWithPairedPractice) {
+        const divName = this.divisionNames.get(divisionId) || divisionId;
+
+        // Check division-level blackout
+        const divisionBlackout = config.blackoutDates?.find(
+          (b) => b.date === sunday && b.blockedEventTypes.includes('practice')
+        );
+        if (divisionBlackout) {
+          verboseLog(`  ${divName}: Skipping ${sunday} due to division blackout: ${divisionBlackout.reason}`);
+          continue;
+        }
+
+        // Generate team pairings for this week
+        const teamIds = teams.map((t) => t.id);
+        const pairings = generateTeamPairingsForWeek(teamIds, weekNumber);
+
+        if (pairings.length === 0) {
+          verboseLog(`  ${divName}: No pairings generated for week ${weekNumber}`);
+          continue;
+        }
+
+        // Rotate the order of pairings so different pairs get early/late slots each week
+        // This ensures fair distribution of time slots across all teams
+        const rotationAmount = weekNumber % pairings.length;
+        const rotatedPairings = [
+          ...pairings.slice(rotationAmount),
+          ...pairings.slice(0, rotationAmount),
+        ];
+
+        // Get field and cage IDs from config
+        const fieldId = config.sundayPairedPracticeFieldId;
+        const cageId = config.sundayPairedPracticeCageId;
+        const durationHours = config.sundayPairedPracticeDurationHours || 2;
+
+        if (!fieldId || !cageId) {
+          this.log('warning', 'paired_practice', `Division ${divName} missing field or cage config for paired practice`);
+          continue;
+        }
+
+        // Find available start time for this field on this Sunday
+        // We'll schedule pairs sequentially throughout the day
+        const fieldSlots = this.practiceFieldSlots.filter(
+          (rs) => rs.slot.date === sunday && rs.resourceId === fieldId
+        );
+
+        if (fieldSlots.length === 0) {
+          verboseLog(`  ${divName}: No field slots available on ${sunday}`);
+          continue;
+        }
+
+        // Sort by start time and find first available slot
+        fieldSlots.sort((a, b) => a.slot.startTime.localeCompare(b.slot.startTime));
+
+        // Get the field's available window for this day
+        const dayStart = fieldSlots[0].slot.startTime;
+        const dayEnd = fieldSlots[fieldSlots.length - 1].slot.endTime;
+
+        // Calculate start times for each pair
+        let currentStartMinutes = timeToMinutes(dayStart);
+        const durationMinutes = durationHours * 60;
+
+        for (const [team1Id, team2Id] of rotatedPairings) {
+          const startTime = minutesToTime(currentStartMinutes);
+          const endTime = minutesToTime(currentStartMinutes + durationMinutes);
+
+          // Check if this time slot fits within the available window
+          if (currentStartMinutes + durationMinutes > timeToMinutes(dayEnd)) {
+            this.log('warning', 'paired_practice', `Insufficient time on ${sunday} for all paired practices in ${divName}`);
+            break;
+          }
+
+          // Check for conflicts with already scheduled events
+          const hasConflict = this.scheduledEvents.some((event) => {
+            if (event.date !== sunday) return false;
+            if (event.fieldId !== fieldId && event.cageId !== cageId) return false;
+            // Check time overlap
+            const eventStart = timeToMinutes(event.startTime);
+            const eventEnd = timeToMinutes(event.endTime);
+            const newStart = currentStartMinutes;
+            const newEnd = currentStartMinutes + durationMinutes;
+            return newStart < eventEnd && newEnd > eventStart;
+          });
+
+          if (hasConflict) {
+            verboseLog(`  ${divName}: Time conflict at ${startTime} on ${sunday}, skipping`);
+            currentStartMinutes += durationMinutes;
+            continue;
+          }
+
+          // Create the paired practice event
+          const team1Name = teams.find((t) => t.id === team1Id)?.name || team1Id;
+          const team2Name = teams.find((t) => t.id === team2Id)?.name || team2Id;
+
+          const event: ScheduledEventDraft = {
+            seasonId: this.season.id,
+            divisionId,
+            eventType: 'paired_practice',
+            date: sunday,
+            startTime,
+            endTime,
+            fieldId,
+            cageId,
+            team1Id,
+            team2Id,
+          };
+
+          this.scheduledEvents.push(event);
+
+          // Update team states for both teams
+          const team1State = this.teamSchedulingStates.get(team1Id);
+          const team2State = this.teamSchedulingStates.get(team2Id);
+
+          if (team1State) {
+            updateTeamStateAfterScheduling(team1State, event, weekNumber);
+            const weekEvents = team1State.eventsPerWeek.get(weekNumber);
+            console.log(`  DEBUG: After paired practice, ${team1Name} week ${weekNumber} cages = ${weekEvents?.cages}`);
+          }
+          if (team2State) {
+            updateTeamStateAfterScheduling(team2State, event, weekNumber);
+            const weekEvents = team2State.eventsPerWeek.get(weekNumber);
+            console.log(`  DEBUG: After paired practice, ${team2Name} week ${weekNumber} cages = ${weekEvents?.cages}`);
+          }
+
+          // Update scoring context resource usage for both field and cage
+          if (this.scoringContext) {
+            const durationHours = (timeToMinutes(endTime) - timeToMinutes(startTime)) / 60;
+            if (fieldId) {
+              updateResourceUsage(this.scoringContext, fieldId, sunday, durationHours);
+            }
+            if (cageId) {
+              updateResourceUsage(this.scoringContext, cageId, sunday, durationHours);
+            }
+          }
+
+          verboseLog(`  ${divName}: Scheduled ${team1Name} + ${team2Name} at ${startTime}-${endTime} on ${sunday}`);
+          this.log('info', 'paired_practice', `Scheduled paired practice`, {
+            division: divName,
+            team1: team1Name,
+            team2: team2Name,
+            date: sunday,
+            time: `${startTime}-${endTime}`,
+          });
+
+          currentStartMinutes += durationMinutes;
+        }
+      }
+    }
+
+    const totalPairedPractices = this.scheduledEvents.filter((e) => e.eventType === 'paired_practice').length;
+    this.log('info', 'paired_practice', `Completed Sunday paired practice scheduling: ${totalPairedPractices} events`);
+  }
+
+  /**
    * Schedule practices for all teams using draft-based allocation
    * Round-robin ensures fair distribution of slots across teams
    */
@@ -3253,11 +3489,16 @@ export class ScheduleGenerator {
         .filter((ts) => {
           const config = this.divisionConfigs.get(ts.divisionId);
           if (!config || !config.cageSessionsPerWeek) return false;
-          return teamNeedsEventInWeek(ts, 'cage', week.weekNumber, {
+          const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
+          const needsCage = teamNeedsEventInWeek(ts, 'cage', week.weekNumber, {
             practicesPerWeek: config.practicesPerWeek,
             gamesPerWeek: config.gamesPerWeek || 0,
             cageSessionsPerWeek: config.cageSessionsPerWeek,
           });
+          if (config.sundayPairedPracticeEnabled) {
+            console.log(`  DEBUG cage check: ${ts.teamName} week ${week.weekNumber} cages=${weekEvents.cages} quota=${config.cageSessionsPerWeek} needsCage=${needsCage}`);
+          }
+          return needsCage;
         })
         .sort((a, b) => {
           // Sort by who is furthest behind their cage target
@@ -4245,6 +4486,7 @@ export class ScheduleGenerator {
           game: newEvents.filter((e) => e.eventType === 'game').length,
           practice: newEvents.filter((e) => e.eventType === 'practice').length,
           cage: newEvents.filter((e) => e.eventType === 'cage').length,
+          paired_practice: newEvents.filter((e) => e.eventType === 'paired_practice').length,
         },
         eventsByDivision: this.calculateEventsByDivision(newEvents),
         averageEventsPerTeam: this.calculateAverageEventsPerTeam(newEvents),

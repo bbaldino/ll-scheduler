@@ -198,7 +198,7 @@ export function calculateDaySpreadRaw(
  * Returns 0-1 where 1 = under quota, 0.5 = at quota, 0.2 = over quota
  */
 export function calculateWeekBalanceRaw(
-  eventType: 'game' | 'practice' | 'cage',
+  eventType: 'game' | 'practice' | 'cage' | 'paired_practice',
   date: string,
   teamState: TeamSchedulingState,
   context: ScoringContext
@@ -219,6 +219,7 @@ export function calculateWeekBalanceRaw(
       required = config.gamesPerWeek || 0;
       break;
     case 'practice':
+    case 'paired_practice': // Paired practice counts toward practice quota
       current = weekEvents.practices;
       required = config.practicesPerWeek || 0;
       break;

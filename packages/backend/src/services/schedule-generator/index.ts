@@ -226,8 +226,8 @@ async function saveScheduledEvents(
         `INSERT INTO scheduled_events (
           id, season_id, division_id, event_type, date, start_time, end_time,
           status, notes, field_id, cage_id, home_team_id, away_team_id, team_id,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          team1_id, team2_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
@@ -244,6 +244,8 @@ async function saveScheduledEvents(
         event.homeTeamId || null,
         event.awayTeamId || null,
         event.teamId || null,
+        event.team1Id || null,
+        event.team2Id || null,
         now,
         now
       );

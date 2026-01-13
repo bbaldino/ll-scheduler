@@ -151,6 +151,58 @@ export interface ScheduleRound {
 }
 
 /**
+ * Generate team pairings for Sunday paired practice.
+ * Uses a rotating algorithm so different teams pair each week.
+ *
+ * For n teams, creates n/2 pairs. The pairings rotate each week so
+ * teams practice with different partners throughout the season.
+ *
+ * @param teamIds - Array of team IDs (must be even number)
+ * @param weekNumber - Week number (0-based) to generate pairings for
+ * @returns Array of [team1Id, team2Id] pairs
+ */
+export function generateTeamPairingsForWeek(
+  teamIds: string[],
+  weekNumber: number
+): Array<[string, string]> {
+  if (teamIds.length < 2) {
+    return [];
+  }
+
+  // Ensure even number of teams
+  const teams = [...teamIds];
+  if (teams.length % 2 === 1) {
+    // If odd, one team will be left out each week (rotating)
+    // For simplicity, remove last team for now
+    teams.pop();
+  }
+
+  const n = teams.length;
+  if (n < 2) return [];
+
+  // Use circle method similar to round-robin:
+  // Fix first team, rotate the rest
+  const fixed = teams[0];
+  const rotating = teams.slice(1);
+
+  // Rotate by weekNumber positions
+  const rotated = rotateArray(rotating, weekNumber);
+
+  // Create pairs: fixed with last rotated, then pair adjacent teams
+  const pairs: Array<[string, string]> = [];
+
+  // First pair: fixed team with the team that rotated to the "end"
+  pairs.push([fixed, rotated[rotated.length - 1]]);
+
+  // Remaining pairs: match from outside in
+  for (let i = 0; i < (rotated.length - 1) / 2; i++) {
+    pairs.push([rotated[i], rotated[rotated.length - 2 - i]]);
+  }
+
+  return pairs;
+}
+
+/**
  * Generate round-robin matchups for a list of teams.
  * Uses the circle method: fix one team, rotate others.
  * Tracks home/away per pairing AND per team to ensure global balance.
@@ -439,6 +491,11 @@ export function updateTeamStateAfterScheduling(
     case 'cage':
       teamState.cagesScheduled++;
       break;
+    case 'paired_practice':
+      // Paired practice counts as both a practice AND a cage session
+      teamState.practicesScheduled++;
+      teamState.cagesScheduled++;
+      break;
   }
 
   // Update week tracking
@@ -456,6 +513,11 @@ export function updateTeamStateAfterScheduling(
     case 'cage':
       weekEvents.cages++;
       break;
+    case 'paired_practice':
+      // Paired practice counts toward both practices and cages quotas
+      weekEvents.practices++;
+      weekEvents.cages++;
+      break;
   }
 
   // Update day of week usage
@@ -466,6 +528,10 @@ export function updateTeamStateAfterScheduling(
   // Update dates used - track field and cage dates separately
   // Games and practices use fields, cages use cages
   if (event.eventType === 'cage') {
+    teamState.cageDatesUsed.add(event.date);
+  } else if (event.eventType === 'paired_practice') {
+    // Paired practice uses both field and cage
+    teamState.fieldDatesUsed.add(event.date);
     teamState.cageDatesUsed.add(event.date);
   } else {
     teamState.fieldDatesUsed.add(event.date);
@@ -904,6 +970,9 @@ export function teamNeedsEventInWeek(
       return weekEvents.practices < config.practicesPerWeek;
     case 'cage':
       return weekEvents.cages < (config.cageSessionsPerWeek || 0);
+    case 'paired_practice':
+      // Paired practice is scheduled separately, not checked via this function
+      return false;
   }
 }
 

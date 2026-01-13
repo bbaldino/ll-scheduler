@@ -35,7 +35,7 @@ export interface GenerateScheduleResult {
 export interface SchedulingLogEntry {
   timestamp: string;
   level: 'info' | 'warning' | 'error' | 'debug';
-  category: 'game' | 'practice' | 'cage' | 'resource' | 'general';
+  category: 'game' | 'practice' | 'cage' | 'paired_practice' | 'resource' | 'general';
   message: string;
   /** Human-readable summary explaining the situation in plain language */
   summary?: string;
@@ -179,6 +179,8 @@ export interface ScheduledEventDraft {
   homeTeamId?: string;
   awayTeamId?: string;
   teamId?: string;
+  team1Id?: string; // For paired_practice events
+  team2Id?: string; // For paired_practice events
 }
 
 /**

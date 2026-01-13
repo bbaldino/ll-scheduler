@@ -171,6 +171,11 @@
   color: white;
 }
 
+.eventItem.paired_practice {
+  background: #9c27b0;
+  color: white;
+}
+
 .eventItem:hover {
   opacity: 0.8;
 }
@@ -300,6 +305,11 @@
   color: white;
 }
 
+.weekEventItem.paired_practice {
+  background: #9c27b0;
+  color: white;
+}
+
 .weekEventItem:hover {
   opacity: 0.8;
 }
@@ -375,6 +385,11 @@
 
 .dayEventItem.cage {
   background: #ff9800;
+  color: white;
+}
+
+.dayEventItem.paired_practice {
+  background: #9c27b0;
   color: white;
 }
 

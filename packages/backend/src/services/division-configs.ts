@@ -21,6 +21,10 @@ interface DivisionConfigRow {
   game_week_overrides: string | null; // JSON string
   max_games_per_season: number | null;
   blackout_dates: string | null; // JSON string
+  sunday_paired_practice_enabled: number | null; // 0 or 1
+  sunday_paired_practice_duration_hours: number | null;
+  sunday_paired_practice_field_id: string | null;
+  sunday_paired_practice_cage_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +46,10 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     gameWeekOverrides: row.game_week_overrides ? JSON.parse(row.game_week_overrides) : undefined,
     maxGamesPerSeason: row.max_games_per_season || undefined,
     blackoutDates: row.blackout_dates ? JSON.parse(row.blackout_dates) : undefined,
+    sundayPairedPracticeEnabled: row.sunday_paired_practice_enabled === 1,
+    sundayPairedPracticeDurationHours: row.sunday_paired_practice_duration_hours || undefined,
+    sundayPairedPracticeFieldId: row.sunday_paired_practice_field_id || undefined,
+    sundayPairedPracticeCageId: row.sunday_paired_practice_cage_id || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -93,8 +101,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, blackout_dates, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, blackout_dates, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -112,6 +120,10 @@ export async function createDivisionConfig(
       input.gameWeekOverrides ? JSON.stringify(input.gameWeekOverrides) : null,
       input.maxGamesPerSeason || null,
       input.blackoutDates ? JSON.stringify(input.blackoutDates) : null,
+      input.sundayPairedPracticeEnabled ? 1 : 0,
+      input.sundayPairedPracticeDurationHours || null,
+      input.sundayPairedPracticeFieldId || null,
+      input.sundayPairedPracticeCageId || null,
       now,
       now
     )
@@ -185,6 +197,22 @@ export async function updateDivisionConfig(
   if (input.blackoutDates !== undefined) {
     updates.push('blackout_dates = ?');
     values.push(input.blackoutDates ? JSON.stringify(input.blackoutDates) : null);
+  }
+  if (input.sundayPairedPracticeEnabled !== undefined) {
+    updates.push('sunday_paired_practice_enabled = ?');
+    values.push(input.sundayPairedPracticeEnabled ? 1 : 0);
+  }
+  if (input.sundayPairedPracticeDurationHours !== undefined) {
+    updates.push('sunday_paired_practice_duration_hours = ?');
+    values.push(input.sundayPairedPracticeDurationHours || null);
+  }
+  if (input.sundayPairedPracticeFieldId !== undefined) {
+    updates.push('sunday_paired_practice_field_id = ?');
+    values.push(input.sundayPairedPracticeFieldId || null);
+  }
+  if (input.sundayPairedPracticeCageId !== undefined) {
+    updates.push('sunday_paired_practice_cage_id = ?');
+    values.push(input.sundayPairedPracticeCageId || null);
   }
 
   if (updates.length === 0) {

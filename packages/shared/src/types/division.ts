@@ -67,6 +67,13 @@ export interface DivisionConfig {
   gameWeekOverrides?: GameWeekOverride[]; // Per-week game count overrides
   maxGamesPerSeason?: number; // Maximum total games per team for the season (limits round-robin matchups)
   blackoutDates?: DivisionBlackout[]; // Division-specific blackout dates
+
+  // Sunday paired practice settings
+  sundayPairedPracticeEnabled?: boolean; // Enable Sunday paired practice mode
+  sundayPairedPracticeDurationHours?: number; // Total duration per pair (both halves)
+  sundayPairedPracticeFieldId?: string; // Specific field to use
+  sundayPairedPracticeCageId?: string; // Specific cage to use
+
   createdAt: string;
   updatedAt: string;
 }
@@ -86,6 +93,10 @@ export interface CreateDivisionConfigInput {
   gameWeekOverrides?: GameWeekOverride[];
   maxGamesPerSeason?: number;
   blackoutDates?: DivisionBlackout[];
+  sundayPairedPracticeEnabled?: boolean;
+  sundayPairedPracticeDurationHours?: number;
+  sundayPairedPracticeFieldId?: string;
+  sundayPairedPracticeCageId?: string;
 }
 
 export interface UpdateDivisionConfigInput {
@@ -101,4 +112,8 @@ export interface UpdateDivisionConfigInput {
   gameWeekOverrides?: GameWeekOverride[];
   maxGamesPerSeason?: number;
   blackoutDates?: DivisionBlackout[];
+  sundayPairedPracticeEnabled?: boolean;
+  sundayPairedPracticeDurationHours?: number;
+  sundayPairedPracticeFieldId?: string;
+  sundayPairedPracticeCageId?: string;
 }

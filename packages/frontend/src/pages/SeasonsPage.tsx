@@ -9,6 +9,7 @@ import {
   deleteDivisionConfig,
 } from '../api/division-configs';
 import { fetchSeasonFields } from '../api/fields';
+import { fetchSeasonCages } from '../api/batting-cages';
 import { fetchTeams } from '../api/teams';
 import { deleteScheduledEventsBulk } from '../api/scheduled-events';
 import type {
@@ -23,6 +24,7 @@ import type {
   GameWeekOverride,
   DivisionBlackout,
   SeasonField,
+  SeasonCage,
   Team,
   EventType,
 } from '@ll-scheduler/shared';
@@ -80,6 +82,7 @@ export default function SeasonsPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [seasonDivisionConfigs, setSeasonDivisionConfigs] = useState<Record<string, DivisionConfig[]>>({});
   const [seasonFields, setSeasonFields] = useState<Record<string, SeasonField[]>>({});
+  const [seasonCages, setSeasonCages] = useState<Record<string, SeasonCage[]>>({});
   const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
   const [configFormData, setConfigFormData] = useState<Partial<CreateDivisionConfigInput>>({
     practicesPerWeek: 1,
@@ -90,6 +93,10 @@ export default function SeasonsPage() {
     cageSessionsPerWeek: undefined,
     cageSessionDurationHours: undefined,
     fieldPreferences: undefined,
+    sundayPairedPracticeEnabled: undefined,
+    sundayPairedPracticeDurationHours: undefined,
+    sundayPairedPracticeFieldId: undefined,
+    sundayPairedPracticeCageId: undefined,
   });
 
   // Game week overrides state
@@ -139,6 +146,15 @@ export default function SeasonsPage() {
     }
   };
 
+  const loadSeasonCagesForSeason = async (seasonId: string) => {
+    try {
+      const cages = await fetchSeasonCages(seasonId);
+      setSeasonCages((prev) => ({ ...prev, [seasonId]: cages }));
+    } catch (error) {
+      console.error('Failed to load season cages:', error);
+    }
+  };
+
   const toggleSeasonExpanded = async (seasonId: string) => {
     if (expandedSeasonId === seasonId) {
       setExpandedSeasonId(null);
@@ -149,6 +165,9 @@ export default function SeasonsPage() {
       }
       if (!seasonFields[seasonId]) {
         await loadSeasonFieldsForSeason(seasonId);
+      }
+      if (!seasonCages[seasonId]) {
+        await loadSeasonCagesForSeason(seasonId);
       }
     }
   };
@@ -230,6 +249,10 @@ export default function SeasonsPage() {
       fieldPreferences: config.fieldPreferences,
       maxGamesPerSeason: config.maxGamesPerSeason,
       blackoutDates: config.blackoutDates,
+      sundayPairedPracticeEnabled: config.sundayPairedPracticeEnabled,
+      sundayPairedPracticeDurationHours: config.sundayPairedPracticeDurationHours,
+      sundayPairedPracticeFieldId: config.sundayPairedPracticeFieldId,
+      sundayPairedPracticeCageId: config.sundayPairedPracticeCageId,
     });
     setEditingConfigId(config.id);
   };
@@ -268,6 +291,10 @@ export default function SeasonsPage() {
         fieldPreferences: configFormData.fieldPreferences,
         maxGamesPerSeason: configFormData.maxGamesPerSeason,
         blackoutDates: configFormData.blackoutDates,
+        sundayPairedPracticeEnabled: configFormData.sundayPairedPracticeEnabled,
+        sundayPairedPracticeDurationHours: configFormData.sundayPairedPracticeDurationHours,
+        sundayPairedPracticeFieldId: configFormData.sundayPairedPracticeFieldId,
+        sundayPairedPracticeCageId: configFormData.sundayPairedPracticeCageId,
       });
       await loadDivisionConfigsForSeason(configFormData.seasonId);
       setEditingConfigId(null);
@@ -1130,6 +1157,108 @@ export default function SeasonsPage() {
                                     />
                                   </div>
                                 </div>
+                                {/* Sunday Paired Practice */}
+                                <div className={styles.formRow}>
+                                  <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                                    <label>
+                                      <input
+                                        type="checkbox"
+                                        checked={configFormData.sundayPairedPracticeEnabled || false}
+                                        onChange={(e) =>
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            sundayPairedPracticeEnabled: e.target.checked,
+                                          })
+                                        }
+                                      />
+                                      {' '}Enable Sunday Paired Practices
+                                    </label>
+                                    <p className={styles.helperText}>
+                                      Teams are paired on Sundays - first half on field + cage, then swap. Counts as 1 practice + 1 cage session.
+                                    </p>
+                                  </div>
+                                </div>
+                                {configFormData.sundayPairedPracticeEnabled && (
+                                  <div className={styles.formRow}>
+                                    <div className={styles.formGroup}>
+                                      <label>Total Duration</label>
+                                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                        <select
+                                          value={Math.floor(configFormData.sundayPairedPracticeDurationHours || 0)}
+                                          onChange={(e) => {
+                                            const hours = parseInt(e.target.value);
+                                            const currentMinutes = Math.round(((configFormData.sundayPairedPracticeDurationHours || 0) % 1) * 60);
+                                            setConfigFormData({
+                                              ...configFormData,
+                                              sundayPairedPracticeDurationHours: hours + currentMinutes / 60,
+                                            });
+                                          }}
+                                          style={{ width: '70px' }}
+                                        >
+                                          {[0, 1, 2, 3, 4, 5].map((h) => (
+                                            <option key={h} value={h}>{h}</option>
+                                          ))}
+                                        </select>
+                                        <span>hr</span>
+                                        <select
+                                          value={Math.round(((configFormData.sundayPairedPracticeDurationHours || 0) % 1) * 60)}
+                                          onChange={(e) => {
+                                            const minutes = parseInt(e.target.value);
+                                            const currentHours = Math.floor(configFormData.sundayPairedPracticeDurationHours || 0);
+                                            setConfigFormData({
+                                              ...configFormData,
+                                              sundayPairedPracticeDurationHours: currentHours + minutes / 60,
+                                            });
+                                          }}
+                                          style={{ width: '70px' }}
+                                        >
+                                          {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                                            <option key={m} value={m}>{m}</option>
+                                          ))}
+                                        </select>
+                                        <span>min</span>
+                                      </div>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                      <label>Field</label>
+                                      <select
+                                        value={configFormData.sundayPairedPracticeFieldId || ''}
+                                        onChange={(e) =>
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            sundayPairedPracticeFieldId: e.target.value || undefined,
+                                          })
+                                        }
+                                      >
+                                        <option value="">Select field...</option>
+                                        {(seasonFields[season.id] || []).map((f) => (
+                                          <option key={f.fieldId} value={f.fieldId}>
+                                            {f.field?.name || f.fieldId}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div className={styles.formGroup}>
+                                      <label>Cage</label>
+                                      <select
+                                        value={configFormData.sundayPairedPracticeCageId || ''}
+                                        onChange={(e) =>
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            sundayPairedPracticeCageId: e.target.value || undefined,
+                                          })
+                                        }
+                                      >
+                                        <option value="">Select cage...</option>
+                                        {(seasonCages[season.id] || []).map((c) => (
+                                          <option key={c.cageId} value={c.cageId}>
+                                            {c.cage?.name || c.cageId}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                )}
                                 {/* Field Preferences */}
                                 <div className={styles.formRow}>
                                   <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
@@ -1329,6 +1458,27 @@ export default function SeasonsPage() {
                                     )}
                                     {existingConfig.cageSessionDurationHours && (
                                       <span>Cage duration: {existingConfig.cageSessionDurationHours}h</span>
+                                    )}
+                                  </div>
+                                )}
+                                {existingConfig.sundayPairedPracticeEnabled && (
+                                  <div className={styles.configDetailRow}>
+                                    <span>Sunday paired practice: {(() => {
+                                      const hours = Math.floor(existingConfig.sundayPairedPracticeDurationHours || 0);
+                                      const minutes = Math.round(((existingConfig.sundayPairedPracticeDurationHours || 0) % 1) * 60);
+                                      if (minutes === 0) return `${hours}h`;
+                                      if (hours === 0) return `${minutes}min`;
+                                      return `${hours}h ${minutes}min`;
+                                    })()}</span>
+                                    {existingConfig.sundayPairedPracticeFieldId && (
+                                      <span>
+                                        Field: {(seasonFields[season.id] || []).find(f => f.fieldId === existingConfig.sundayPairedPracticeFieldId)?.field?.name || existingConfig.sundayPairedPracticeFieldId}
+                                      </span>
+                                    )}
+                                    {existingConfig.sundayPairedPracticeCageId && (
+                                      <span>
+                                        Cage: {(seasonCages[season.id] || []).find(c => c.cageId === existingConfig.sundayPairedPracticeCageId)?.cage?.name || existingConfig.sundayPairedPracticeCageId}
+                                      </span>
                                     )}
                                   </div>
                                 )}
