@@ -75,6 +75,7 @@ import {
   generateRoundRobinMatchups,
   assignMatchupsToWeeks,
   generateTeamPairingsForWeek,
+  calculateDaysBetween,
 } from './draft.js';
 
 /**
@@ -1496,8 +1497,48 @@ export class ScheduleGenerator {
           (m) => m.originalWeek === undefined || m.originalWeek === weekNum
         );
 
+        // Get required-day dates for this week (e.g., Saturday dates)
+        // Used to check if scheduling a matchup would cause short rest
+        const requiredDayDates = new Set<string>();
+        for (const slot of weekFieldSlots) {
+          if (requiredDays.includes(slot.slot.dayOfWeek)) {
+            requiredDayDates.add(slot.slot.date);
+          }
+        }
+
+        // Helper to check if scheduling a team on a required day would cause short rest (≤2 days since last game)
+        const wouldCauseShortRest = (teamId: string): boolean => {
+          const teamState = this.teamSchedulingStates.get(teamId);
+          if (!teamState || teamState.gameDates.length === 0) return false;
+
+          // Get the team's most recent game date
+          const lastGameDate = teamState.gameDates[teamState.gameDates.length - 1];
+
+          // Check if any required day is within 2 days of the last game
+          for (const reqDate of requiredDayDates) {
+            const daysBetween = calculateDaysBetween(lastGameDate, reqDate);
+            if (daysBetween <= 2) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        // Pre-sort matchups to prefer ones that won't cause short rest
+        // The backtracking algorithm tries matchups in order, so putting no-short-rest
+        // matchups first will naturally prefer them when multiple solutions exist
+        const sortedRegularMatchups = [...regularMatchupsForWeek].sort((a, b) => {
+          const aShortRest = wouldCauseShortRest(a.homeTeamId) || wouldCauseShortRest(a.awayTeamId);
+          const bShortRest = wouldCauseShortRest(b.homeTeamId) || wouldCauseShortRest(b.awayTeamId);
+          // No short rest should come first (false < true)
+          if (aShortRest !== bShortRest) {
+            return aShortRest ? 1 : -1;
+          }
+          return 0;
+        });
+
         const { requiredDayMatchups, otherMatchups: nonRequiredDayMatchups } = findRequiredDayOptimalMatchups(
-          regularMatchupsForWeek,
+          sortedRegularMatchups,
           requiredDayGameCapacity
         );
 
