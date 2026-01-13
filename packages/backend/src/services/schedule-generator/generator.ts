@@ -1357,12 +1357,26 @@ export class ScheduleGenerator {
         matchupsByWeek.get(matchup.targetWeek)!.push(matchup);
       }
 
-      // Process weeks in order
-      const weekNumbers = Array.from(matchupsByWeek.keys()).sort((a, b) => a - b);
+      // Track matchups that couldn't be scheduled in their target week (spillover)
+      // These will be attempted in subsequent weeks
+      let spilloverMatchups: Array<GameMatchup & { targetWeek: number; originalWeek: number }> = [];
 
-      for (const weekNum of weekNumbers) {
-        const weekMatchups = matchupsByWeek.get(weekNum)!;
+      // Process ALL weeks in order (not just weeks with assigned matchups)
+      // This ensures spillover matchups can be scheduled in any future week
+      for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
+        const weekMatchups = matchupsByWeek.get(weekNum) || [];
         const weekFieldSlots = fieldSlotsByWeek.get(weekNum) || [];
+
+        // Combine spillover matchups with this week's matchups
+        // Spillover gets priority since they're already delayed
+        const allMatchupsThisWeek: Array<GameMatchup & { targetWeek: number; originalWeek?: number }> = [
+          ...spilloverMatchups.map(m => ({ ...m })),
+          ...weekMatchups.map(m => ({ ...m, originalWeek: m.targetWeek })),
+        ];
+
+        // Clear spillover - we'll re-add any that fail this week
+        const newSpillover: Array<GameMatchup & { targetWeek: number; originalWeek: number }> = [];
+        spilloverMatchups = [];
 
         // Count how many games can fit on required days this week
         // A single slot (e.g., 9am-6pm) can hold multiple games
@@ -1377,16 +1391,21 @@ export class ScheduleGenerator {
           }
         }
 
+        // Skip weeks with no matchups to process
+        if (allMatchupsThisWeek.length === 0) {
+          continue;
+        }
+
         // Determine if there's scarcity: fewer required-day game slots than matchups
-        const hasRequiredDayScarcity = requiredDays.length > 0 && requiredDayGameCapacity < weekMatchups.length;
+        const hasRequiredDayScarcity = requiredDays.length > 0 && requiredDayGameCapacity < allMatchupsThisWeek.length;
         if (hasRequiredDayScarcity) {
-          verboseLog(`  Week ${weekNum + 1}: Required-day scarcity - ${requiredDayGameCapacity} game slots for ${weekMatchups.length} matchups`);
+          verboseLog(`  Week ${weekNum + 1}: Required-day scarcity - ${requiredDayGameCapacity} game slots for ${allMatchupsThisWeek.length} matchups`);
         }
 
         // Sort matchups to balance fairness:
         // 1. Teams with more short rest games go first (so they get first pick of non-short-rest slots)
         // 2. Teams with fewer preferred-day games go first (matters when there's scarcity)
-        const sortedMatchups = [...weekMatchups].sort((a, b) => {
+        const sortedMatchups = [...allMatchupsThisWeek].sort((a, b) => {
           // First priority: teams with more short rest games should go first
           const aMaxShortRest = Math.max(
             this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0,
@@ -1428,37 +1447,40 @@ export class ScheduleGenerator {
           continue;
         }
 
-        // Only try the assigned target week - don't move matchups between weeks
-        // The assignMatchupsToWeeks algorithm already ensured 2-regularity,
-        // so if we can't schedule here, there's a field capacity issue
+        // Try to schedule the matchup in the current week
+        // If it fails, it will be added to spillover and tried in subsequent weeks
         let scheduled = false;
         let failureReason = '';
-        const week = gameWeeks[matchup.targetWeek];
+        const week = gameWeeks[weekNum];
 
         if (!week) {
           failureReason = 'target_week_not_found';
         } else {
-          // Check if either team has already met their games-per-week quota
-          // (This shouldn't happen if assignMatchupsToWeeks worked correctly)
+          // Check if either team has already met their games-per-week quota for THIS week
+          // Note: For spillover games, we're more lenient - allow scheduling even if it exceeds
+          // the original week's quota, as long as we don't create back-to-back games
           const homeGamesThisWeek = homeTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
           const awayGamesThisWeek = awayTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-          // matchup.targetWeek is the game week index (0-based), use +1 for override lookup
-          const gamesPerWeekQuota = this.getGamesPerWeekForDivision(division.divisionId, matchup.targetWeek + 1);
-          if (homeGamesThisWeek >= gamesPerWeekQuota) {
-            failureReason = `${homeTeam.name} already at quota (${homeGamesThisWeek}/${gamesPerWeekQuota})`;
-          } else if (awayGamesThisWeek >= gamesPerWeekQuota) {
-            failureReason = `${awayTeam.name} already at quota (${awayGamesThisWeek}/${gamesPerWeekQuota})`;
+          // Use current week (weekNum) for quota lookup, not original target week
+          const gamesPerWeekQuota = this.getGamesPerWeekForDivision(division.divisionId, weekNum + 1);
+          // For spillover, allow up to quota + 1 to accommodate the delayed game
+          const isSpillover = matchup.originalWeek !== undefined && matchup.originalWeek !== weekNum;
+          const effectiveQuota = isSpillover ? gamesPerWeekQuota + 1 : gamesPerWeekQuota;
+          if (homeGamesThisWeek >= effectiveQuota) {
+            failureReason = `${homeTeam.name} already at quota (${homeGamesThisWeek}/${effectiveQuota})`;
+          } else if (awayGamesThisWeek >= effectiveQuota) {
+            failureReason = `${awayTeam.name} already at quota (${awayGamesThisWeek}/${effectiveQuota})`;
           } else {
-            // Use pre-filtered field slots for this week
-            const weekFieldSlots = fieldSlotsByWeek.get(matchup.targetWeek) || [];
+            // Use pre-filtered field slots for this week (not target week)
+            const currentWeekFieldSlots = fieldSlotsByWeek.get(weekNum) || [];
 
-            if (weekFieldSlots.length === 0) {
+            if (currentWeekFieldSlots.length === 0) {
               failureReason = 'no_compatible_field_slots';
             } else {
               // Generate placement candidates for this game
               const candidates = generateCandidatesForGame(
                 matchup,
-                weekFieldSlots,
+                currentWeekFieldSlots,
                 week,
                 division.config.gameDurationHours,
                 this.season.id,
@@ -1476,7 +1498,43 @@ export class ScheduleGenerator {
                 let bestCandidate: ScoredCandidate | undefined;
                 let usedFallback = false;
 
-                if (requiredDays.length > 0) {
+                // For spillover games, use special logic: pick earliest available date,
+                // ignoring day preferences (preferred/acceptable don't matter for catch-up games)
+                if (isSpillover) {
+                  // Group candidates by date
+                  const candidatesByDate = new Map<string, PlacementCandidate[]>();
+                  for (const c of filteredCandidates) {
+                    if (!candidatesByDate.has(c.date)) {
+                      candidatesByDate.set(c.date, []);
+                    }
+                    candidatesByDate.get(c.date)!.push(c);
+                  }
+
+                  // Sort dates ascending (earliest first)
+                  const sortedDates = Array.from(candidatesByDate.keys()).sort();
+
+                  // Create modified weights with gameDayPreference = 0 for spillover games
+                  const spilloverWeights = { ...this.scoringWeights, gameDayPreference: 0 };
+
+                  // Try each date in order until we find a valid candidate
+                  for (const date of sortedDates) {
+                    const dateCandidates = candidatesByDate.get(date)!;
+                    const scoredCandidates = dateCandidates.map((c) =>
+                      calculatePlacementScore(c, homeTeamState, this.scoringContext!, spilloverWeights)
+                    );
+                    scoredCandidates.sort((a, b) => b.score - a.score);
+                    const best = scoredCandidates[0];
+
+                    // Accept if no severe penalty
+                    if (best && best.score > -500000) {
+                      bestCandidate = best;
+                      verboseLog(`  ⏩ Spillover game using earliest available date: ${date}`);
+                      break;
+                    }
+                  }
+
+                  // If no valid candidate found on any date, bestCandidate remains undefined
+                } else if (requiredDays.length > 0) {
                   // Phase 1: Try required days only
                   const requiredDayCandidates = filteredCandidates.filter(c => requiredDays.includes(c.dayOfWeek));
 
@@ -1573,15 +1631,19 @@ export class ScheduleGenerator {
                   updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, division.config.gameDurationHours);
 
                   const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
+                  const originalWeek = (matchup as any).originalWeek ?? matchup.targetWeek;
+                  const isSpilloverGame = originalWeek !== weekNum;
+                  const spilloverNote = isSpilloverGame ? ` (spillover from week ${originalWeek + 1})` : '';
 
-                  verboseLog(`  ✅ ${homeTeam.name} vs ${awayTeam.name}: Week ${week.weekNumber + 1} ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName}`);
+                  verboseLog(`  ✅ ${homeTeam.name} vs ${awayTeam.name}: Week ${week.weekNumber + 1} ${bestCandidate.date} (${dayName}) ${bestCandidate.startTime}-${bestCandidate.endTime} @ ${bestCandidate.resourceName}${spilloverNote}`);
 
-                  this.log('info', 'game', `Scheduled game: ${homeTeam.name} vs ${awayTeam.name}`, {
+                  this.log('info', 'game', `Scheduled game: ${homeTeam.name} vs ${awayTeam.name}${spilloverNote}`, {
                     homeTeamId: bestCandidate.homeTeamId,
                     awayTeamId: bestCandidate.awayTeamId,
                     date: bestCandidate.date,
-                    targetWeek: matchup.targetWeek,
-                    actualWeek: week.weekNumber,
+                    originalWeek,
+                    scheduledWeek: weekNum,
+                    isSpillover: isSpilloverGame,
                     dayOfWeek: bestCandidate.dayOfWeek,
                     dayName,
                     time: `${bestCandidate.startTime}-${bestCandidate.endTime}`,
@@ -1607,23 +1669,47 @@ export class ScheduleGenerator {
 
         if (!scheduled) {
           const weekDates = week ? `${week.startDate} to ${week.endDate}` : 'unknown';
+          const originalWeek = (matchup as any).originalWeek ?? matchup.targetWeek;
+          const isSpillover = originalWeek !== weekNum;
 
-          verboseLog(`  ❌ Could not schedule: ${homeTeam.name} vs ${awayTeam.name} (week ${matchup.targetWeek + 1}): ${failureReason}`);
+          // If there are more weeks to try, add to spillover
+          if (weekNum < gameWeeks.length - 1) {
+            newSpillover.push({
+              ...matchup,
+              targetWeek: weekNum, // Update target week for next iteration
+              originalWeek,
+            });
+            if (isSpillover) {
+              verboseLog(`  ⏩ Spillover continues: ${homeTeam.name} vs ${awayTeam.name} (originally week ${originalWeek + 1}, tried week ${weekNum + 1}): ${failureReason}`);
+            } else {
+              verboseLog(`  ⏩ Adding to spillover: ${homeTeam.name} vs ${awayTeam.name} (week ${weekNum + 1}): ${failureReason}`);
+            }
+          } else {
+            // No more weeks - this is a true failure
+            verboseLog(`  ❌ Could not schedule: ${homeTeam.name} vs ${awayTeam.name} (originally week ${originalWeek + 1}, last tried week ${weekNum + 1}): ${failureReason}`);
 
-          const failureSummary = `Could not schedule ${homeTeam.name} vs ${awayTeam.name} in week ${matchup.targetWeek + 1} (${weekDates}).\nReason: ${failureReason}`;
+            const failureSummary = `Could not schedule ${homeTeam.name} vs ${awayTeam.name}. Originally targeted week ${originalWeek + 1}, failed through week ${weekNum + 1}.\nReason: ${failureReason}`;
 
-          this.log('warning', 'game', `Failed to schedule matchup: ${homeTeam.name} vs ${awayTeam.name}`, {
-            homeTeamId: matchup.homeTeamId,
-            awayTeamId: matchup.awayTeamId,
-            divisionId: division.divisionId,
-            targetWeek: matchup.targetWeek,
-            weekDates,
-            reason: failureReason,
-          }, failureSummary);
-          failedToSchedule++;
+            this.log('warning', 'game', `Failed to schedule matchup: ${homeTeam.name} vs ${awayTeam.name}`, {
+              homeTeamId: matchup.homeTeamId,
+              awayTeamId: matchup.awayTeamId,
+              divisionId: division.divisionId,
+              originalWeek,
+              lastTriedWeek: weekNum,
+              weekDates,
+              reason: failureReason,
+            }, failureSummary);
+            failedToSchedule++;
+          }
         }
         } // end for loop for matchups
-      } // end weekNumbers loop
+
+        // Carry forward any matchups that couldn't be scheduled this week
+        spilloverMatchups = newSpillover;
+        if (spilloverMatchups.length > 0) {
+          verboseLog(`  📋 ${spilloverMatchups.length} matchups spilling over to next week`);
+        }
+      } // end week loop
     } // end division loop
 
     // Report summary
@@ -2670,13 +2756,9 @@ export class ScheduleGenerator {
 
           if (team1State) {
             updateTeamStateAfterScheduling(team1State, event, weekNumber);
-            const weekEvents = team1State.eventsPerWeek.get(weekNumber);
-            console.log(`  DEBUG: After paired practice, ${team1Name} week ${weekNumber} cages = ${weekEvents?.cages}`);
           }
           if (team2State) {
             updateTeamStateAfterScheduling(team2State, event, weekNumber);
-            const weekEvents = team2State.eventsPerWeek.get(weekNumber);
-            console.log(`  DEBUG: After paired practice, ${team2Name} week ${weekNumber} cages = ${weekEvents?.cages}`);
           }
 
           // Update scoring context resource usage for both field and cage
@@ -3489,16 +3571,11 @@ export class ScheduleGenerator {
         .filter((ts) => {
           const config = this.divisionConfigs.get(ts.divisionId);
           if (!config || !config.cageSessionsPerWeek) return false;
-          const weekEvents = ts.eventsPerWeek.get(week.weekNumber) || { games: 0, practices: 0, cages: 0 };
-          const needsCage = teamNeedsEventInWeek(ts, 'cage', week.weekNumber, {
+          return teamNeedsEventInWeek(ts, 'cage', week.weekNumber, {
             practicesPerWeek: config.practicesPerWeek,
             gamesPerWeek: config.gamesPerWeek || 0,
             cageSessionsPerWeek: config.cageSessionsPerWeek,
           });
-          if (config.sundayPairedPracticeEnabled) {
-            console.log(`  DEBUG cage check: ${ts.teamName} week ${week.weekNumber} cages=${weekEvents.cages} quota=${config.cageSessionsPerWeek} needsCage=${needsCage}`);
-          }
-          return needsCage;
         })
         .sort((a, b) => {
           // Sort by who is furthest behind their cage target

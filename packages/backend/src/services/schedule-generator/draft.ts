@@ -698,8 +698,17 @@ export function generateCandidatesForGame(
   // Filter slots to this week
   const weekSlots = resourceSlots.filter((rs) => week.dates.includes(rs.slot.date));
 
+  // Get 'avoid' days for this division - these are hard blockers
+  const gameDayPrefs = context.gameDayPreferences.get(matchup.divisionId) || [];
+  const avoidDays = new Set(
+    gameDayPrefs.filter(p => p.priority === 'avoid').map(p => p.dayOfWeek)
+  );
+
   for (const slot of weekSlots) {
     if (slot.slot.duration < durationHours) continue;
+
+    // Skip days marked as 'avoid' - this is a hard blocker, not just a negative weight
+    if (avoidDays.has(slot.slot.dayOfWeek)) continue;
 
     // Skip single-event-only slots that already have an event
     if (slot.singleEventOnly) {
