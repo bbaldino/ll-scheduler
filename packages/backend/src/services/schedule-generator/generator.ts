@@ -815,6 +815,7 @@ export class ScheduleGenerator {
                   endTime: window.endTime,
                   duration,
                 },
+                singleEventOnly: avail.singleEventOnly,
               });
             }
             continue;
@@ -824,6 +825,9 @@ export class ScheduleGenerator {
           const startTime = override?.startTime || avail.startTime;
           const endTime = override?.endTime || avail.endTime;
           const duration = calculateDuration(startTime, endTime);
+
+          // Use override's singleEventOnly if set, otherwise use availability's
+          const singleEventOnly = override?.singleEventOnly ?? avail.singleEventOnly;
 
           this.cageSlots.push({
             resourceType: 'cage',
@@ -836,6 +840,7 @@ export class ScheduleGenerator {
               endTime,
               duration,
             },
+            singleEventOnly,
           });
         }
       }

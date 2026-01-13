@@ -55,6 +55,7 @@ export interface CageAvailability {
   dayOfWeek: number; // 0-6 (Sunday-Saturday)
   startTime: string; // HH:MM format
   endTime: string; // HH:MM format
+  singleEventOnly: boolean; // If true, only one event can be scheduled in this window
   createdAt: string;
   updatedAt: string;
 }
@@ -64,12 +65,14 @@ export interface CreateCageAvailabilityInput {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
+  singleEventOnly?: boolean;
 }
 
 export interface UpdateCageAvailabilityInput {
   dayOfWeek?: number;
   startTime?: string;
   endTime?: string;
+  singleEventOnly?: boolean;
 }
 
 /**
@@ -83,6 +86,7 @@ export interface CageDateOverride {
   startTime?: string; // HH:MM format (null for all-day)
   endTime?: string; // HH:MM format (null for all-day)
   reason?: string;
+  singleEventOnly?: boolean; // If true (for 'added' type), only one event can be scheduled
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +98,7 @@ export interface CreateCageDateOverrideInput {
   startTime?: string;
   endTime?: string;
   reason?: string;
+  singleEventOnly?: boolean;
 }
 
 export interface UpdateCageDateOverrideInput {
@@ -102,4 +107,5 @@ export interface UpdateCageDateOverrideInput {
   startTime?: string;
   endTime?: string;
   reason?: string;
+  singleEventOnly?: boolean;
 }

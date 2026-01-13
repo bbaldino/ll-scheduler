@@ -13,6 +13,7 @@ interface CageDateOverrideRow {
   start_time: string | null;
   end_time: string | null;
   reason: string | null;
+  single_event_only: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +27,7 @@ function rowToCageDateOverride(row: CageDateOverrideRow): CageDateOverride {
     startTime: row.start_time || undefined,
     endTime: row.end_time || undefined,
     reason: row.reason || undefined,
+    singleEventOnly: row.single_event_only ? Boolean(row.single_event_only) : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -92,11 +94,12 @@ export async function createCageDateOverride(
 ): Promise<CageDateOverride> {
   const id = generateId();
   const now = new Date().toISOString();
+  const singleEventOnly = input.singleEventOnly ? 1 : 0;
 
   await db
     .prepare(
-      `INSERT INTO cage_date_overrides (id, season_cage_id, date, override_type, start_time, end_time, reason, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO cage_date_overrides (id, season_cage_id, date, override_type, start_time, end_time, reason, single_event_only, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -106,6 +109,7 @@ export async function createCageDateOverride(
       input.startTime || null,
       input.endTime || null,
       input.reason || null,
+      singleEventOnly,
       now,
       now
     )
@@ -151,6 +155,10 @@ export async function updateCageDateOverride(
   if (input.reason !== undefined) {
     updates.push('reason = ?');
     values.push(input.reason);
+  }
+  if (input.singleEventOnly !== undefined) {
+    updates.push('single_event_only = ?');
+    values.push(input.singleEventOnly ? 1 : 0);
   }
 
   if (updates.length === 0) {

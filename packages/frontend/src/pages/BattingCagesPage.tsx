@@ -10,9 +10,11 @@ import {
   deleteSeasonCage,
   fetchCageAvailabilities,
   createCageAvailability,
+  updateCageAvailability,
   deleteCageAvailability,
   fetchCageDateOverrides,
   createCageDateOverride,
+  updateCageDateOverride,
   deleteCageDateOverride,
 } from '../api/batting-cages';
 import { fetchDivisions } from '../api/divisions';
@@ -22,21 +24,24 @@ import type {
   SeasonCage,
   Division,
   CageAvailability,
-  CreateCageAvailabilityInput,
   CageDateOverride,
-  CreateCageDateOverrideInput,
-  OverrideType,
 } from '@ll-scheduler/shared';
+import {
+  AvailabilityForm,
+  AvailabilityList,
+  type AvailabilityFormData,
+  type AvailabilityDisplayData,
+  formatTime12Hour,
+} from '../components/AvailabilityForm';
+import {
+  OverrideForm,
+  OverrideList,
+  type OverrideFormData,
+  type OverrideDisplayData,
+} from '../components/OverrideForm';
 import styles from './BattingCagesPage.module.css';
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-function formatTime12Hour(time: string): string {
-  const [hours, minutes] = time.split(':').map(Number);
-  const period = hours >= 12 ? 'PM' : 'AM';
-  const displayHours = hours % 12 || 12;
-  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
-}
 
 export default function BattingCagesPage() {
   const { currentSeason } = useSeason();
@@ -54,18 +59,24 @@ export default function BattingCagesPage() {
   const [managingSeasonCageId, setManagingSeasonCageId] = useState<string | null>(null);
   const [availabilities, setAvailabilities] = useState<Record<string, CageAvailability[]>>({});
   const [overrides, setOverrides] = useState<Record<string, CageDateOverride[]>>({});
-  const [availabilityFormData, setAvailabilityFormData] = useState<Omit<CreateCageAvailabilityInput, 'seasonCageId'>>({
+  const [availabilityFormData, setAvailabilityFormData] = useState<AvailabilityFormData>({
     dayOfWeek: 1,
     startTime: '09:00',
     endTime: '17:00',
+    singleEventOnly: false,
   });
-  const [overrideFormData, setOverrideFormData] = useState<Omit<CreateCageDateOverrideInput, 'seasonCageId'>>({
+  const [overrideFormData, setOverrideFormData] = useState<OverrideFormData>({
     date: '',
     overrideType: 'blackout',
     startTime: undefined,
     endTime: undefined,
     reason: '',
+    singleEventOnly: false,
   });
+
+  // Edit state
+  const [editingAvailabilityId, setEditingAvailabilityId] = useState<string | null>(null);
+  const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
 
   useEffect(() => {
     loadGlobalCages();
@@ -220,6 +231,44 @@ export default function BattingCagesPage() {
     }
   };
 
+  const handleStartEditAvailability = (avail: AvailabilityDisplayData) => {
+    setEditingAvailabilityId(avail.id);
+    setAvailabilityFormData({
+      dayOfWeek: avail.dayOfWeek,
+      startTime: avail.startTime,
+      endTime: avail.endTime,
+      singleEventOnly: avail.singleEventOnly,
+    });
+  };
+
+  const handleUpdateAvailability = async (seasonCageId: string) => {
+    if (!editingAvailabilityId) return;
+    try {
+      await updateCageAvailability(editingAvailabilityId, availabilityFormData);
+      await loadSeasonCageAvailabilities(seasonCageId);
+      setEditingAvailabilityId(null);
+      setAvailabilityFormData({
+        dayOfWeek: 1,
+        startTime: '09:00',
+        endTime: '17:00',
+        singleEventOnly: false,
+      });
+    } catch (error) {
+      console.error('Failed to update availability:', error);
+      alert('Failed to update availability');
+    }
+  };
+
+  const handleCancelEditAvailability = () => {
+    setEditingAvailabilityId(null);
+    setAvailabilityFormData({
+      dayOfWeek: 1,
+      startTime: '09:00',
+      endTime: '17:00',
+      singleEventOnly: false,
+    });
+  };
+
   const handleDeleteAvailability = async (seasonCageId: string, availabilityId: string) => {
     try {
       await deleteCageAvailability(availabilityId);
@@ -243,11 +292,56 @@ export default function BattingCagesPage() {
         startTime: undefined,
         endTime: undefined,
         reason: '',
+        singleEventOnly: false,
       });
     } catch (error) {
       console.error('Failed to create override:', error);
       alert('Failed to create override');
     }
+  };
+
+  const handleStartEditOverride = (override: OverrideDisplayData) => {
+    setEditingOverrideId(override.id);
+    setOverrideFormData({
+      date: override.date,
+      overrideType: override.overrideType,
+      startTime: override.startTime,
+      endTime: override.endTime,
+      reason: override.reason || '',
+      singleEventOnly: override.singleEventOnly,
+    });
+  };
+
+  const handleUpdateOverride = async (seasonCageId: string) => {
+    if (!editingOverrideId) return;
+    try {
+      await updateCageDateOverride(editingOverrideId, overrideFormData);
+      await loadSeasonCageOverrides(seasonCageId);
+      setEditingOverrideId(null);
+      setOverrideFormData({
+        date: '',
+        overrideType: 'blackout',
+        startTime: undefined,
+        endTime: undefined,
+        reason: '',
+        singleEventOnly: false,
+      });
+    } catch (error) {
+      console.error('Failed to update override:', error);
+      alert('Failed to update override');
+    }
+  };
+
+  const handleCancelEditOverride = () => {
+    setEditingOverrideId(null);
+    setOverrideFormData({
+      date: '',
+      overrideType: 'blackout',
+      startTime: undefined,
+      endTime: undefined,
+      reason: '',
+      singleEventOnly: false,
+    });
   };
 
   const handleDeleteOverride = async (seasonCageId: string, overrideId: string) => {
@@ -271,6 +365,7 @@ export default function BattingCagesPage() {
           dayOfWeek: avail.dayOfWeek,
           startTime: avail.startTime,
           endTime: avail.endTime,
+          singleEventOnly: avail.singleEventOnly,
         });
       }
 
@@ -283,6 +378,7 @@ export default function BattingCagesPage() {
           startTime: override.startTime,
           endTime: override.endTime,
           reason: override.reason,
+          singleEventOnly: override.singleEventOnly,
         });
       }
 
@@ -448,6 +544,7 @@ export default function BattingCagesPage() {
                               {availabilities[seasonCage.id].map((avail) => (
                                 <li key={avail.id}>
                                   {DAYS_OF_WEEK[avail.dayOfWeek]} {formatTime12Hour(avail.startTime)} - {formatTime12Hour(avail.endTime)}
+                                  {avail.singleEventOnly && ' (Single Event)'}
                                 </li>
                               ))}
                             </ul>
@@ -506,127 +603,45 @@ export default function BattingCagesPage() {
 
                         <div className={styles.seasonCageManagementForms}>
                         <div className={styles.availabilitySection}>
-                          <h4>Weekly Availability</h4>
-                          <div className={styles.availabilityForm}>
-                            <select
-                              value={availabilityFormData.dayOfWeek}
-                              onChange={(e) =>
-                                setAvailabilityFormData({
-                                  ...availabilityFormData,
-                                  dayOfWeek: parseInt(e.target.value) as number,
-                                })
-                              }
-                            >
-                              {DAYS_OF_WEEK.map((day, i) => (
-                                <option key={i} value={i}>
-                                  {day}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              type="time"
-                              value={availabilityFormData.startTime}
-                              onChange={(e) =>
-                                setAvailabilityFormData({ ...availabilityFormData, startTime: e.target.value })
-                              }
-                            />
-                            <span>to</span>
-                            <input
-                              type="time"
-                              value={availabilityFormData.endTime}
-                              onChange={(e) =>
-                                setAvailabilityFormData({ ...availabilityFormData, endTime: e.target.value })
-                              }
-                            />
-                            <button type="button" onClick={() => handleCreateAvailability(seasonCage.id)}>
-                              Add
-                            </button>
-                          </div>
-                          {availabilities[seasonCage.id]?.length > 0 && (
-                            <div className={styles.availabilityList}>
-                              {availabilities[seasonCage.id].map((avail) => (
-                                <div key={avail.id} className={styles.availabilityItem}>
-                                  <span>
-                                    {DAYS_OF_WEEK[avail.dayOfWeek]} {formatTime12Hour(avail.startTime)} - {formatTime12Hour(avail.endTime)}
-                                  </span>
-                                  <button onClick={() => handleDeleteAvailability(seasonCage.id, avail.id)}>
-                                    Delete
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          <h4>{editingAvailabilityId ? 'Edit' : 'Add'} Weekly Availability</h4>
+                          <AvailabilityForm
+                            formData={availabilityFormData}
+                            onChange={setAvailabilityFormData}
+                            onSubmit={() =>
+                              editingAvailabilityId
+                                ? handleUpdateAvailability(seasonCage.id)
+                                : handleCreateAvailability(seasonCage.id)
+                            }
+                            onCancel={handleCancelEditAvailability}
+                            isEditing={!!editingAvailabilityId}
+                          />
+                          <AvailabilityList
+                            items={availabilities[seasonCage.id] || []}
+                            onEdit={handleStartEditAvailability}
+                            onDelete={(id) => handleDeleteAvailability(seasonCage.id, id)}
+                            editingId={editingAvailabilityId}
+                          />
                         </div>
 
                         <div className={styles.availabilitySection}>
-                          <h4>Date Overrides</h4>
-                          <div className={styles.overrideForm}>
-                            <input
-                              type="date"
-                              value={overrideFormData.date}
-                              onChange={(e) =>
-                                setOverrideFormData({ ...overrideFormData, date: e.target.value })
-                              }
-                            />
-                            <select
-                              value={overrideFormData.overrideType}
-                              onChange={(e) =>
-                                setOverrideFormData({
-                                  ...overrideFormData,
-                                  overrideType: e.target.value as OverrideType,
-                                })
-                              }
-                            >
-                              <option value="blackout">Blackout</option>
-                              <option value="added">Added</option>
-                            </select>
-                            <input
-                              type="time"
-                              value={overrideFormData.startTime || ''}
-                              onChange={(e) =>
-                                setOverrideFormData({
-                                  ...overrideFormData,
-                                  startTime: e.target.value || undefined,
-                                })
-                              }
-                              placeholder="Start (optional)"
-                            />
-                            <input
-                              type="time"
-                              value={overrideFormData.endTime || ''}
-                              onChange={(e) =>
-                                setOverrideFormData({ ...overrideFormData, endTime: e.target.value || undefined })
-                              }
-                              placeholder="End (optional)"
-                            />
-                            <input
-                              type="text"
-                              value={overrideFormData.reason || ''}
-                              onChange={(e) =>
-                                setOverrideFormData({ ...overrideFormData, reason: e.target.value })
-                              }
-                              placeholder="Reason (optional)"
-                            />
-                            <button type="button" onClick={() => handleCreateOverride(seasonCage.id)}>
-                              Add
-                            </button>
-                          </div>
-                          {overrides[seasonCage.id]?.length > 0 && (
-                            <div className={styles.availabilityList}>
-                              {overrides[seasonCage.id].map((override) => (
-                                <div key={override.id} className={styles.availabilityItem}>
-                                  <span>
-                                    {override.date} - {override.overrideType === 'blackout' ? 'Blackout' : 'Added'}
-                                    {override.startTime && override.endTime && ` (${formatTime12Hour(override.startTime)} - ${formatTime12Hour(override.endTime)})`}
-                                    {override.reason && ` - ${override.reason}`}
-                                  </span>
-                                  <button onClick={() => handleDeleteOverride(seasonCage.id, override.id)}>
-                                    Delete
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                          <h4>{editingOverrideId ? 'Edit' : 'Add'} Date Override</h4>
+                          <OverrideForm
+                            formData={overrideFormData}
+                            onChange={setOverrideFormData}
+                            onSubmit={() =>
+                              editingOverrideId
+                                ? handleUpdateOverride(seasonCage.id)
+                                : handleCreateOverride(seasonCage.id)
+                            }
+                            onCancel={handleCancelEditOverride}
+                            isEditing={!!editingOverrideId}
+                          />
+                          <OverrideList
+                            items={overrides[seasonCage.id] || []}
+                            onEdit={handleStartEditOverride}
+                            onDelete={(id) => handleDeleteOverride(seasonCage.id, id)}
+                            editingId={editingOverrideId}
+                          />
                         </div>
                         </div>
                       </div>
