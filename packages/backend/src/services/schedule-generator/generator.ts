@@ -1485,13 +1485,27 @@ export class ScheduleGenerator {
         // Reorder matchups to maximize required-day (Saturday) slot utilization
         // Matchups that can fill required-day slots without team conflicts go first
         // This ensures we fill Saturday before scheduling remaining games on weekdays
+        //
+        // IMPORTANT: Exclude spillover matchups from this optimization!
+        // Spillover games use special scheduling logic (earliest available date, ignoring day preferences)
+        // so they won't actually go to Saturday even if selected here.
+        const spilloverMatchupsForWeek = allMatchupsThisWeek.filter(
+          (m) => m.originalWeek !== undefined && m.originalWeek !== weekNum
+        );
+        const regularMatchupsForWeek = allMatchupsThisWeek.filter(
+          (m) => m.originalWeek === undefined || m.originalWeek === weekNum
+        );
+
         const { requiredDayMatchups, otherMatchups: nonRequiredDayMatchups } = findRequiredDayOptimalMatchups(
-          allMatchupsThisWeek,
+          regularMatchupsForWeek,
           requiredDayGameCapacity
         );
 
         if (requiredDayMatchups.length > 0) {
           verboseLog(`  Week ${weekNum + 1}: Prioritizing ${requiredDayMatchups.length} matchups for required-day slots`);
+        }
+        if (spilloverMatchupsForWeek.length > 0) {
+          verboseLog(`  Week ${weekNum + 1}: ${spilloverMatchupsForWeek.length} spillover matchups (excluded from required-day optimization)`);
         }
 
         // Sort function for fairness balancing:
@@ -1524,10 +1538,12 @@ export class ScheduleGenerator {
         };
 
         // Sort each group separately, then concatenate
-        // This preserves the required-day-first ordering while still applying fairness within each group
+        // Order: spillover first (already delayed), then required-day matchups, then others
+        // This ensures spillover gets priority, then we fill Saturday, then weekdays
+        const sortedSpilloverMatchups = [...spilloverMatchupsForWeek].sort(fairnessSort);
         const sortedRequiredDayMatchups = [...requiredDayMatchups].sort(fairnessSort);
         const sortedOtherMatchups = [...nonRequiredDayMatchups].sort(fairnessSort);
-        const sortedMatchups = [...sortedRequiredDayMatchups, ...sortedOtherMatchups];
+        const sortedMatchups = [...sortedSpilloverMatchups, ...sortedRequiredDayMatchups, ...sortedOtherMatchups];
 
         // Track how many required-day slots we've used this week
         let requiredDaySlotsUsedThisWeek = 0;
