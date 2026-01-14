@@ -223,7 +223,15 @@ export function generateRoundRobinMatchups(
     return [];
   }
 
-  const teams = [...teamIds];
+  // Rotate team order to distribute the "fixed position" advantage fairly
+  // The first team in the array is fixed in the round-robin rotation and gets structural advantages
+  // By rotating based on team count hash, different teams get the advantage
+  // This is deterministic (same teams = same rotation) but fair across seasons
+  const teamsCopy = [...teamIds].sort(); // Sort first for deterministic ordering
+  const rotateBy = teamsCopy.length > 0
+    ? teamsCopy.reduce((hash, id) => hash + id.charCodeAt(id.length - 1), 0) % teamsCopy.length
+    : 0;
+  const teams = [...teamsCopy.slice(rotateBy), ...teamsCopy.slice(0, rotateBy)];
 
   // For odd number of teams, add a "BYE" placeholder
   const hasBye = teams.length % 2 === 1;

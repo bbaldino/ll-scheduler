@@ -93,12 +93,16 @@ function sharesTeam(a: GameMatchup, b: GameMatchup): boolean {
  * Uses exhaustive search to find the maximum number of non-conflicting matchups
  * (no shared teams) that can fit within the required-day capacity.
  *
+ * When costs are provided, prefers lower-cost solutions among those with the same
+ * matchup count. This helps balance short rest across teams.
+ *
  * This ensures we fill Saturday slots optimally before scheduling remaining games
  * on other days of the week.
  */
 function findRequiredDayOptimalMatchups<T extends GameMatchup>(
   matchups: T[],
-  requiredDayCapacity: number
+  requiredDayCapacity: number,
+  costs?: number[] // Optional cost per matchup (e.g., short rest impact)
 ): { requiredDayMatchups: T[], otherMatchups: T[] } {
   if (requiredDayCapacity === 0 || matchups.length === 0) {
     return { requiredDayMatchups: [], otherMatchups: matchups };
@@ -106,17 +110,22 @@ function findRequiredDayOptimalMatchups<T extends GameMatchup>(
 
   // Find the maximum independent set of matchups (no shared teams)
   // Use recursive backtracking since matchup count is small (typically 6-10)
+  // When costs are provided, prefer lower-cost solutions of equal size
   let bestSelection: number[] = [];
+  let bestCost = Infinity;
 
-  function backtrack(index: number, currentSelection: number[], usedTeams: Set<string>): void {
+  function backtrack(index: number, currentSelection: number[], usedTeams: Set<string>, currentCost: number): void {
     // Prune: can't possibly beat best even if we select all remaining
-    if (currentSelection.length + (matchups.length - index) <= bestSelection.length) {
+    if (currentSelection.length + (matchups.length - index) < bestSelection.length) {
       return;
     }
 
-    // Update best if current is better
-    if (currentSelection.length > bestSelection.length) {
+    // Update best if current is better (more matchups, or same matchups with lower cost)
+    const isBetter = currentSelection.length > bestSelection.length ||
+      (currentSelection.length === bestSelection.length && currentCost < bestCost);
+    if (isBetter) {
       bestSelection = [...currentSelection];
+      bestCost = currentCost;
     }
 
     // Stop if we've reached capacity
@@ -132,8 +141,9 @@ function findRequiredDayOptimalMatchups<T extends GameMatchup>(
         usedTeams.add(m.homeTeamId);
         usedTeams.add(m.awayTeamId);
         currentSelection.push(i);
+        const matchupCost = costs ? costs[i] : 0;
 
-        backtrack(i + 1, currentSelection, usedTeams);
+        backtrack(i + 1, currentSelection, usedTeams, currentCost + matchupCost);
 
         // Unselect this matchup
         currentSelection.pop();
@@ -143,7 +153,7 @@ function findRequiredDayOptimalMatchups<T extends GameMatchup>(
     }
   }
 
-  backtrack(0, [], new Set());
+  backtrack(0, [], new Set(), 0);
 
   // Convert best selection to matchup arrays
   const selectedSet = new Set(bestSelection);
@@ -1524,22 +1534,62 @@ export class ScheduleGenerator {
           return false;
         };
 
-        // Pre-sort matchups to prefer ones that won't cause short rest
-        // The backtracking algorithm tries matchups in order, so putting no-short-rest
-        // matchups first will naturally prefer them when multiple solutions exist
-        const sortedRegularMatchups = [...regularMatchupsForWeek].sort((a, b) => {
-          const aShortRest = wouldCauseShortRest(a.homeTeamId) || wouldCauseShortRest(a.awayTeamId);
-          const bShortRest = wouldCauseShortRest(b.homeTeamId) || wouldCauseShortRest(b.awayTeamId);
-          // No short rest should come first (false < true)
-          if (aShortRest !== bShortRest) {
-            return aShortRest ? 1 : -1;
+        // Calculate cost for each matchup - this represents how bad it would be if this matchup
+        // is NOT selected for Saturday (i.e., goes to a weekday instead).
+        //
+        // Key insight: If two teams with high short rest counts play each other on a weekday,
+        // BOTH could get short rest from that single game. Better to put their matchup on Saturday
+        // so their short rest risk is "split" across their OTHER separate matchups.
+        //
+        // Cost = "weekday penalty" - how much we want to AVOID putting this matchup on a weekday
+        // Higher cost = prefer putting on Saturday (to avoid the weekday penalty)
+
+        // Count how many matchups each team has this week
+        const matchupsPerTeam = new Map<string, number>();
+        for (const m of regularMatchupsForWeek) {
+          matchupsPerTeam.set(m.homeTeamId, (matchupsPerTeam.get(m.homeTeamId) || 0) + 1);
+          matchupsPerTeam.set(m.awayTeamId, (matchupsPerTeam.get(m.awayTeamId) || 0) + 1);
+        }
+
+        const matchupCosts = regularMatchupsForWeek.map((m) => {
+          // Get current short rest counts
+          const homeCount = this.teamSchedulingStates.get(m.homeTeamId)?.shortRestGamesCount || 0;
+          const awayCount = this.teamSchedulingStates.get(m.awayTeamId)?.shortRestGamesCount || 0;
+
+          // Base cost: if this matchup goes to weekday, both teams risk short rest
+          // Higher counts = more important to protect = higher cost to leave on weekday
+          let weekdayPenalty = (homeCount + 1) + (awayCount + 1);
+
+          // Bonus: if both teams have multiple matchups this week, putting their mutual
+          // matchup on Saturday means their short rest risk is spread across separate games
+          // rather than both getting hit by the same late weekday game
+          const homeHasMultiple = (matchupsPerTeam.get(m.homeTeamId) || 1) > 1;
+          const awayHasMultiple = (matchupsPerTeam.get(m.awayTeamId) || 1) > 1;
+          if (homeHasMultiple && awayHasMultiple) {
+            // Both teams have other matchups - strongly prefer putting this on Saturday
+            weekdayPenalty += (homeCount + awayCount + 2) * 2;
           }
-          return 0;
+
+          // Previous week short rest check - if team already has a recent game,
+          // Saturday would cause short rest regardless, so reduce the benefit
+          const homeWouldCausePrevWeek = wouldCauseShortRest(m.homeTeamId);
+          const awayWouldCausePrevWeek = wouldCauseShortRest(m.awayTeamId);
+          if (homeWouldCausePrevWeek || awayWouldCausePrevWeek) {
+            // Saturday would cause short rest anyway, so less benefit to putting on Saturday
+            weekdayPenalty -= (homeWouldCausePrevWeek ? homeCount + 1 : 0);
+            weekdayPenalty -= (awayWouldCausePrevWeek ? awayCount + 1 : 0);
+          }
+
+          // Return negative cost (backtracking minimizes cost, but we want HIGH weekday penalty = SELECTED for Saturday)
+          // Actually, let's keep it as weekdayPenalty and change the backtracking to MAXIMIZE
+          // Or simpler: return negative of weekdayPenalty so minimizing cost = maximizing weekday avoidance
+          return -weekdayPenalty;
         });
 
         const { requiredDayMatchups, otherMatchups: nonRequiredDayMatchups } = findRequiredDayOptimalMatchups(
-          sortedRegularMatchups,
-          requiredDayGameCapacity
+          regularMatchupsForWeek,
+          requiredDayGameCapacity,
+          matchupCosts
         );
 
         if (requiredDayMatchups.length > 0) {
@@ -1549,9 +1599,20 @@ export class ScheduleGenerator {
           verboseLog(`  Week ${weekNum + 1}: ${spilloverMatchupsForWeek.length} spillover matchups (excluded from required-day optimization)`);
         }
 
+        // Pre-compute stable random values for each matchup
+        // This ensures consistent ordering during sort (Math.random() in comparator is unstable)
+        const matchupRandomKeys = new Map<string, number>();
+        for (const m of allMatchupsThisWeek) {
+          const key = `${m.homeTeamId}-${m.awayTeamId}-${m.targetWeek}`;
+          matchupRandomKeys.set(key, Math.random());
+        }
+        const getMatchupKey = (m: typeof allMatchupsThisWeek[0]) =>
+          `${m.homeTeamId}-${m.awayTeamId}-${m.targetWeek}`;
+
         // Sort function for fairness balancing:
         // 1. Teams with more short rest games go first (so they get first pick of non-short-rest slots)
         // 2. Teams with fewer preferred-day games go first (matters when there's scarcity)
+        // 3. Random tie-breaker to prevent systematic bias from ID ordering
         const fairnessSort = (a: typeof allMatchupsThisWeek[0], b: typeof allMatchupsThisWeek[0]) => {
           // First priority: teams with more short rest games should go first
           const aMaxShortRest = Math.max(
@@ -1575,15 +1636,48 @@ export class ScheduleGenerator {
             preferredDayGames.get(b.homeTeamId) || 0,
             preferredDayGames.get(b.awayTeamId) || 0
           );
-          return aMinGames - bMinGames;
+          if (aMinGames !== bMinGames) {
+            return aMinGames - bMinGames;
+          }
+
+          // Stable random tie-breaker using pre-computed values
+          // This prevents systematic bias from ID ordering
+          const aRandom = matchupRandomKeys.get(getMatchupKey(a)) || 0;
+          const bRandom = matchupRandomKeys.get(getMatchupKey(b)) || 0;
+          return aRandom - bRandom;
+        };
+
+        // For weekday matchups: prioritize those where BOTH teams have Saturday games this week
+        // These teams are at highest risk of short rest from late weekday games (Thu/Fri)
+        // By processing them first, they get early weekday slots (Mon/Tue/Wed)
+        const teamsWithSaturdayGames = new Set<string>();
+        for (const m of requiredDayMatchups) {
+          teamsWithSaturdayGames.add(m.homeTeamId);
+          teamsWithSaturdayGames.add(m.awayTeamId);
+        }
+
+        const weekdayShortRestRiskSort = (a: typeof allMatchupsThisWeek[0], b: typeof allMatchupsThisWeek[0]) => {
+          // Count how many teams in each matchup have Saturday games
+          const aRisk = (teamsWithSaturdayGames.has(a.homeTeamId) ? 1 : 0) +
+                        (teamsWithSaturdayGames.has(a.awayTeamId) ? 1 : 0);
+          const bRisk = (teamsWithSaturdayGames.has(b.homeTeamId) ? 1 : 0) +
+                        (teamsWithSaturdayGames.has(b.awayTeamId) ? 1 : 0);
+
+          // Higher risk (both teams have Saturday) should go first
+          if (aRisk !== bRisk) {
+            return bRisk - aRisk;
+          }
+
+          // If same risk level, use fairness sort
+          return fairnessSort(a, b);
         };
 
         // Sort each group separately, then concatenate
-        // Order: spillover first (already delayed), then required-day matchups, then others
-        // This ensures spillover gets priority, then we fill Saturday, then weekdays
+        // Order: spillover first (already delayed), then required-day matchups, then weekday matchups
+        // Weekday matchups use special sort to prioritize at-risk pairs (both teams have Saturday games)
         const sortedSpilloverMatchups = [...spilloverMatchupsForWeek].sort(fairnessSort);
         const sortedRequiredDayMatchups = [...requiredDayMatchups].sort(fairnessSort);
-        const sortedOtherMatchups = [...nonRequiredDayMatchups].sort(fairnessSort);
+        const sortedOtherMatchups = [...nonRequiredDayMatchups].sort(weekdayShortRestRiskSort);
         const sortedMatchups = [...sortedSpilloverMatchups, ...sortedRequiredDayMatchups, ...sortedOtherMatchups];
 
         // Track how many required-day slots we've used this week
