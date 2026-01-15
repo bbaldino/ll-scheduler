@@ -3104,15 +3104,15 @@ export class ScheduleGenerator {
             return deficitB - deficitA;
           }
 
-          // Tiebreaker: rotate priority based on week number for fairness among equal-deficit teams
-          // Use team name hash + week number to create a rotating priority
-          const hashA = a.teamName.charCodeAt(0) + week.weekNumber;
-          const hashB = b.teamName.charCodeAt(0) + week.weekNumber;
-          return (hashA % 100) - (hashB % 100);
+          // Secondary: sort by team name for deterministic ordering
+          // Rotation happens after sorting to ensure fairness
+          // Note: BTB sorting was removed - tests showed pure rotation + scoring
+          // achieves better back-to-back distribution than sorting by BTB count
+          return a.teamName.localeCompare(b.teamName);
         });
 
-      // Don't rotate anymore - deficit sorting with tiebreaker handles fairness
-      const rotatedByWeek = teamsNeedingPractices;
+      // Rotate the sorted list by week number to ensure different teams get first pick each week
+      const rotatedByWeek = rotateArray(teamsNeedingPractices, week.weekNumber);
 
       if (rotatedByWeek.length === 0) {
         verboseLog('  No teams need practices this week');
@@ -3185,10 +3185,10 @@ export class ScheduleGenerator {
               return deficitB - deficitA;
             }
 
-            // Tiebreaker: rotate priority based on round + week for fairness
-            const hashA = a.teamName.charCodeAt(0) + week.weekNumber + round;
-            const hashB = b.teamName.charCodeAt(0) + week.weekNumber + round;
-            return (hashA % 100) - (hashB % 100);
+            // Secondary: sort by team name for deterministic ordering
+            // Note: BTB sorting was removed - tests showed pure rotation + scoring
+            // achieves better back-to-back distribution than sorting by BTB count
+            return a.teamName.localeCompare(b.teamName);
           });
 
         if (stillNeedPractices.length === 0) {
@@ -3196,15 +3196,17 @@ export class ScheduleGenerator {
           break;
         }
 
-        // Compute slot availability for scarcity calculation
-        this.computeTeamSlotAvailability(stillNeedPractices, practiceFieldSlots, week);
+        // Rotate by week + round to ensure different teams get priority in each round
+        const rotatedStillNeed = rotateArray(stillNeedPractices, week.weekNumber + round);
 
-        // Use sorted order directly - deficit sorting with tiebreaker handles fairness
-        verboseLog(`  Round ${round + 1}: ${stillNeedPractices.length} teams still need practices`);
+        // Compute slot availability for scarcity calculation
+        this.computeTeamSlotAvailability(rotatedStillNeed, practiceFieldSlots, week);
+
+        verboseLog(`  Round ${round + 1}: ${rotatedStillNeed.length} teams still need practices`);
 
         let anyScheduledThisRound = false;
 
-        for (const teamState of stillNeedPractices) {
+        for (const teamState of rotatedStillNeed) {
           const config = this.divisionConfigs.get(teamState.divisionId);
           if (!config) continue;
 

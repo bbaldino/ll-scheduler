@@ -193,38 +193,26 @@ export interface IsolatedGameSlot {
   divisionName: string;
 }
 
-// Practice Spacing Report - tracks days between practices within the same week
+// Practice Spacing Report - tracks days between consecutive practices for each team
 export interface PracticeSpacingReport {
   passed: boolean;
   summary: string;
-  divisionReports: DivisionPracticeSpacingReport[];
-}
-
-export interface DivisionPracticeSpacingReport {
-  divisionId: string;
-  divisionName: string;
   teamReports: TeamPracticeSpacingReport[];
-  weeksWithMultiplePractices: number; // Total weeks where teams had 2+ practices
-  weeksWithGoodSpacing: number; // Weeks where practices were well-spaced (2+ days apart)
-  passed: boolean;
+  overallAverageDaysBetweenPractices: number;
 }
 
 export interface TeamPracticeSpacingReport {
   teamId: string;
   teamName: string;
-  weeklyBreakdown: WeekPracticeSpacing[]; // Only weeks with 2+ practices
-  totalWeeksWithMultiplePractices: number;
-  weeksWithGoodSpacing: number; // Practices 2+ days apart
-  weeksWithBackToBack: number; // Practices on consecutive days
+  divisionId: string;
+  divisionName: string;
+  totalPractices: number;
+  averageDaysBetweenPractices: number; // Average days between consecutive practices
+  minDaysBetweenPractices: number; // Minimum gap found
+  maxDaysBetweenPractices: number; // Maximum gap found
+  practiceGaps: number[]; // Array of days between each consecutive practice pair
+  backToBackCount: number; // Number of gaps with 1 day or less
   passed: boolean;
-}
-
-export interface WeekPracticeSpacing {
-  weekStart: string;
-  practiceCount: number;
-  practiceDates: string[]; // Sorted dates of practices
-  daysBetween: number[]; // Days between consecutive practices
-  isWellSpaced: boolean; // All gaps >= 2 days
 }
 
 // Matchup Spacing Report - tracks days between games for each team pair (rematches)

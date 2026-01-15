@@ -20,7 +20,6 @@ import type {
   GameSlotEfficiencyReport,
   IsolatedGameSlot,
   PracticeSpacingReport,
-  DivisionPracticeSpacingReport,
   TeamPracticeSpacingReport,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
@@ -1173,6 +1172,34 @@ function PracticeSpacingSection({
     });
   };
 
+  // Compute gap distribution from practiceGaps array
+  const computeGapDistribution = (practiceGaps: number[]): Record<number, number> => {
+    const distribution: Record<number, number> = {};
+    for (const gap of practiceGaps) {
+      distribution[gap] = (distribution[gap] || 0) + 1;
+    }
+    return distribution;
+  };
+
+  // Group teams by division
+  const teamsByDivision = new Map<string, { divisionName: string; teams: TeamPracticeSpacingReport[] }>();
+  for (const team of report.teamReports) {
+    if (!teamsByDivision.has(team.divisionId)) {
+      teamsByDivision.set(team.divisionId, { divisionName: team.divisionName, teams: [] });
+    }
+    teamsByDivision.get(team.divisionId)!.teams.push(team);
+  }
+
+  // Calculate division-level stats
+  const getDivisionStats = (teams: TeamPracticeSpacingReport[]) => {
+    const teamsWithPractices = teams.filter(t => t.totalPractices >= 2);
+    if (teamsWithPractices.length === 0) return { avg: 0, passed: true, backToBack: 0 };
+    const avg = teamsWithPractices.reduce((sum, t) => sum + t.averageDaysBetweenPractices, 0) / teamsWithPractices.length;
+    const passed = teams.every(t => t.passed);
+    const backToBack = teams.reduce((sum, t) => sum + t.backToBackCount, 0);
+    return { avg: Math.round(avg * 10) / 10, passed, backToBack };
+  };
+
   return (
     <div className={styles.section}>
       <SectionHeader
@@ -1184,94 +1211,98 @@ function PracticeSpacingSection({
       />
       {expanded && (
         <div className={styles.sectionContent}>
-          {report.divisionReports.length === 0 ? (
+          <div className={styles.overallAverage}>
+            Overall Average: <strong>{report.overallAverageDaysBetweenPractices}</strong> days between practices
+          </div>
+          {teamsByDivision.size === 0 ? (
             <p className={styles.noData}>No practice data available</p>
           ) : (
-            report.divisionReports.map((division: DivisionPracticeSpacingReport) => {
-              const spacingRate = division.weeksWithMultiplePractices > 0
-                ? Math.round((division.weeksWithGoodSpacing / division.weeksWithMultiplePractices) * 100)
-                : 100;
+            Array.from(teamsByDivision.entries()).map(([divisionId, { divisionName, teams }]) => {
+              const divisionStats = getDivisionStats(teams);
               return (
-                <div key={division.divisionId} className={styles.divisionReport}>
+                <div key={divisionId} className={styles.divisionReport}>
                   <div
                     className={styles.divisionHeader}
-                    onClick={() => toggleDivision(division.divisionId)}
+                    onClick={() => toggleDivision(divisionId)}
                   >
-                    <span className={division.passed ? styles.statusPass : styles.statusFail}>
-                      {division.passed ? '✓' : '✗'}
+                    <span className={divisionStats.passed ? styles.statusPass : styles.statusFail}>
+                      {divisionStats.passed ? '✓' : '✗'}
                     </span>
-                    <span className={styles.divisionName}>{division.divisionName}</span>
+                    <span className={styles.divisionName}>{divisionName}</span>
                     <span className={styles.complianceRate}>
-                      {spacingRate}% well-spaced ({division.weeksWithGoodSpacing}/{division.weeksWithMultiplePractices} weeks)
+                      Avg: {divisionStats.avg} days
+                      {divisionStats.backToBack > 0 && (
+                        <span className={styles.warningText}> ({divisionStats.backToBack} back-to-back)</span>
+                      )}
                     </span>
                     <span className={styles.expandIcon}>
-                      {expandedDivisions.has(division.divisionId) ? '▼' : '▶'}
+                      {expandedDivisions.has(divisionId) ? '▼' : '▶'}
                     </span>
                   </div>
 
-                  {expandedDivisions.has(division.divisionId) && (
+                  {expandedDivisions.has(divisionId) && (
                     <div className={styles.divisionContent}>
-                      {division.teamReports.map((team: TeamPracticeSpacingReport) => (
-                        <div key={team.teamId} className={styles.teamReport}>
-                          <div
-                            className={styles.teamHeader}
-                            onClick={() => toggleTeam(`${division.divisionId}-${team.teamId}`)}
-                          >
-                            <span className={team.passed ? styles.statusPass : styles.statusFail}>
-                              {team.passed ? '✓' : '✗'}
-                            </span>
-                            <span className={styles.teamName}>{team.teamName}</span>
-                            <span className={styles.teamGameCount}>
-                              {team.weeksWithGoodSpacing}/{team.totalWeeksWithMultiplePractices} weeks well-spaced
-                              {team.weeksWithBackToBack > 0 && (
-                                <span className={styles.warningText}>
-                                  , {team.weeksWithBackToBack} back-to-back
-                                </span>
-                              )}
-                            </span>
-                            <span className={styles.expandIcon}>
-                              {expandedTeams.has(`${division.divisionId}-${team.teamId}`) ? '▼' : '▶'}
-                            </span>
-                          </div>
+                      {teams.map((team: TeamPracticeSpacingReport) => {
+                        const gapDistribution = computeGapDistribution(team.practiceGaps || []);
+                        const gapKeys = Object.keys(gapDistribution).map(Number).sort((a, b) => a - b);
+                        const isTeamExpanded = expandedTeams.has(team.teamId);
 
-                          {expandedTeams.has(`${division.divisionId}-${team.teamId}`) && (
-                            <div className={styles.teamDetails}>
-                              {team.weeklyBreakdown.length === 0 ? (
-                                <p className={styles.noData}>No weeks with multiple practices</p>
-                              ) : (
-                                <table className={styles.weekTable}>
-                                  <thead>
-                                    <tr>
-                                      <th>Week</th>
-                                      <th>Practices</th>
-                                      <th>Dates</th>
-                                      <th>Days Between</th>
-                                      <th>Status</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {team.weeklyBreakdown.map((week) => (
-                                      <tr key={week.weekStart}>
-                                        <td>{week.weekStart}</td>
-                                        <td>{week.practiceCount}</td>
-                                        <td>{week.practiceDates.map(d => d.slice(5)).join(', ')}</td>
-                                        <td className={!week.isWellSpaced ? styles.cellWarning : ''}>
-                                          {week.daysBetween.join(', ')} days
-                                        </td>
-                                        <td>
-                                          <span className={week.isWellSpaced ? styles.statusPass : styles.statusFail}>
-                                            {week.isWellSpaced ? '✓' : '✗'}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
+                        return (
+                          <div key={team.teamId} className={styles.teamReport}>
+                            <div
+                              className={styles.teamHeader}
+                              onClick={() => toggleTeam(team.teamId)}
+                            >
+                              <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                                {team.passed ? '✓' : '✗'}
+                              </span>
+                              <span className={styles.teamName}>{team.teamName}</span>
+                              <span className={styles.teamGameCount}>
+                                {team.totalPractices} practices, avg {team.averageDaysBetweenPractices || 0} days
+                                {team.backToBackCount > 0 && (
+                                  <span className={styles.warningText}>
+                                    , {team.backToBackCount} back-to-back
+                                  </span>
+                                )}
+                              </span>
+                              <span className={styles.expandIcon}>
+                                {isTeamExpanded ? '▼' : '▶'}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      ))}
+
+                            {isTeamExpanded && (
+                              <div className={styles.teamDetails}>
+                                <div className={styles.spacingStats}>
+                                  <span>Min: {team.minDaysBetweenPractices || '-'} days</span>
+                                  <span>Max: {team.maxDaysBetweenPractices || '-'} days</span>
+                                  <span>Avg: {team.averageDaysBetweenPractices || '-'} days</span>
+                                </div>
+
+                                {gapKeys.length > 0 ? (
+                                  <div className={styles.gapDistribution}>
+                                    <div className={styles.gapDistributionLabel}>Gap Distribution:</div>
+                                    <div className={styles.gapBars}>
+                                      {gapKeys.map((gap) => (
+                                        <div key={gap} className={styles.gapBar}>
+                                          <div className={styles.gapBarLabel}>{gap}d</div>
+                                          <div
+                                            className={`${styles.gapBarFill} ${gap <= 1 ? styles.gapBarWarning : ''}`}
+                                            style={{ width: `${Math.min(gapDistribution[gap] * 30, 100)}px` }}
+                                          >
+                                            {gapDistribution[gap]}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className={styles.noData}>Not enough practices to show gap distribution</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

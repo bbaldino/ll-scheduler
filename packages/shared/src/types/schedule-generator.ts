@@ -234,8 +234,9 @@ export interface ScoringWeights {
   weekendMorningPractice: number; // Penalize practices on weekend mornings (games should get priority)
   shortRestBalance: number; // For games: penalize short rest when team already has more than division average
 
-  // Practice-specific continuous positive factor
-  practiceSpacingInWeek: number; // Prefer spreading practices apart within the same week (2+ days apart)
+  // Practice-specific factors
+  practiceSpacing: number; // Prefer spreading practices apart (avoid back-to-back practices)
+  backToBackPracticeBalance: number; // Penalize back-to-back when team already has more than average
 }
 
 /**
@@ -263,7 +264,8 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   shortRestBalance: -500, // Strong penalty for short rest when team already has more than average
 
   // Practice-specific factors
-  practiceSpacingInWeek: 500, // Strong preference for spreading practices apart within a week
+  practiceSpacing: 500, // Strong preference for spreading practices apart
+  backToBackPracticeBalance: -800, // Strong bonus for below-average teams, strong penalty for above-average
 };
 
 /**
@@ -307,7 +309,8 @@ export interface ScoredCandidate extends PlacementCandidate {
     sameDayCageFieldGap: number;
     weekendMorningPractice: number;
     shortRestBalance: number;
-    practiceSpacingInWeek: number;
+    practiceSpacing: number;
+    backToBackPracticeBalance: number;
   };
 }
 
@@ -343,6 +346,8 @@ export interface TeamSchedulingState {
   // Game-specific tracking for short rest balancing
   gameDates: string[]; // Sorted list of dates when games are scheduled
   shortRestGamesCount: number; // Count of games scheduled ≤2 days after previous game
+  // Practice-specific tracking for back-to-back balancing
+  backToBackPracticesCount: number; // Count of practices scheduled 1 day after previous practice
 }
 
 /**

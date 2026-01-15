@@ -443,6 +443,7 @@ export function initializeTeamState(
     minDaysBetweenEvents: requirements.minDaysBetweenEvents,
     gameDates: [],
     shortRestGamesCount: 0,
+    backToBackPracticesCount: 0,
   };
 }
 
@@ -496,14 +497,28 @@ export function updateTeamStateAfterScheduling(
       teamState.gameDates.sort();
       break;
     case 'practice':
+    case 'paired_practice': {
       teamState.practicesScheduled++;
+      if (event.eventType === 'paired_practice') {
+        // Paired practice also counts as a cage session
+        teamState.cagesScheduled++;
+      }
+
+      // Track back-to-back practices (within 1 day of any existing practice)
+      // Practices are in fieldDatesUsed but not in gameDates
+      const newPracticeDate = event.date;
+      const existingPracticeDates = [...teamState.fieldDatesUsed].filter(
+        (date) => !teamState.gameDates.includes(date)
+      );
+      const isBackToBack = existingPracticeDates.some(
+        (existingDate) => calculateDaysBetween(existingDate, newPracticeDate) <= 1
+      );
+      if (isBackToBack) {
+        teamState.backToBackPracticesCount++;
+      }
       break;
+    }
     case 'cage':
-      teamState.cagesScheduled++;
-      break;
-    case 'paired_practice':
-      // Paired practice counts as both a practice AND a cage session
-      teamState.practicesScheduled++;
       teamState.cagesScheduled++;
       break;
   }

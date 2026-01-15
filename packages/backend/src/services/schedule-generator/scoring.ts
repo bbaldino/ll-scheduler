@@ -59,7 +59,8 @@ export interface ScoreBreakdown {
   sameDayCageFieldGap: number;
   weekendMorningPractice: number;
   shortRestBalance: number;
-  practiceSpacingInWeek: number;
+  practiceSpacing: number;
+  backToBackPracticeBalance: number;
 }
 
 /**
@@ -94,7 +95,8 @@ export function calculatePlacementScore(
     sameDayCageFieldGap: 0,
     weekendMorningPractice: 0,
     shortRestBalance: 0,
-    practiceSpacingInWeek: 0,
+    practiceSpacing: 0,
+    backToBackPracticeBalance: 0,
   };
 
   // Continuous positive factors (rawScore 0-1)
@@ -129,8 +131,10 @@ export function calculatePlacementScore(
     breakdown.earliestTime = calculateEarliestTimeRaw(candidate, context) * weights.earliestTime;
     // Reduce field preference weight for practices (field choice less important than for games)
     breakdown.fieldPreference = breakdown.fieldPreference * 0.3;
-    // Prefer spreading practices apart within the same week
-    breakdown.practiceSpacingInWeek = calculatePracticeSpacingInWeekRaw(candidate.date, teamState, context) * weights.practiceSpacingInWeek;
+    // Prefer spreading practices apart (avoid back-to-back practices)
+    breakdown.practiceSpacing = calculatePracticeSpacingRaw(candidate.date, teamState) * weights.practiceSpacing;
+    // Penalize back-to-back when team already has more than average
+    breakdown.backToBackPracticeBalance = calculateBackToBackPracticeBalanceRaw(candidate.date, teamState, context) * weights.backToBackPracticeBalance;
   }
 
   // Binary penalty: same-day event (only for same resource type)
@@ -388,54 +392,38 @@ export function calculateWeekendMorningPracticeRaw(dayOfWeek: number, startTime:
 }
 
 /**
- * Calculate practice spacing within week raw score
+ * Calculate practice spacing raw score
  * Returns 0-1 where:
- * - 1.0 = no other practices this week, or 2+ days from nearest practice
+ * - 1.0 = no other practices yet, or 2+ days from nearest practice
  * - 0.3 = 1 day from nearest practice (back-to-back days)
  * - 0.0 = same day (should be blocked anyway)
  *
- * This encourages spreading practices apart within the same week.
+ * This encourages spreading practices apart (avoids back-to-back practices).
+ * Looks at ALL existing practices regardless of week boundaries.
  */
-export function calculatePracticeSpacingInWeekRaw(
+export function calculatePracticeSpacingRaw(
   candidateDate: string,
-  teamState: TeamSchedulingState,
-  context: ScoringContext
+  teamState: TeamSchedulingState
 ): number {
-  // Find which week this date belongs to
-  const weekNum = getWeekNumber(candidateDate, context.weekDefinitions);
-  if (weekNum === -1) {
-    return 1.0; // Unknown week, best possible score
-  }
-
-  const week = context.weekDefinitions.find(w => w.weekNumber === weekNum);
-  if (!week) {
-    return 1.0;
-  }
-
-  // Find existing practice dates for this team in this week
-  // We check fieldDatesUsed intersected with this week's dates
-  // Note: practices use field slots, so we check fieldDatesUsed
-  const practicesInWeek: string[] = [];
+  // Find ALL existing practice dates for this team (field dates that aren't games)
+  const practiceDates: string[] = [];
   for (const usedDate of teamState.fieldDatesUsed) {
-    if (usedDate >= week.startDate && usedDate <= week.endDate) {
-      // Check if this was actually a practice (not a game)
-      // Games are tracked in gameDates, so if it's in fieldDatesUsed but not in gameDates, it's a practice
-      if (!teamState.gameDates.includes(usedDate)) {
-        practicesInWeek.push(usedDate);
-      }
+    // If it's in fieldDatesUsed but not in gameDates, it's a practice
+    if (!teamState.gameDates.includes(usedDate)) {
+      practiceDates.push(usedDate);
     }
   }
 
-  // If no existing practices in this week, this is the first one - best score
-  if (practicesInWeek.length === 0) {
+  // If no existing practices, this is the first one - best score
+  if (practiceDates.length === 0) {
     return 1.0;
   }
 
-  // Calculate minimum days between candidate and any existing practice
+  // Find the closest practice to the candidate date (before or after)
   const candidateDayNum = dateToDayNumber(candidateDate);
   let minDays = Infinity;
 
-  for (const practiceDate of practicesInWeek) {
+  for (const practiceDate of practiceDates) {
     const practiceDayNum = dateToDayNumber(practiceDate);
     const daysDiff = Math.abs(candidateDayNum - practiceDayNum);
     minDays = Math.min(minDays, daysDiff);
@@ -452,6 +440,75 @@ export function calculatePracticeSpacingInWeekRaw(
   } else {
     return 1.0;
   }
+}
+
+/**
+ * Calculate back-to-back practice balance raw score
+ * Returns -1 to +1 where:
+ * - Negative = team is below average (gets BONUS for taking back-to-back, to catch up)
+ * - Zero = team is at average (neutral)
+ * - Positive = team is above average (gets PENALTY for taking back-to-back)
+ *
+ * This is a penalty factor (negative weight), so:
+ * - Negative rawScore * negative weight = positive contribution (bonus)
+ * - Positive rawScore * negative weight = negative contribution (penalty)
+ *
+ * Only applies when this placement would be back-to-back (within 1 day of existing practice).
+ */
+export function calculateBackToBackPracticeBalanceRaw(
+  candidateDate: string,
+  teamState: TeamSchedulingState,
+  context: ScoringContext
+): number {
+  // First check if this would be a back-to-back practice
+  const practiceDates: string[] = [];
+  for (const usedDate of teamState.fieldDatesUsed) {
+    if (!teamState.gameDates.includes(usedDate)) {
+      practiceDates.push(usedDate);
+    }
+  }
+
+  const candidateDayNum = dateToDayNumber(candidateDate);
+  const wouldBeBackToBack = practiceDates.some(
+    (date) => Math.abs(candidateDayNum - dateToDayNumber(date)) <= 1
+  );
+
+  // If not back-to-back, no penalty or bonus
+  if (!wouldBeBackToBack) {
+    return 0;
+  }
+
+  // Calculate division average back-to-back count
+  let totalBackToBack = 0;
+  let teamCount = 0;
+
+  for (const [, ts] of context.teamStates) {
+    if (ts.divisionId === teamState.divisionId) {
+      totalBackToBack += ts.backToBackPracticesCount;
+      teamCount++;
+    }
+  }
+
+  const avgBackToBack = teamCount > 0 ? totalBackToBack / teamCount : 0;
+
+  // Calculate how far from average this team is
+  const distanceFromAvg = teamState.backToBackPracticesCount - avgBackToBack;
+
+  // Team above average: penalty (positive rawScore * negative weight = negative contribution)
+  // Scale: +1 above avg = 0.75 penalty, +2 above = 1.0 (max)
+  if (distanceFromAvg > 0) {
+    return Math.min(1.0, 0.25 + distanceFromAvg * 0.5);
+  }
+
+  // Team below average: BONUS (negative rawScore * negative weight = positive contribution)
+  // This makes below-average teams PREFER btb slots to help balance distribution
+  // Scale: -1 below avg = -0.75 bonus, -2 below = -1.0
+  if (distanceFromAvg < 0) {
+    return Math.max(-1.0, distanceFromAvg * 0.5 - 0.25);
+  }
+
+  // Team exactly at average: no bonus or penalty
+  return 0;
 }
 
 /**
