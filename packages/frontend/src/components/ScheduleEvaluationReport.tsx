@@ -19,6 +19,9 @@ import type {
   DivisionMatchupSpacingReport,
   GameSlotEfficiencyReport,
   IsolatedGameSlot,
+  PracticeSpacingReport,
+  DivisionPracticeSpacingReport,
+  TeamPracticeSpacingReport,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
 
@@ -105,6 +108,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.gameSpacing}
             expanded={expandedSections.has('gameSpacing')}
             onToggle={() => toggleSection('gameSpacing')}
+          />
+
+          {/* Practice Spacing */}
+          <PracticeSpacingSection
+            report={result.practiceSpacing}
+            expanded={expandedSections.has('practiceSpacing')}
+            onToggle={() => toggleSection('practiceSpacing')}
           />
 
           {/* Matchup Balance */}
@@ -1120,6 +1130,153 @@ function GameSlotEfficiencySection({
                 </tbody>
               </table>
             </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PracticeSpacingSection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: PracticeSpacingReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
+
+  const toggleTeam = (teamId: string) => {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(teamId)) {
+        next.delete(teamId);
+      } else {
+        next.add(teamId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Practice Spacing"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          {report.divisionReports.length === 0 ? (
+            <p className={styles.noData}>No practice data available</p>
+          ) : (
+            report.divisionReports.map((division: DivisionPracticeSpacingReport) => {
+              const spacingRate = division.weeksWithMultiplePractices > 0
+                ? Math.round((division.weeksWithGoodSpacing / division.weeksWithMultiplePractices) * 100)
+                : 100;
+              return (
+                <div key={division.divisionId} className={styles.divisionReport}>
+                  <div
+                    className={styles.divisionHeader}
+                    onClick={() => toggleDivision(division.divisionId)}
+                  >
+                    <span className={division.passed ? styles.statusPass : styles.statusFail}>
+                      {division.passed ? '✓' : '✗'}
+                    </span>
+                    <span className={styles.divisionName}>{division.divisionName}</span>
+                    <span className={styles.complianceRate}>
+                      {spacingRate}% well-spaced ({division.weeksWithGoodSpacing}/{division.weeksWithMultiplePractices} weeks)
+                    </span>
+                    <span className={styles.expandIcon}>
+                      {expandedDivisions.has(division.divisionId) ? '▼' : '▶'}
+                    </span>
+                  </div>
+
+                  {expandedDivisions.has(division.divisionId) && (
+                    <div className={styles.divisionContent}>
+                      {division.teamReports.map((team: TeamPracticeSpacingReport) => (
+                        <div key={team.teamId} className={styles.teamReport}>
+                          <div
+                            className={styles.teamHeader}
+                            onClick={() => toggleTeam(`${division.divisionId}-${team.teamId}`)}
+                          >
+                            <span className={team.passed ? styles.statusPass : styles.statusFail}>
+                              {team.passed ? '✓' : '✗'}
+                            </span>
+                            <span className={styles.teamName}>{team.teamName}</span>
+                            <span className={styles.teamGameCount}>
+                              {team.weeksWithGoodSpacing}/{team.totalWeeksWithMultiplePractices} weeks well-spaced
+                              {team.weeksWithBackToBack > 0 && (
+                                <span className={styles.warningText}>
+                                  , {team.weeksWithBackToBack} back-to-back
+                                </span>
+                              )}
+                            </span>
+                            <span className={styles.expandIcon}>
+                              {expandedTeams.has(`${division.divisionId}-${team.teamId}`) ? '▼' : '▶'}
+                            </span>
+                          </div>
+
+                          {expandedTeams.has(`${division.divisionId}-${team.teamId}`) && (
+                            <div className={styles.teamDetails}>
+                              {team.weeklyBreakdown.length === 0 ? (
+                                <p className={styles.noData}>No weeks with multiple practices</p>
+                              ) : (
+                                <table className={styles.weekTable}>
+                                  <thead>
+                                    <tr>
+                                      <th>Week</th>
+                                      <th>Practices</th>
+                                      <th>Dates</th>
+                                      <th>Days Between</th>
+                                      <th>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {team.weeklyBreakdown.map((week) => (
+                                      <tr key={week.weekStart}>
+                                        <td>{week.weekStart}</td>
+                                        <td>{week.practiceCount}</td>
+                                        <td>{week.practiceDates.map(d => d.slice(5)).join(', ')}</td>
+                                        <td className={!week.isWellSpaced ? styles.cellWarning : ''}>
+                                          {week.daysBetween.join(', ')} days
+                                        </td>
+                                        <td>
+                                          <span className={week.isWellSpaced ? styles.statusPass : styles.statusFail}>
+                                            {week.isWellSpaced ? '✓' : '✗'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}

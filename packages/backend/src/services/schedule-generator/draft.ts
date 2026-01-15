@@ -902,12 +902,13 @@ export function selectBestCandidate(
 
 /**
  * Select best candidate using two-phase approach for practices:
- * 1. Select field based on all factors EXCEPT timeAdjacency
- * 2. Select best time slot on that field using timeAdjacency
+ * 1. Select DATE based on day-selection factors (excluding time-of-day factors)
+ * 2. Select best time slot on that date using full scoring
  *
- * This prevents practices from clustering on game fields just because
- * games are already there, while still packing practices together on
- * whichever field is selected.
+ * This ensures that factors like earliestTime and timeAdjacency only affect
+ * which time slot is chosen AFTER the date has been selected, preventing
+ * Saturday morning slots from being chosen over well-spaced weekday slots
+ * just because they have earlier start times.
  */
 export function selectBestCandidateTwoPhase(
   candidates: PlacementCandidate[],
@@ -917,52 +918,56 @@ export function selectBestCandidateTwoPhase(
 ): ScoredCandidate | null {
   if (candidates.length === 0) return null;
 
-  // Score all candidates with full scoring (including timeAdjacency)
+  // Score all candidates with full scoring
   const scoredCandidates: ScoredCandidate[] = [];
   for (const candidate of candidates) {
     scoredCandidates.push(calculatePlacementScore(candidate, teamState, context, weights));
   }
 
-  // Group by field
-  const byField = new Map<string, ScoredCandidate[]>();
+  // Group by DATE (not field) - day selection should happen first
+  const byDate = new Map<string, ScoredCandidate[]>();
   for (const scored of scoredCandidates) {
-    const fieldId = scored.resourceId;
-    if (!byField.has(fieldId)) {
-      byField.set(fieldId, []);
+    const date = scored.date;
+    if (!byDate.has(date)) {
+      byDate.set(date, []);
     }
-    byField.get(fieldId)!.push(scored);
+    byDate.get(date)!.push(scored);
   }
 
-  // For each field, find the best candidate and its "field selection score"
-  // (score minus timeAdjacency contribution)
-  let bestField: string | null = null;
-  let bestFieldScore = -Infinity;
-  const bestByField = new Map<string, ScoredCandidate>();
+  // For each date, find the best candidate and its "date selection score"
+  // (score minus time-of-day factors: earliestTime and timeAdjacency)
+  let bestDate: string | null = null;
+  let bestDateScore = -Infinity;
+  const bestByDate = new Map<string, ScoredCandidate>();
 
-  for (const [fieldId, fieldCandidates] of byField) {
-    // Find best candidate on this field (using full score with timeAdjacency)
-    let bestOnField: ScoredCandidate | null = null;
-    for (const c of fieldCandidates) {
-      if (!bestOnField || c.score > bestOnField.score) {
-        bestOnField = c;
+  for (const [date, dateCandidates] of byDate) {
+    // Find best candidate on this date (using full score)
+    let bestOnDate: ScoredCandidate | null = null;
+    for (const c of dateCandidates) {
+      if (!bestOnDate || c.score > bestOnDate.score) {
+        bestOnDate = c;
       }
     }
 
-    if (bestOnField) {
-      bestByField.set(fieldId, bestOnField);
+    if (bestOnDate) {
+      bestByDate.set(date, bestOnDate);
 
-      // Calculate field selection score (exclude timeAdjacency)
-      const fieldSelectionScore = bestOnField.score - (bestOnField.scoreBreakdown?.timeAdjacency || 0);
+      // Calculate date selection score (exclude time-of-day factors)
+      // earliestTime and timeAdjacency should not affect which DAY is selected
+      const dateSelectionScore =
+        bestOnDate.score -
+        (bestOnDate.scoreBreakdown?.earliestTime || 0) -
+        (bestOnDate.scoreBreakdown?.timeAdjacency || 0);
 
-      if (fieldSelectionScore > bestFieldScore) {
-        bestFieldScore = fieldSelectionScore;
-        bestField = fieldId;
+      if (dateSelectionScore > bestDateScore) {
+        bestDateScore = dateSelectionScore;
+        bestDate = date;
       }
     }
   }
 
-  // Return the best candidate from the selected field
-  return bestField ? bestByField.get(bestField) || null : null;
+  // Return the best candidate from the selected date
+  return bestDate ? bestByDate.get(bestDate) || null : null;
 }
 
 /**

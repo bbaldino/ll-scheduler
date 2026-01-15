@@ -16,6 +16,7 @@ export interface ScheduleEvaluationResult {
   constraintViolations: ConstraintViolationsReport;
   gameDayPreferences: GameDayPreferencesReport;
   gameSpacing: GameSpacingReport;
+  practiceSpacing: PracticeSpacingReport;
   matchupBalance: MatchupBalanceReport;
   matchupSpacing: MatchupSpacingReport;
   gameSlotEfficiency: GameSlotEfficiencyReport;
@@ -190,6 +191,40 @@ export interface IsolatedGameSlot {
   homeTeamName: string;
   awayTeamName: string;
   divisionName: string;
+}
+
+// Practice Spacing Report - tracks days between practices within the same week
+export interface PracticeSpacingReport {
+  passed: boolean;
+  summary: string;
+  divisionReports: DivisionPracticeSpacingReport[];
+}
+
+export interface DivisionPracticeSpacingReport {
+  divisionId: string;
+  divisionName: string;
+  teamReports: TeamPracticeSpacingReport[];
+  weeksWithMultiplePractices: number; // Total weeks where teams had 2+ practices
+  weeksWithGoodSpacing: number; // Weeks where practices were well-spaced (2+ days apart)
+  passed: boolean;
+}
+
+export interface TeamPracticeSpacingReport {
+  teamId: string;
+  teamName: string;
+  weeklyBreakdown: WeekPracticeSpacing[]; // Only weeks with 2+ practices
+  totalWeeksWithMultiplePractices: number;
+  weeksWithGoodSpacing: number; // Practices 2+ days apart
+  weeksWithBackToBack: number; // Practices on consecutive days
+  passed: boolean;
+}
+
+export interface WeekPracticeSpacing {
+  weekStart: string;
+  practiceCount: number;
+  practiceDates: string[]; // Sorted dates of practices
+  daysBetween: number[]; // Days between consecutive practices
+  isWellSpaced: boolean; // All gaps >= 2 days
 }
 
 // Matchup Spacing Report - tracks days between games for each team pair (rematches)

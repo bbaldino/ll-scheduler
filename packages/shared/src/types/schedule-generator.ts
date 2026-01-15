@@ -233,6 +233,9 @@ export interface ScoringWeights {
   sameDayCageFieldGap: number; // Penalize non-adjacent cage+field events on same day
   weekendMorningPractice: number; // Penalize practices on weekend mornings (games should get priority)
   shortRestBalance: number; // For games: penalize short rest when team already has more than division average
+
+  // Practice-specific continuous positive factor
+  practiceSpacingInWeek: number; // Prefer spreading practices apart within the same week (2+ days apart)
 }
 
 /**
@@ -258,6 +261,9 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   sameDayCageFieldGap: -1000, // Strong penalty for non-adjacent cage+field on same day
   weekendMorningPractice: -500, // Penalty for practices on weekend mornings (reserve for games)
   shortRestBalance: -500, // Strong penalty for short rest when team already has more than average
+
+  // Practice-specific factors
+  practiceSpacingInWeek: 500, // Strong preference for spreading practices apart within a week
 };
 
 /**
@@ -301,6 +307,7 @@ export interface ScoredCandidate extends PlacementCandidate {
     sameDayCageFieldGap: number;
     weekendMorningPractice: number;
     shortRestBalance: number;
+    practiceSpacingInWeek: number;
   };
 }
 

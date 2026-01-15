@@ -766,3 +766,9 @@
   font-style: italic;
   margin-top: 0.5rem;
 }
+
+/* Warning text for practice spacing */
+.warningText {
+  color: #e65100;
+  font-weight: 500;
+}

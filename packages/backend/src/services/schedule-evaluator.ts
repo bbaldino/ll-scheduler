@@ -20,6 +20,10 @@ import type {
   DivisionMatchupSpacingReport,
   GameSlotEfficiencyReport,
   IsolatedGameSlot,
+  PracticeSpacingReport,
+  DivisionPracticeSpacingReport,
+  TeamPracticeSpacingReport,
+  WeekPracticeSpacing,
   ScheduledEvent,
   Team,
   Division,
@@ -88,6 +92,7 @@ export async function evaluateSchedule(
   const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, season);
   const matchupSpacing = evaluateMatchupSpacing(events, teams, divisionMap);
   const gameSlotEfficiency = evaluateGameSlotEfficiency(events, teamMap, divisionMap, fieldMap);
+  const practiceSpacing = evaluatePracticeSpacing(events, teams, divisionMap, season);
 
   // Calculate overall score
   const checks = [
@@ -99,6 +104,7 @@ export async function evaluateSchedule(
     matchupBalance.passed,
     matchupSpacing.passed,
     gameSlotEfficiency.passed,
+    practiceSpacing.passed,
   ];
   const passedCount = checks.filter(Boolean).length;
   const overallScore = Math.round((passedCount / checks.length) * 100);
@@ -112,6 +118,7 @@ export async function evaluateSchedule(
     constraintViolations,
     gameDayPreferences,
     gameSpacing,
+    practiceSpacing,
     matchupBalance,
     matchupSpacing,
     gameSlotEfficiency,
@@ -1207,6 +1214,154 @@ function evaluateMatchupSpacing(
     summary: allPassed
       ? `Days between consecutive games OK (min: ${overallMin}, avg: ${overallAvg})`
       : `Some consecutive games too close (min: ${overallMin} days, avg: ${overallAvg} days)`,
+    divisionReports,
+  };
+}
+
+/**
+ * Evaluate practice spacing - ensures practices within the same week are spread out
+ * When teams have 2+ practices in a week, they should be at least 2 days apart
+ */
+function evaluatePracticeSpacing(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisionMap: Map<string, Division>,
+  season: Season
+): PracticeSpacingReport {
+  // Group teams by division
+  const teamsByDivision = new Map<string, Team[]>();
+  for (const team of teams) {
+    const existing = teamsByDivision.get(team.divisionId) || [];
+    existing.push(team);
+    teamsByDivision.set(team.divisionId, existing);
+  }
+
+  // Filter to only practices (including paired_practice)
+  const practices = events.filter(
+    (e) => e.eventType === 'practice' || e.eventType === 'paired_practice'
+  );
+
+  // Generate all weeks in the season
+  const allWeeks: { start: string; end: string }[] = [];
+  let currentWeekStart = getWeekStart(season.startDate);
+  while (currentWeekStart <= season.endDate) {
+    allWeeks.push({
+      start: currentWeekStart,
+      end: getWeekEnd(currentWeekStart),
+    });
+    const nextWeek = new Date(currentWeekStart + 'T00:00:00');
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    currentWeekStart = nextWeek.toISOString().split('T')[0];
+  }
+
+  const divisionReports: DivisionPracticeSpacingReport[] = [];
+  const MIN_DAYS_APART = 2; // Practices should be at least 2 days apart
+
+  for (const [divisionId, divisionTeams] of teamsByDivision) {
+    const division = divisionMap.get(divisionId);
+    if (!division) continue;
+
+    const teamReports: TeamPracticeSpacingReport[] = [];
+    let divisionWeeksWithMultiple = 0;
+    let divisionWeeksWithGoodSpacing = 0;
+
+    for (const team of divisionTeams) {
+      // Get practices for this team
+      const teamPractices = practices.filter(
+        (e) =>
+          e.teamId === team.id ||
+          e.team1Id === team.id ||
+          e.team2Id === team.id
+      );
+
+      const weeklyBreakdown: WeekPracticeSpacing[] = [];
+      let teamWeeksWithMultiple = 0;
+      let teamWeeksWithGoodSpacing = 0;
+      let teamWeeksWithBackToBack = 0;
+
+      for (const week of allWeeks) {
+        // Get practices in this week for this team
+        const weekPractices = teamPractices
+          .filter((p) => p.date >= week.start && p.date <= week.end)
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        if (weekPractices.length < 2) continue; // Only track weeks with 2+ practices
+
+        teamWeeksWithMultiple++;
+        divisionWeeksWithMultiple++;
+
+        // Get unique practice dates (in case of multiple practices on same day)
+        const uniqueDates = [...new Set(weekPractices.map((p) => p.date))].sort();
+
+        // Calculate days between each consecutive practice
+        const daysBetween: number[] = [];
+        for (let i = 0; i < uniqueDates.length - 1; i++) {
+          const currentDate = new Date(uniqueDates[i] + 'T12:00:00');
+          const nextDate = new Date(uniqueDates[i + 1] + 'T12:00:00');
+          const daysDiff = Math.round(
+            (nextDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          daysBetween.push(daysDiff);
+        }
+
+        // Check if well-spaced (all gaps >= MIN_DAYS_APART)
+        const isWellSpaced = daysBetween.every((gap) => gap >= MIN_DAYS_APART);
+
+        if (isWellSpaced) {
+          teamWeeksWithGoodSpacing++;
+          divisionWeeksWithGoodSpacing++;
+        }
+
+        // Check for back-to-back (any gap of 1 day)
+        if (daysBetween.some((gap) => gap === 1)) {
+          teamWeeksWithBackToBack++;
+        }
+
+        weeklyBreakdown.push({
+          weekStart: week.start,
+          practiceCount: weekPractices.length,
+          practiceDates: uniqueDates,
+          daysBetween,
+          isWellSpaced,
+        });
+      }
+
+      teamReports.push({
+        teamId: team.id,
+        teamName: team.name,
+        weeklyBreakdown,
+        totalWeeksWithMultiplePractices: teamWeeksWithMultiple,
+        weeksWithGoodSpacing: teamWeeksWithGoodSpacing,
+        weeksWithBackToBack: teamWeeksWithBackToBack,
+        passed: teamWeeksWithMultiple === 0 || teamWeeksWithGoodSpacing === teamWeeksWithMultiple,
+      });
+    }
+
+    // Sort teams by name for consistent display
+    teamReports.sort((a, b) => a.teamName.localeCompare(b.teamName));
+
+    divisionReports.push({
+      divisionId,
+      divisionName: division.name,
+      teamReports,
+      weeksWithMultiplePractices: divisionWeeksWithMultiple,
+      weeksWithGoodSpacing: divisionWeeksWithGoodSpacing,
+      passed: divisionWeeksWithMultiple === 0 || divisionWeeksWithGoodSpacing >= divisionWeeksWithMultiple * 0.8, // 80% threshold
+    });
+  }
+
+  const allPassed = divisionReports.every((r) => r.passed);
+  const totalWeeksWithMultiple = divisionReports.reduce((sum, r) => sum + r.weeksWithMultiplePractices, 0);
+  const totalWeeksWithGoodSpacing = divisionReports.reduce((sum, r) => sum + r.weeksWithGoodSpacing, 0);
+  const spacingRate = totalWeeksWithMultiple > 0
+    ? Math.round((totalWeeksWithGoodSpacing / totalWeeksWithMultiple) * 100)
+    : 100;
+
+  return {
+    passed: allPassed,
+    summary: allPassed
+      ? `Practice spacing OK (${spacingRate}% well-spaced)`
+      : `Practice spacing issues (${spacingRate}% well-spaced, ${totalWeeksWithMultiple - totalWeeksWithGoodSpacing} weeks with back-to-back practices)`,
     divisionReports,
   };
 }

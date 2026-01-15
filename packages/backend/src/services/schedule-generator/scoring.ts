@@ -59,6 +59,7 @@ export interface ScoreBreakdown {
   sameDayCageFieldGap: number;
   weekendMorningPractice: number;
   shortRestBalance: number;
+  practiceSpacingInWeek: number;
 }
 
 /**
@@ -93,6 +94,7 @@ export function calculatePlacementScore(
     sameDayCageFieldGap: 0,
     weekendMorningPractice: 0,
     shortRestBalance: 0,
+    practiceSpacingInWeek: 0,
   };
 
   // Continuous positive factors (rawScore 0-1)
@@ -127,6 +129,8 @@ export function calculatePlacementScore(
     breakdown.earliestTime = calculateEarliestTimeRaw(candidate, context) * weights.earliestTime;
     // Reduce field preference weight for practices (field choice less important than for games)
     breakdown.fieldPreference = breakdown.fieldPreference * 0.3;
+    // Prefer spreading practices apart within the same week
+    breakdown.practiceSpacingInWeek = calculatePracticeSpacingInWeekRaw(candidate.date, teamState, context) * weights.practiceSpacingInWeek;
   }
 
   // Binary penalty: same-day event (only for same resource type)
@@ -381,6 +385,73 @@ export function calculateWeekendMorningPracticeRaw(dayOfWeek: number, startTime:
   }
 
   return 0; // No penalty for weekend afternoon practices
+}
+
+/**
+ * Calculate practice spacing within week raw score
+ * Returns 0-1 where:
+ * - 1.0 = no other practices this week, or 2+ days from nearest practice
+ * - 0.3 = 1 day from nearest practice (back-to-back days)
+ * - 0.0 = same day (should be blocked anyway)
+ *
+ * This encourages spreading practices apart within the same week.
+ */
+export function calculatePracticeSpacingInWeekRaw(
+  candidateDate: string,
+  teamState: TeamSchedulingState,
+  context: ScoringContext
+): number {
+  // Find which week this date belongs to
+  const weekNum = getWeekNumber(candidateDate, context.weekDefinitions);
+  if (weekNum === -1) {
+    return 1.0; // Unknown week, best possible score
+  }
+
+  const week = context.weekDefinitions.find(w => w.weekNumber === weekNum);
+  if (!week) {
+    return 1.0;
+  }
+
+  // Find existing practice dates for this team in this week
+  // We check fieldDatesUsed intersected with this week's dates
+  // Note: practices use field slots, so we check fieldDatesUsed
+  const practicesInWeek: string[] = [];
+  for (const usedDate of teamState.fieldDatesUsed) {
+    if (usedDate >= week.startDate && usedDate <= week.endDate) {
+      // Check if this was actually a practice (not a game)
+      // Games are tracked in gameDates, so if it's in fieldDatesUsed but not in gameDates, it's a practice
+      if (!teamState.gameDates.includes(usedDate)) {
+        practicesInWeek.push(usedDate);
+      }
+    }
+  }
+
+  // If no existing practices in this week, this is the first one - best score
+  if (practicesInWeek.length === 0) {
+    return 1.0;
+  }
+
+  // Calculate minimum days between candidate and any existing practice
+  const candidateDayNum = dateToDayNumber(candidateDate);
+  let minDays = Infinity;
+
+  for (const practiceDate of practicesInWeek) {
+    const practiceDayNum = dateToDayNumber(practiceDate);
+    const daysDiff = Math.abs(candidateDayNum - practiceDayNum);
+    minDays = Math.min(minDays, daysDiff);
+  }
+
+  // Score based on minimum gap:
+  // 0 days = 0.0 (same day - blocked anyway)
+  // 1 day = 0.3 (back-to-back, discouraged)
+  // 2+ days = 1.0 (well-spaced, ideal)
+  if (minDays === 0) {
+    return 0.0;
+  } else if (minDays === 1) {
+    return 0.3;
+  } else {
+    return 1.0;
+  }
 }
 
 /**
