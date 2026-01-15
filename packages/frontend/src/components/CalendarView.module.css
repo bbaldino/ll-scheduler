@@ -140,6 +140,35 @@
   font-weight: 500;
 }
 
+/* Blackout styles for month view */
+.blackouts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 0.25rem;
+}
+
+.blackout {
+  font-size: 0.6rem;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: #d32f2f;
+  color: white;
+  text-align: center;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dayCell.hasBlackout {
+  background: #ffebee;
+}
+
+.dayCell.hasBlackout.today {
+  background: #ffcdd2;
+}
+
 .dayEvents {
   display: flex;
   flex-direction: column;
@@ -262,6 +291,34 @@
   background: #7c4dff;
   color: white;
   font-weight: 500;
+}
+
+/* Blackout styles for week view */
+.weekBlackouts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 0.25rem;
+}
+
+.weekBlackout {
+  font-size: 0.55rem;
+  padding: 1px 3px;
+  border-radius: 2px;
+  background: #d32f2f;
+  color: white;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dayColumn.hasBlackout {
+  background: #ffebee;
+}
+
+.dayColumn.hasBlackout .weekDayHeader {
+  background: #ffcdd2;
 }
 
 .weekTimeSlot {

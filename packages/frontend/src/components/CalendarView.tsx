@@ -26,6 +26,13 @@ interface SeasonMilestones {
   endDate?: string;
 }
 
+// Unified blackout date for calendar display
+interface CalendarBlackout {
+  date: string;
+  description?: string;
+  divisionName?: string; // If division-specific, shows "(Division Name)"
+}
+
 interface CalendarViewProps {
   events: ScheduledEvent[];
   teams: Team[];
@@ -35,6 +42,7 @@ interface CalendarViewProps {
   seasonId?: string; // Required for creating events
   initialDate?: string; // ISO date string to start the calendar on
   seasonMilestones?: SeasonMilestones; // Key season dates to annotate
+  blackoutDates?: CalendarBlackout[]; // Blackout dates to display
   onEventClick?: (event: ScheduledEvent) => void;
   onEventCreate?: (input: CreateScheduledEventInput) => Promise<void>;
   onEventCreateBulk?: (inputs: CreateScheduledEventInput[]) => Promise<{ createdCount: number }>;
@@ -57,6 +65,7 @@ export default function CalendarView({
   seasonId,
   initialDate,
   seasonMilestones,
+  blackoutDates,
   onEventClick,
   onEventCreate,
   onEventCreateBulk,
@@ -393,6 +402,12 @@ export default function CalendarView({
     return milestones;
   };
 
+  // Get blackout dates for a specific date
+  const getBlackoutsForDate = (dateStr: string): CalendarBlackout[] => {
+    if (!blackoutDates) return [];
+    return blackoutDates.filter((b) => b.date === dateStr);
+  };
+
   // Week view helpers - starts on Monday
   const getWeekDates = (date: Date) => {
     const week: Date[] = [];
@@ -557,12 +572,13 @@ export default function CalendarView({
           {days.map((date, index) => {
             const dateStr = date ? date.toISOString().split('T')[0] : '';
             const milestones = date ? getMilestonesForDate(dateStr) : [];
+            const blackouts = date ? getBlackoutsForDate(dateStr) : [];
             return (
               <div
                 key={index}
                 className={`${styles.dayCell} ${!date ? styles.emptyDay : ''} ${
                   date && date.toDateString() === new Date().toDateString() ? styles.today : ''
-                } ${date && onEventCreate ? styles.clickable : ''}`}
+                } ${date && onEventCreate ? styles.clickable : ''} ${blackouts.length > 0 ? styles.hasBlackout : ''}`}
                 onClick={() => date && handleDayClick(dateStr)}
               >
                 {date && (
@@ -573,6 +589,16 @@ export default function CalendarView({
                         {milestones.map((milestone) => (
                           <div key={milestone} className={styles.milestone}>
                             {milestone}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {blackouts.length > 0 && (
+                      <div className={styles.blackouts}>
+                        {blackouts.map((blackout, idx) => (
+                          <div key={idx} className={styles.blackout} title={blackout.description || 'Blackout'}>
+                            {blackout.description || 'Blackout'}
+                            {blackout.divisionName && ` (${blackout.divisionName})`}
                           </div>
                         ))}
                       </div>
@@ -622,9 +648,10 @@ export default function CalendarView({
             const dayEvents = getEventsForDateStr(dateStr);
             const layoutInfo = layoutEvents(dayEvents);
             const milestones = getMilestonesForDate(dateStr);
+            const blackouts = getBlackoutsForDate(dateStr);
 
             return (
-              <div key={date.toISOString()} className={styles.dayColumn}>
+              <div key={date.toISOString()} className={`${styles.dayColumn} ${blackouts.length > 0 ? styles.hasBlackout : ''}`}>
                 <div
                   className={`${styles.weekDayHeader} ${onEventCreate ? styles.clickable : ''}`}
                   onClick={() => handleDayClick(dateStr)}
@@ -640,6 +667,16 @@ export default function CalendarView({
                       {milestones.map((milestone) => (
                         <div key={milestone} className={styles.weekMilestone}>
                           {milestone}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {blackouts.length > 0 && (
+                    <div className={styles.weekBlackouts}>
+                      {blackouts.map((blackout, idx) => (
+                        <div key={idx} className={styles.weekBlackout} title={blackout.description || 'Blackout'}>
+                          {blackout.description || 'Blackout'}
+                          {blackout.divisionName && ` (${blackout.divisionName})`}
                         </div>
                       ))}
                     </div>
