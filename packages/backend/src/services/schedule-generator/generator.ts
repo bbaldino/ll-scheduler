@@ -1141,7 +1141,7 @@ export class ScheduleGenerator {
       divisionId: string;
       divisionName: string;
       teams: Team[];
-      config: { gamesPerWeek: number; gameDurationHours: number };
+      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number };
       matchups: Array<GameMatchup & { targetWeek: number }>;
     };
 
@@ -1324,7 +1324,7 @@ export class ScheduleGenerator {
         divisionId,
         divisionName,
         teams: divisionTeams,
-        config: { gamesPerWeek: config.gamesPerWeek, gameDurationHours: config.gameDurationHours },
+        config: { gamesPerWeek: config.gamesPerWeek, gameDurationHours: config.gameDurationHours, gameArriveBeforeHours: config.gameArriveBeforeHours },
         matchups,
       });
     }
@@ -1338,6 +1338,9 @@ export class ScheduleGenerator {
 
     for (const division of divisionMatchupsList) {
       verboseLog(`\nScheduling ${division.divisionName}:`);
+
+      // Calculate total game slot time (game duration + arrive before time)
+      const totalGameSlotHours = division.config.gameDurationHours + (division.config.gameArriveBeforeHours || 0);
 
       // Build team lookup map for O(1) access
       const teamLookup = new Map(division.teams.map(t => [t.id, t]));
@@ -1477,7 +1480,7 @@ export class ScheduleGenerator {
           for (const slot of weekFieldSlots) {
             if (requiredDays.includes(slot.slot.dayOfWeek)) {
               // Calculate how many games of this division's duration can fit in this slot
-              const gamesInSlot = Math.floor(slot.slot.duration / division.config.gameDurationHours);
+              const gamesInSlot = Math.floor(slot.slot.duration / totalGameSlotHours);
               requiredDayGameCapacity += gamesInSlot;
             }
           }
@@ -1734,7 +1737,7 @@ export class ScheduleGenerator {
                 matchup,
                 currentWeekFieldSlots,
                 week,
-                division.config.gameDurationHours,
+                totalGameSlotHours,
                 this.season.id,
                 this.scoringContext!
               );
@@ -1884,7 +1887,7 @@ export class ScheduleGenerator {
                   updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId, isSpilloverGame);
 
                   // Update resource usage
-                  updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, division.config.gameDurationHours);
+                  updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, totalGameSlotHours);
 
                   const dayName = ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek];
                   const spilloverNote = isSpilloverGame ? ` (spillover from week ${originalWeek + 1})` : '';
@@ -2073,7 +2076,7 @@ export class ScheduleGenerator {
       divisionId: string;
       divisionName: string;
       teams: Team[];
-      config: { gamesPerWeek: number; gameDurationHours: number };
+      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number };
     }>,
     gameWeeks: WeekDefinition[]
   ): void {
@@ -2172,7 +2175,7 @@ export class ScheduleGenerator {
    */
   private diagnoseRequiredDayShortfall(
     team: Team,
-    division: { divisionId: string; divisionName: string; config: { gamesPerWeek: number; gameDurationHours: number } },
+    division: { divisionId: string; divisionName: string; config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number } },
     requiredDayOfWeek: number,
     gameWeeks: WeekDefinition[]
   ): {

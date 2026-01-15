@@ -60,6 +60,19 @@
   gap: 1rem;
 }
 
+.timeInputRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.timeInputRow select {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
 .formActions {
   display: flex;
   gap: 1rem;

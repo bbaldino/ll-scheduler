@@ -89,6 +89,7 @@ export default function SeasonsPage() {
     practiceDurationHours: 1,
     gamesPerWeek: undefined,
     gameDurationHours: undefined,
+    gameArriveBeforeHours: undefined,
     gameDayPreferences: undefined,
     cageSessionsPerWeek: undefined,
     cageSessionDurationHours: undefined,
@@ -229,6 +230,7 @@ export default function SeasonsPage() {
       practiceDurationHours: 1,
       gamesPerWeek: 1,
       gameDurationHours: 2,
+      gameArriveBeforeHours: 0,
       gameDayPreferences: undefined,
       cageSessionsPerWeek: undefined,
       cageSessionDurationHours: undefined,
@@ -244,6 +246,7 @@ export default function SeasonsPage() {
       practiceDurationHours: config.practiceDurationHours,
       gamesPerWeek: config.gamesPerWeek,
       gameDurationHours: config.gameDurationHours,
+      gameArriveBeforeHours: config.gameArriveBeforeHours,
       gameDayPreferences: config.gameDayPreferences,
       cageSessionsPerWeek: config.cageSessionsPerWeek,
       cageSessionDurationHours: config.cageSessionDurationHours,
@@ -287,6 +290,7 @@ export default function SeasonsPage() {
         practiceDurationHours: configFormData.practiceDurationHours,
         gamesPerWeek: configFormData.gamesPerWeek,
         gameDurationHours: configFormData.gameDurationHours,
+        gameArriveBeforeHours: configFormData.gameArriveBeforeHours,
         gameDayPreferences: configFormData.gameDayPreferences,
         cageSessionsPerWeek: configFormData.cageSessionsPerWeek,
         cageSessionDurationHours: configFormData.cageSessionDurationHours,
@@ -1047,22 +1051,6 @@ export default function SeasonsPage() {
                                     />
                                   </div>
                                   <div className={styles.formGroup}>
-                                    <label>Game Duration (hours)</label>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="0.25"
-                                      value={configFormData.gameDurationHours || 0}
-                                      onChange={(e) =>
-                                        setConfigFormData({
-                                          ...configFormData,
-                                          gameDurationHours: parseFloat(e.target.value) || 0,
-                                        })
-                                      }
-                                      required
-                                    />
-                                  </div>
-                                  <div className={styles.formGroup}>
                                     <label>Max Games/Season (optional)</label>
                                     <input
                                       type="number"
@@ -1077,6 +1065,79 @@ export default function SeasonsPage() {
                                         })
                                       }
                                     />
+                                  </div>
+                                </div>
+                                <div className={styles.formRow}>
+                                  <div className={styles.formGroup}>
+                                    <label>Game Duration</label>
+                                    <div className={styles.timeInputRow}>
+                                      <select
+                                        value={Math.floor(configFormData.gameDurationHours || 0)}
+                                        onChange={(e) => {
+                                          const hours = parseInt(e.target.value);
+                                          const currentMinutes = Math.round(((configFormData.gameDurationHours || 0) % 1) * 60);
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            gameDurationHours: hours + currentMinutes / 60,
+                                          });
+                                        }}
+                                        required
+                                      >
+                                        {[0, 1, 2, 3, 4, 5].map((h) => (
+                                          <option key={h} value={h}>{h}h</option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={Math.round(((configFormData.gameDurationHours || 0) % 1) * 60)}
+                                        onChange={(e) => {
+                                          const minutes = parseInt(e.target.value);
+                                          const currentHours = Math.floor(configFormData.gameDurationHours || 0);
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            gameDurationHours: currentHours + minutes / 60,
+                                          });
+                                        }}
+                                      >
+                                        {[0, 15, 30, 45].map((m) => (
+                                          <option key={m} value={m}>{m}m</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </div>
+                                  <div className={styles.formGroup}>
+                                    <label>Arrive Before</label>
+                                    <div className={styles.timeInputRow}>
+                                      <select
+                                        value={Math.floor(configFormData.gameArriveBeforeHours || 0)}
+                                        onChange={(e) => {
+                                          const hours = parseInt(e.target.value);
+                                          const currentMinutes = Math.round(((configFormData.gameArriveBeforeHours || 0) % 1) * 60);
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            gameArriveBeforeHours: hours + currentMinutes / 60,
+                                          });
+                                        }}
+                                      >
+                                        {[0, 1, 2].map((h) => (
+                                          <option key={h} value={h}>{h}h</option>
+                                        ))}
+                                      </select>
+                                      <select
+                                        value={Math.round(((configFormData.gameArriveBeforeHours || 0) % 1) * 60)}
+                                        onChange={(e) => {
+                                          const minutes = parseInt(e.target.value);
+                                          const currentHours = Math.floor(configFormData.gameArriveBeforeHours || 0);
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            gameArriveBeforeHours: currentHours + minutes / 60,
+                                          });
+                                        }}
+                                      >
+                                        {[0, 15, 30, 45].map((m) => (
+                                          <option key={m} value={m}>{m}m</option>
+                                        ))}
+                                      </select>
+                                    </div>
                                   </div>
                                 </div>
                                 <div className={styles.formGroup}>
@@ -1456,7 +1517,10 @@ export default function SeasonsPage() {
                                 </div>
                                 <div className={styles.configDetailRow}>
                                   <span>Games: {existingConfig.gamesPerWeek}/week</span>
-                                  <span>Duration: {existingConfig.gameDurationHours}h</span>
+                                  <span>Duration: {Math.floor(existingConfig.gameDurationHours)}h {Math.round((existingConfig.gameDurationHours % 1) * 60)}m</span>
+                                  {existingConfig.gameArriveBeforeHours ? (
+                                    <span>Arrive before: {Math.floor(existingConfig.gameArriveBeforeHours)}h {Math.round((existingConfig.gameArriveBeforeHours % 1) * 60)}m</span>
+                                  ) : null}
                                   {existingConfig.maxGamesPerSeason && (
                                     <span>Max/season: {existingConfig.maxGamesPerSeason}</span>
                                   )}
