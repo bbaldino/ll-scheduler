@@ -965,7 +965,8 @@ export class ScheduleGenerator {
         requiredCageSessions: config.cageSessionsPerWeek
           ? Math.floor(config.cageSessionsPerWeek * cageWeeks)
           : 0,
-        minDaysBetweenEvents: config.minConsecutiveDayGap || 0,
+        // Only apply min day gap when game spacing is enabled for this division
+        minDaysBetweenEvents: config.gameSpacingEnabled ? (config.minConsecutiveDayGap || 0) : 0,
         scheduledEventDates: [],
       });
     }

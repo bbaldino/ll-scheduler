@@ -25,6 +25,7 @@ interface DivisionConfigRow {
   sunday_paired_practice_duration_hours: number | null;
   sunday_paired_practice_field_id: string | null;
   sunday_paired_practice_cage_id: string | null;
+  game_spacing_enabled: number | null; // 0 or 1
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +51,7 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     sundayPairedPracticeDurationHours: row.sunday_paired_practice_duration_hours || undefined,
     sundayPairedPracticeFieldId: row.sunday_paired_practice_field_id || undefined,
     sundayPairedPracticeCageId: row.sunday_paired_practice_cage_id || undefined,
+    gameSpacingEnabled: row.game_spacing_enabled === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -101,8 +103,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, blackout_dates, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, blackout_dates, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, game_spacing_enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -124,6 +126,7 @@ export async function createDivisionConfig(
       input.sundayPairedPracticeDurationHours || null,
       input.sundayPairedPracticeFieldId || null,
       input.sundayPairedPracticeCageId || null,
+      input.gameSpacingEnabled ? 1 : 0,
       now,
       now
     )
@@ -213,6 +216,10 @@ export async function updateDivisionConfig(
   if (input.sundayPairedPracticeCageId !== undefined) {
     updates.push('sunday_paired_practice_cage_id = ?');
     values.push(input.sundayPairedPracticeCageId || null);
+  }
+  if (input.gameSpacingEnabled !== undefined) {
+    updates.push('game_spacing_enabled = ?');
+    values.push(input.gameSpacingEnabled ? 1 : 0);
   }
 
   if (updates.length === 0) {

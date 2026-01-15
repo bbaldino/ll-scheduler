@@ -74,6 +74,9 @@ export interface DivisionConfig {
   sundayPairedPracticeFieldId?: string; // Specific field to use
   sundayPairedPracticeCageId?: string; // Specific cage to use
 
+  // Game spacing settings
+  gameSpacingEnabled?: boolean; // Enable game spacing constraints (min days between games)
+
   createdAt: string;
   updatedAt: string;
 }
@@ -97,6 +100,7 @@ export interface CreateDivisionConfigInput {
   sundayPairedPracticeDurationHours?: number;
   sundayPairedPracticeFieldId?: string;
   sundayPairedPracticeCageId?: string;
+  gameSpacingEnabled?: boolean;
 }
 
 export interface UpdateDivisionConfigInput {
@@ -116,4 +120,5 @@ export interface UpdateDivisionConfigInput {
   sundayPairedPracticeDurationHours?: number;
   sundayPairedPracticeFieldId?: string;
   sundayPairedPracticeCageId?: string;
+  gameSpacingEnabled?: boolean;
 }

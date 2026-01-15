@@ -82,7 +82,7 @@ export async function evaluateSchedule(
     divisionMap,
     configByDivision
   );
-  const gameSpacing = evaluateGameSpacing(events, teams, divisionMap);
+  const gameSpacing = evaluateGameSpacing(events, teams, divisionMap, configByDivision);
   const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, season);
   const gameSlotEfficiency = evaluateGameSlotEfficiency(events, teamMap, divisionMap, fieldMap);
 
@@ -726,18 +726,24 @@ function evaluateGameDayPreferences(
 /**
  * Evaluate game spacing - average days between games for each team
  * Evaluates fairness: all teams should have similar average spacing
+ * Only evaluates divisions where gameSpacingEnabled is true
  */
 function evaluateGameSpacing(
   events: ScheduledEvent[],
   teams: Team[],
-  divisionMap: Map<string, Division>
+  divisionMap: Map<string, Division>,
+  configByDivision: Map<string, DivisionConfig>
 ): GameSpacingReport {
   const teamReports: TeamGameSpacingReport[] = [];
   const MAX_DEVIATION_FROM_AVG = 1.5; // Max allowed deviation from overall average (in days)
 
   for (const team of teams) {
     const division = divisionMap.get(team.divisionId);
+    const config = configByDivision.get(team.divisionId);
     if (!division) continue;
+
+    // Skip divisions where game spacing is not enabled
+    if (!config?.gameSpacingEnabled) continue;
 
     // Get all games for this team, sorted by date
     const teamGames = events

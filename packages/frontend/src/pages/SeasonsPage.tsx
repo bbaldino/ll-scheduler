@@ -97,6 +97,7 @@ export default function SeasonsPage() {
     sundayPairedPracticeDurationHours: undefined,
     sundayPairedPracticeFieldId: undefined,
     sundayPairedPracticeCageId: undefined,
+    gameSpacingEnabled: undefined,
   });
 
   // Game week overrides state
@@ -253,6 +254,7 @@ export default function SeasonsPage() {
       sundayPairedPracticeDurationHours: config.sundayPairedPracticeDurationHours,
       sundayPairedPracticeFieldId: config.sundayPairedPracticeFieldId,
       sundayPairedPracticeCageId: config.sundayPairedPracticeCageId,
+      gameSpacingEnabled: config.gameSpacingEnabled,
     });
     setEditingConfigId(config.id);
   };
@@ -295,6 +297,7 @@ export default function SeasonsPage() {
         sundayPairedPracticeDurationHours: configFormData.sundayPairedPracticeDurationHours,
         sundayPairedPracticeFieldId: configFormData.sundayPairedPracticeFieldId,
         sundayPairedPracticeCageId: configFormData.sundayPairedPracticeCageId,
+        gameSpacingEnabled: configFormData.gameSpacingEnabled,
       });
       await loadDivisionConfigsForSeason(configFormData.seasonId);
       setEditingConfigId(null);
@@ -1259,6 +1262,27 @@ export default function SeasonsPage() {
                                     </div>
                                   </div>
                                 )}
+                                {/* Game Spacing */}
+                                <div className={styles.formRow}>
+                                  <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
+                                    <label>
+                                      <input
+                                        type="checkbox"
+                                        checked={configFormData.gameSpacingEnabled || false}
+                                        onChange={(e) =>
+                                          setConfigFormData({
+                                            ...configFormData,
+                                            gameSpacingEnabled: e.target.checked,
+                                          })
+                                        }
+                                      />
+                                      {' '}Enable Game Spacing
+                                    </label>
+                                    <p className={styles.helperText}>
+                                      When enabled, the scheduler will try to maintain minimum days between games for each team.
+                                    </p>
+                                  </div>
+                                </div>
                                 {/* Field Preferences */}
                                 <div className={styles.formRow}>
                                   <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
@@ -1480,6 +1504,11 @@ export default function SeasonsPage() {
                                         Cage: {(seasonCages[season.id] || []).find(c => c.cageId === existingConfig.sundayPairedPracticeCageId)?.cage?.name || existingConfig.sundayPairedPracticeCageId}
                                       </span>
                                     )}
+                                  </div>
+                                )}
+                                {existingConfig.gameSpacingEnabled && (
+                                  <div className={styles.configDetailRow}>
+                                    <span>Game spacing: enabled</span>
                                   </div>
                                 )}
                                 {existingConfig.fieldPreferences && existingConfig.fieldPreferences.length > 0 && (
