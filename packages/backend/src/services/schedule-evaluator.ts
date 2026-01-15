@@ -258,6 +258,10 @@ function evaluateWeeklyRequirements(
     const issues: string[] = [];
     const weeks: WeekSummary[] = [];
 
+    // Track cumulative games to respect maxGamesPerSeason
+    let cumulativeGamesRequired = 0;
+    const maxGamesPerSeason = config.maxGamesPerSeason;
+
     for (const week of allWeeks) {
       const weekEvents = teamEvents.filter(
         (e) => e.date >= week.start && e.date <= week.end
@@ -283,7 +287,16 @@ function evaluateWeeklyRequirements(
       // Use game week override if available
       let gamesRequired = 0;
       if (allowedTypes.has('game') && gameWeekNumber !== undefined) {
-        gamesRequired = getGamesPerWeekForDivision(config, gameWeekNumber);
+        let weeklyGames = getGamesPerWeekForDivision(config, gameWeekNumber);
+
+        // Cap at maxGamesPerSeason if set
+        if (maxGamesPerSeason !== undefined && maxGamesPerSeason > 0) {
+          const remainingGames = maxGamesPerSeason - cumulativeGamesRequired;
+          weeklyGames = Math.min(weeklyGames, Math.max(0, remainingGames));
+        }
+
+        gamesRequired = weeklyGames;
+        cumulativeGamesRequired += gamesRequired;
       }
       const practicesRequired = allowedTypes.has('practice') ? config.practicesPerWeek : 0;
       const cagesRequired = allowedTypes.has('cage') ? (config.cageSessionsPerWeek || 0) : 0;
