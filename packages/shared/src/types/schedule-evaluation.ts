@@ -17,6 +17,7 @@ export interface ScheduleEvaluationResult {
   gameDayPreferences: GameDayPreferencesReport;
   gameSpacing: GameSpacingReport;
   matchupBalance: MatchupBalanceReport;
+  matchupSpacing: MatchupSpacingReport;
   gameSlotEfficiency: GameSlotEfficiencyReport;
 }
 
@@ -189,6 +190,25 @@ export interface IsolatedGameSlot {
   homeTeamName: string;
   awayTeamName: string;
   divisionName: string;
+}
+
+// Matchup Spacing Report - tracks days between games for each team pair (rematches)
+export interface MatchupSpacingReport {
+  passed: boolean;
+  summary: string;
+  divisionReports: DivisionMatchupSpacingReport[];
+}
+
+export interface DivisionMatchupSpacingReport {
+  divisionId: string;
+  divisionName: string;
+  teams: { id: string; name: string }[]; // Teams in order for matrix rows/columns
+  // spacingMatrix[i][j] = array of days between each game for team i vs team j
+  // e.g., if they play 3 times, this would have 2 values (gaps between games)
+  spacingMatrix: number[][][];
+  minSpacing: number; // Minimum gap across all matchups
+  avgSpacing: number; // Average gap across all matchups
+  passed: boolean;
 }
 
 // Request type for evaluate endpoint

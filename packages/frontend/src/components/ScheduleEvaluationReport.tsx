@@ -15,6 +15,8 @@ import type {
   MatchupBalanceReport,
   DivisionMatchupReport,
   TeamMatchupReport,
+  MatchupSpacingReport,
+  DivisionMatchupSpacingReport,
   GameSlotEfficiencyReport,
   IsolatedGameSlot,
 } from '@ll-scheduler/shared';
@@ -110,6 +112,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.matchupBalance}
             expanded={expandedSections.has('matchupBalance')}
             onToggle={() => toggleSection('matchupBalance')}
+          />
+
+          {/* Matchup Spacing */}
+          <MatchupSpacingSection
+            report={result.matchupSpacing}
+            expanded={expandedSections.has('matchupSpacing')}
+            onToggle={() => toggleSection('matchupSpacing')}
           />
 
           {/* Game Slot Efficiency */}
@@ -948,6 +957,91 @@ function MatchupBalanceSection({
                     )}
                   </div>
                 ))}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatchupSpacingSection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: MatchupSpacingReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Matchup Spacing"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          {report.divisionReports.length === 0 ? (
+            <p className={styles.noData}>No division data available</p>
+          ) : (
+            report.divisionReports.map((division: DivisionMatchupSpacingReport) => (
+              <div key={division.divisionId} className={styles.divisionReport}>
+                <div className={styles.divisionHeader}>
+                  <span className={division.passed ? styles.statusPass : styles.statusFail}>
+                    {division.passed ? '✓' : '✗'}
+                  </span>
+                  <span className={styles.divisionName}>{division.divisionName}</span>
+                  <span className={styles.complianceRate}>
+                    Min: {division.minSpacing} days, Avg: {division.avgSpacing} days
+                  </span>
+                </div>
+
+                {/* Spacing Matrix */}
+                <div className={styles.spacingMatrixContainer}>
+                  <table className={styles.spacingMatrix}>
+                    <thead>
+                      <tr>
+                        <th></th>
+                        {division.teams.map((team) => (
+                          <th key={team.id} className={styles.matrixHeader}>
+                            {team.name.replace(/^Team\s*/, '')}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {division.teams.map((team, rowIdx) => (
+                        <tr key={team.id}>
+                          <td className={styles.matrixRowHeader}>
+                            {team.name.replace(/^Team\s*/, '')}
+                          </td>
+                          {division.teams.map((_, colIdx) => {
+                            const gaps = division.spacingMatrix[rowIdx][colIdx];
+                            const isLowSpacing = gaps.some(g => g < 7);
+                            return (
+                              <td
+                                key={colIdx}
+                                className={`${styles.matrixCell} ${
+                                  rowIdx === colIdx ? styles.matrixDiagonal : ''
+                                } ${isLowSpacing ? styles.matrixWarning : ''}`}
+                              >
+                                {rowIdx === colIdx ? '-' : gaps.length > 0 ? gaps.join(', ') : '-'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className={styles.matrixHelp}>
+                  Values show days between consecutive games for each team pair
+                </p>
               </div>
             ))
           )}

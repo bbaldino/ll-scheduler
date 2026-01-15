@@ -16,6 +16,8 @@ import type {
   DivisionMatchupReport,
   TeamMatchupReport,
   OpponentMatchup,
+  MatchupSpacingReport,
+  DivisionMatchupSpacingReport,
   GameSlotEfficiencyReport,
   IsolatedGameSlot,
   ScheduledEvent,
@@ -84,6 +86,7 @@ export async function evaluateSchedule(
   );
   const gameSpacing = evaluateGameSpacing(events, teams, divisionMap, configByDivision);
   const matchupBalance = evaluateMatchupBalance(events, teams, divisionMap, configByDivision, season);
+  const matchupSpacing = evaluateMatchupSpacing(events, teams, divisionMap);
   const gameSlotEfficiency = evaluateGameSlotEfficiency(events, teamMap, divisionMap, fieldMap);
 
   // Calculate overall score
@@ -94,6 +97,7 @@ export async function evaluateSchedule(
     gameDayPreferences.passed,
     gameSpacing.passed,
     matchupBalance.passed,
+    matchupSpacing.passed,
     gameSlotEfficiency.passed,
   ];
   const passedCount = checks.filter(Boolean).length;
@@ -109,6 +113,7 @@ export async function evaluateSchedule(
     gameDayPreferences,
     gameSpacing,
     matchupBalance,
+    matchupSpacing,
     gameSlotEfficiency,
   };
 }
@@ -1085,5 +1090,123 @@ function evaluateGameSlotEfficiency(
     concurrentSlots: concurrentGames,
     efficiencyRate,
     isolatedSlotDetails,
+  };
+}
+
+/**
+ * Evaluate matchup spacing - tracks the number of days between consecutive games for each team pair
+ * Returns a matrix showing the gap (in days) between each game for every team pair
+ */
+function evaluateMatchupSpacing(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisionMap: Map<string, Division>
+): MatchupSpacingReport {
+  // Group teams by division
+  const teamsByDivision = new Map<string, Team[]>();
+  for (const team of teams) {
+    const existing = teamsByDivision.get(team.divisionId) || [];
+    existing.push(team);
+    teamsByDivision.set(team.divisionId, existing);
+  }
+
+  // Filter to only games
+  const games = events.filter((e) => e.eventType === 'game');
+
+  const divisionReports: DivisionMatchupSpacingReport[] = [];
+  let globalMinSpacing = Infinity;
+  let allGaps: number[] = [];
+
+  for (const [divisionId, divisionTeams] of teamsByDivision) {
+    const division = divisionMap.get(divisionId);
+    if (!division) continue;
+
+    // Sort teams by name for consistent matrix order
+    const sortedTeams = [...divisionTeams].sort((a, b) => a.name.localeCompare(b.name));
+    const teamCount = sortedTeams.length;
+
+    // Initialize spacing matrix
+    const spacingMatrix: number[][][] = [];
+    for (let i = 0; i < teamCount; i++) {
+      spacingMatrix[i] = [];
+      for (let j = 0; j < teamCount; j++) {
+        spacingMatrix[i][j] = [];
+      }
+    }
+
+    // Get division games
+    const divisionGames = games.filter((g) => g.divisionId === divisionId);
+
+    let divisionMinSpacing = Infinity;
+    const divisionGaps: number[] = [];
+
+    // For each team pair, find all games and calculate gaps
+    for (let i = 0; i < teamCount; i++) {
+      for (let j = i + 1; j < teamCount; j++) {
+        const team1 = sortedTeams[i];
+        const team2 = sortedTeams[j];
+
+        // Find all games between these two teams
+        const matchupGames = divisionGames
+          .filter(
+            (g) =>
+              (g.homeTeamId === team1.id && g.awayTeamId === team2.id) ||
+              (g.homeTeamId === team2.id && g.awayTeamId === team1.id)
+          )
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        // Calculate gaps between consecutive games
+        const gaps: number[] = [];
+        for (let k = 0; k < matchupGames.length - 1; k++) {
+          const currentDate = new Date(matchupGames[k].date + 'T12:00:00');
+          const nextDate = new Date(matchupGames[k + 1].date + 'T12:00:00');
+          const daysDiff = Math.round(
+            (nextDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          gaps.push(daysDiff);
+
+          if (daysDiff < divisionMinSpacing) {
+            divisionMinSpacing = daysDiff;
+          }
+          if (daysDiff < globalMinSpacing) {
+            globalMinSpacing = daysDiff;
+          }
+          divisionGaps.push(daysDiff);
+          allGaps.push(daysDiff);
+        }
+
+        // Store gaps in both directions of the matrix (symmetric)
+        spacingMatrix[i][j] = gaps;
+        spacingMatrix[j][i] = gaps;
+      }
+    }
+
+    const avgSpacing = divisionGaps.length > 0
+      ? Math.round((divisionGaps.reduce((sum, g) => sum + g, 0) / divisionGaps.length) * 10) / 10
+      : 0;
+
+    divisionReports.push({
+      divisionId,
+      divisionName: division.name,
+      teams: sortedTeams.map((t) => ({ id: t.id, name: t.name })),
+      spacingMatrix,
+      minSpacing: divisionMinSpacing === Infinity ? 0 : divisionMinSpacing,
+      avgSpacing,
+      passed: divisionMinSpacing >= 7 || divisionMinSpacing === Infinity, // At least 7 days between rematches
+    });
+  }
+
+  const allPassed = divisionReports.every((r) => r.passed);
+  const overallAvg = allGaps.length > 0
+    ? Math.round((allGaps.reduce((sum, g) => sum + g, 0) / allGaps.length) * 10) / 10
+    : 0;
+  const overallMin = globalMinSpacing === Infinity ? 0 : globalMinSpacing;
+
+  return {
+    passed: allPassed,
+    summary: allPassed
+      ? `Days between consecutive games OK (min: ${overallMin}, avg: ${overallAvg})`
+      : `Some consecutive games too close (min: ${overallMin} days, avg: ${overallAvg} days)`,
+    divisionReports,
   };
 }
