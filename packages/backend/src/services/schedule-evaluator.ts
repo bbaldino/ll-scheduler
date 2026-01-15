@@ -245,11 +245,14 @@ function evaluateWeeklyRequirements(
     if (!division || !config) continue;
 
     // Filter events for this team
+    // Note: paired_practice events use team1Id/team2Id instead of teamId
     const teamEvents = events.filter(
       (e) =>
         e.teamId === team.id ||
         e.homeTeamId === team.id ||
-        e.awayTeamId === team.id
+        e.awayTeamId === team.id ||
+        e.team1Id === team.id ||
+        e.team2Id === team.id
     );
 
     const issues: string[] = [];
@@ -261,8 +264,13 @@ function evaluateWeeklyRequirements(
       );
 
       const gamesScheduled = weekEvents.filter((e) => e.eventType === 'game').length;
-      const practicesScheduled = weekEvents.filter((e) => e.eventType === 'practice').length;
-      const cagesScheduled = weekEvents.filter((e) => e.eventType === 'cage').length;
+      // paired_practice counts as both a practice AND a cage session
+      const practicesScheduled = weekEvents.filter(
+        (e) => e.eventType === 'practice' || e.eventType === 'paired_practice'
+      ).length;
+      const cagesScheduled = weekEvents.filter(
+        (e) => e.eventType === 'cage' || e.eventType === 'paired_practice'
+      ).length;
 
       // Determine which event types are allowed for this week based on season
       const allowedTypes = getAllowedEventTypesForWeek(week.start, week.end, season);
