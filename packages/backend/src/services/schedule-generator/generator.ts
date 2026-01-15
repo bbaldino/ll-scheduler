@@ -3077,8 +3077,8 @@ export class ScheduleGenerator {
     for (const week of practiceWeeks) {
       verboseLog(`\nWeek ${week.weekNumber + 1} (${week.startDate} to ${week.endDate}):`);
 
-      // Get teams that need practices this week, sorted by who is furthest behind their target
-      // Use week number as tiebreaker for teams with the same deficit (fairness rotation)
+      // Get teams that need practices this week, sorted using max-gap balance approach
+      // Teams that would create a NEW max gap (exceeding their current worst gap) get priority
       const teamsNeedingPractices = Array.from(this.teamSchedulingStates.values())
         .filter((ts) => {
           const config = this.divisionConfigs.get(ts.divisionId);
@@ -3090,29 +3090,51 @@ export class ScheduleGenerator {
           });
         })
         .sort((a, b) => {
-          // Sort by who is furthest behind: (scheduled - expected) ascending
-          // Expected = (week.weekNumber) * practicesPerWeek (practices we should have by now)
-          const configA = this.divisionConfigs.get(a.divisionId);
-          const configB = this.divisionConfigs.get(b.divisionId);
-          const expectedA = week.weekNumber * (configA?.practicesPerWeek || 1);
-          const expectedB = week.weekNumber * (configB?.practicesPerWeek || 1);
-          const deficitA = expectedA - a.practicesScheduled;
-          const deficitB = expectedB - b.practicesScheduled;
+          // Max-gap balance approach: prioritize teams that would create a NEW max gap
+          // if they don't get a practice this week. This balances max gaps across teams.
+          const weekStartDay = parseLocalDate(week.startDate).getTime();
+          const dayMs = 24 * 60 * 60 * 1000;
 
-          // Primary sort: Higher deficit = more behind = should go first
-          if (deficitA !== deficitB) {
-            return deficitB - deficitA;
+          // Find last REGULAR practice date for each team
+          // Only use regularPracticeDates (not paired practices) for gap balancing
+          const getLastRegularPracticeDay = (ts: TeamSchedulingState): number => {
+            let lastDay = -Infinity;
+            for (const dateStr of ts.regularPracticeDates) {
+              const dayNum = parseLocalDate(dateStr).getTime();
+              // Only consider dates before the current week
+              if (dayNum < weekStartDay && dayNum > lastDay) {
+                lastDay = dayNum;
+              }
+            }
+            // If no regular practices yet, treat as 4 weeks ago (larger default to prioritize)
+            return lastDay === -Infinity ? weekStartDay - 28 * dayMs : lastDay;
+          };
+
+          // Calculate potential gap from last practice to mid-week (gap being created NOW)
+          const midWeekDay = weekStartDay + 3 * dayMs;
+          const lastPracticeA = getLastRegularPracticeDay(a);
+          const lastPracticeB = getLastRegularPracticeDay(b);
+          const potentialGapA = Math.round((midWeekDay - lastPracticeA) / dayMs);
+          const potentialGapB = Math.round((midWeekDay - lastPracticeB) / dayMs);
+
+          // Calculate effective gap: the max of their worst past gap OR the gap being created now
+          // This ensures that even if a team had tight early practices, if they've been waiting
+          // a long time since their last practice, that current gap takes priority
+          const effectiveGapA = Math.max(a.maxPracticeGapSoFar, potentialGapA);
+          const effectiveGapB = Math.max(b.maxPracticeGapSoFar, potentialGapB);
+
+          // PRIMARY: teams with LARGER effective gap get priority (they've been shortchanged)
+          if (effectiveGapA !== effectiveGapB) {
+            return effectiveGapB - effectiveGapA;
           }
 
-          // Secondary: sort by team name for deterministic ordering
-          // Rotation happens after sorting to ensure fairness
-          // Note: BTB sorting was removed - tests showed pure rotation + scoring
-          // achieves better back-to-back distribution than sorting by BTB count
+          // Final: sort by team name for deterministic ordering
           return a.teamName.localeCompare(b.teamName);
         });
 
-      // Rotate the sorted list by week number to ensure different teams get first pick each week
-      const rotatedByWeek = rotateArray(teamsNeedingPractices, week.weekNumber);
+      // NO rotation - pure gap-based ordering achieves better gap balance
+      // (Simulation tests showed rotation overrides gap priority and hurts balance)
+      const rotatedByWeek = teamsNeedingPractices;
 
       if (rotatedByWeek.length === 0) {
         verboseLog('  No teams need practices this week');
@@ -3160,7 +3182,7 @@ export class ScheduleGenerator {
       const maxRounds = 10; // Safety limit
 
       while (round < maxRounds) {
-        // Check if any team still needs a practice this week, prioritizing those furthest behind
+        // Check if any team still needs a practice this week, using max-gap balance approach
         const stillNeedPractices = rotatedByWeek
           .filter((ts) => {
             const config = this.divisionConfigs.get(ts.divisionId);
@@ -3172,22 +3194,39 @@ export class ScheduleGenerator {
             });
           })
           .sort((a, b) => {
-            // Re-sort by current deficit (may have changed since last round)
-            const configA = this.divisionConfigs.get(a.divisionId);
-            const configB = this.divisionConfigs.get(b.divisionId);
-            const expectedA = (week.weekNumber + 1) * (configA?.practicesPerWeek || 1);
-            const expectedB = (week.weekNumber + 1) * (configB?.practicesPerWeek || 1);
-            const deficitA = expectedA - a.practicesScheduled;
-            const deficitB = expectedB - b.practicesScheduled;
+            // Re-sort using max-gap balance approach (may have changed since last round)
+            const weekStartDay = parseLocalDate(week.startDate).getTime();
+            const dayMs = 24 * 60 * 60 * 1000;
 
-            // Primary: higher deficit goes first
-            if (deficitA !== deficitB) {
-              return deficitB - deficitA;
+            // Find last REGULAR practice date for each team
+            const getLastRegularPracticeDay = (ts: TeamSchedulingState): number => {
+              let lastDay = -Infinity;
+              for (const dateStr of ts.regularPracticeDates) {
+                const dayNum = parseLocalDate(dateStr).getTime();
+                if (dayNum < weekStartDay && dayNum > lastDay) {
+                  lastDay = dayNum;
+                }
+              }
+              return lastDay === -Infinity ? weekStartDay - 28 * dayMs : lastDay;
+            };
+
+            // Calculate potential gap from last practice to mid-week
+            const midWeekDay = weekStartDay + 3 * dayMs;
+            const lastPracticeA = getLastRegularPracticeDay(a);
+            const lastPracticeB = getLastRegularPracticeDay(b);
+            const potentialGapA = Math.round((midWeekDay - lastPracticeA) / dayMs);
+            const potentialGapB = Math.round((midWeekDay - lastPracticeB) / dayMs);
+
+            // Calculate effective gap: the max of their worst past gap OR the gap being created now
+            const effectiveGapA = Math.max(a.maxPracticeGapSoFar, potentialGapA);
+            const effectiveGapB = Math.max(b.maxPracticeGapSoFar, potentialGapB);
+
+            // PRIMARY: teams with LARGER effective gap get priority (they've been shortchanged)
+            if (effectiveGapA !== effectiveGapB) {
+              return effectiveGapB - effectiveGapA;
             }
 
-            // Secondary: sort by team name for deterministic ordering
-            // Note: BTB sorting was removed - tests showed pure rotation + scoring
-            // achieves better back-to-back distribution than sorting by BTB count
+            // Final: sort by team name for deterministic ordering
             return a.teamName.localeCompare(b.teamName);
           });
 
@@ -3196,8 +3235,8 @@ export class ScheduleGenerator {
           break;
         }
 
-        // Rotate by week + round to ensure different teams get priority in each round
-        const rotatedStillNeed = rotateArray(stillNeedPractices, week.weekNumber + round);
+        // NO rotation - pure gap-based ordering achieves better balance
+        const rotatedStillNeed = stillNeedPractices;
 
         // Compute slot availability for scarcity calculation
         this.computeTeamSlotAvailability(rotatedStillNeed, practiceFieldSlots, week);

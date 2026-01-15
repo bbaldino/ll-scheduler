@@ -1218,7 +1218,9 @@ function evaluateMatchupSpacing(
 
 /**
  * Evaluate practice spacing - tracks days between consecutive practices for each team
- * Similar to game spacing, but for practices. Flags back-to-back practices (1 day or less apart).
+ * Checks for:
+ * 1. Back-to-back balance - flags if distribution of back-to-backs is imbalanced within a division
+ * 2. Large gaps - flags if any team has gaps > 7 days between practices
  */
 function evaluatePracticeSpacing(
   events: ScheduledEvent[],
@@ -1226,7 +1228,8 @@ function evaluatePracticeSpacing(
   divisionMap: Map<string, Division>
 ): PracticeSpacingReport {
   const teamReports: TeamPracticeSpacingReport[] = [];
-  const MIN_DAYS_APART = 2; // Practices should be at least 2 days apart
+  const MAX_BTB_RANGE = 2; // Max allowed difference in back-to-back count within a division
+  const MAX_GAP_DAYS = 7; // Max allowed days between consecutive practices
 
   // Filter to only practices (including paired_practice)
   const practices = events.filter(
@@ -1281,6 +1284,9 @@ function evaluatePracticeSpacing(
     const maxDays = Math.max(...practiceGaps);
     const backToBackCount = practiceGaps.filter((gap) => gap <= 1).length;
 
+    // Individual team passes if no excessively large gaps
+    const hasLargeGap = maxDays > MAX_GAP_DAYS;
+
     teamReports.push({
       teamId: team.id,
       teamName: team.name,
@@ -1292,7 +1298,7 @@ function evaluatePracticeSpacing(
       maxDaysBetweenPractices: maxDays,
       practiceGaps,
       backToBackCount,
-      passed: minDays >= MIN_DAYS_APART, // Pass if no gaps are too small
+      passed: !hasLargeGap, // Pass if no excessively large gaps
     });
   }
 
@@ -1303,7 +1309,23 @@ function evaluatePracticeSpacing(
     return a.teamName.localeCompare(b.teamName);
   });
 
-  const allPassed = teamReports.every((r) => r.passed);
+  // Check back-to-back balance within each division
+  const divisionIds = [...new Set(teamReports.map((r) => r.divisionId))];
+  const imbalancedDivisions: string[] = [];
+  for (const divId of divisionIds) {
+    const divTeams = teamReports.filter((r) => r.divisionId === divId);
+    if (divTeams.length < 2) continue;
+    const btbCounts = divTeams.map((t) => t.backToBackCount);
+    const btbRange = Math.max(...btbCounts) - Math.min(...btbCounts);
+    if (btbRange > MAX_BTB_RANGE) {
+      const divName = divTeams[0]?.divisionName || divId;
+      imbalancedDivisions.push(divName);
+    }
+  }
+
+  // Check for teams with large gaps
+  const teamsWithLargeGaps = teamReports.filter((r) => r.maxDaysBetweenPractices > MAX_GAP_DAYS);
+
   const totalBackToBack = teamReports.reduce((sum, r) => sum + r.backToBackCount, 0);
   const teamsWithGaps = teamReports.filter((r) => r.practiceGaps.length > 0);
   const overallAvg =
@@ -1311,11 +1333,23 @@ function evaluatePracticeSpacing(
       ? teamsWithGaps.reduce((sum, r) => sum + r.averageDaysBetweenPractices, 0) / teamsWithGaps.length
       : 0;
 
+  // Overall pass if: no imbalanced divisions AND no teams with large gaps
+  const allPassed = imbalancedDivisions.length === 0 && teamsWithLargeGaps.length === 0;
+
+  // Build summary
+  const issues: string[] = [];
+  if (imbalancedDivisions.length > 0) {
+    issues.push(`BTB imbalance in: ${imbalancedDivisions.join(', ')}`);
+  }
+  if (teamsWithLargeGaps.length > 0) {
+    issues.push(`${teamsWithLargeGaps.length} teams with gaps > ${MAX_GAP_DAYS} days`);
+  }
+
   return {
     passed: allPassed,
     summary: allPassed
-      ? `Practice spacing OK (avg: ${Math.round(overallAvg * 10) / 10} days)`
-      : `${totalBackToBack} back-to-back practices found (avg: ${Math.round(overallAvg * 10) / 10} days)`,
+      ? `Practice spacing OK (avg: ${Math.round(overallAvg * 10) / 10} days, ${totalBackToBack} BTBs balanced)`
+      : issues.join('; '),
     teamReports,
     overallAverageDaysBetweenPractices: Math.round(overallAvg * 10) / 10,
   };

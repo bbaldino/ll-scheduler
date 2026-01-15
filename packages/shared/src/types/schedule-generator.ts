@@ -233,10 +233,12 @@ export interface ScoringWeights {
   sameDayCageFieldGap: number; // Penalize non-adjacent cage+field events on same day
   weekendMorningPractice: number; // Penalize practices on weekend mornings (games should get priority)
   shortRestBalance: number; // For games: penalize short rest when team already has more than division average
+  weekdayGameDiversity: number; // For games: penalize concentrating weekday games on same day of week
 
   // Practice-specific factors
   practiceSpacing: number; // Prefer spreading practices apart (avoid back-to-back practices)
   backToBackPracticeBalance: number; // Penalize back-to-back when team already has more than average
+  largeGapPenalty: number; // Penalize practices that create large gaps (> 5 days from last practice)
 }
 
 /**
@@ -262,10 +264,12 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   sameDayCageFieldGap: -1000, // Strong penalty for non-adjacent cage+field on same day
   weekendMorningPractice: -500, // Penalty for practices on weekend mornings (reserve for games)
   shortRestBalance: -500, // Strong penalty for short rest when team already has more than average
+  weekdayGameDiversity: -400, // Penalty for concentrating weekday games on same day (spread across Mon-Fri)
 
   // Practice-specific factors
   practiceSpacing: 500, // Strong preference for spreading practices apart
   backToBackPracticeBalance: -800, // Strong bonus for below-average teams, strong penalty for above-average
+  largeGapPenalty: -600, // Penalize placements that result in large max gaps between practices
 };
 
 /**
@@ -309,8 +313,10 @@ export interface ScoredCandidate extends PlacementCandidate {
     sameDayCageFieldGap: number;
     weekendMorningPractice: number;
     shortRestBalance: number;
+    weekdayGameDiversity: number;
     practiceSpacing: number;
     backToBackPracticeBalance: number;
+    largeGapPenalty: number;
   };
 }
 
@@ -346,8 +352,14 @@ export interface TeamSchedulingState {
   // Game-specific tracking for short rest balancing
   gameDates: string[]; // Sorted list of dates when games are scheduled
   shortRestGamesCount: number; // Count of games scheduled ≤2 days after previous game
+  // Weekday game distribution: dayOfWeek (1-5 for Mon-Fri) -> count of games
+  weekdayGamesByDayOfWeek: Map<number, number>;
   // Practice-specific tracking for back-to-back balancing
   backToBackPracticesCount: number; // Count of practices scheduled 1 day after previous practice
+  // Practice gap tracking for balance - uses ONLY regular practices (not paired_practice)
+  // This ensures gap balancing focuses on weekday practice distribution
+  regularPracticeDates: string[]; // Sorted list of regular (non-paired) practice dates
+  maxPracticeGapSoFar: number; // Largest gap between consecutive REGULAR practices so far
 }
 
 /**

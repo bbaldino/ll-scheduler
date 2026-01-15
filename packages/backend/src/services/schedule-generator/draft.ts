@@ -443,7 +443,10 @@ export function initializeTeamState(
     minDaysBetweenEvents: requirements.minDaysBetweenEvents,
     gameDates: [],
     shortRestGamesCount: 0,
+    weekdayGamesByDayOfWeek: new Map(),
     backToBackPracticesCount: 0,
+    regularPracticeDates: [],
+    maxPracticeGapSoFar: 0,
   };
 }
 
@@ -495,6 +498,13 @@ export function updateTeamStateAfterScheduling(
       // Insert date in sorted order
       teamState.gameDates.push(newGameDate);
       teamState.gameDates.sort();
+
+      // Track weekday game distribution (Mon=1 through Fri=5)
+      const gameDayOfWeek = parseLocalDate(newGameDate).getDay();
+      if (gameDayOfWeek >= 1 && gameDayOfWeek <= 5) {
+        const currentCount = teamState.weekdayGamesByDayOfWeek.get(gameDayOfWeek) || 0;
+        teamState.weekdayGamesByDayOfWeek.set(gameDayOfWeek, currentCount + 1);
+      }
       break;
     case 'practice':
     case 'paired_practice': {
@@ -515,6 +525,30 @@ export function updateTeamStateAfterScheduling(
       );
       if (isBackToBack) {
         teamState.backToBackPracticesCount++;
+      }
+
+      // Track REGULAR practices separately for gap balancing
+      // We only want to balance gaps between weekday practices, not Sunday paired practices
+      if (event.eventType === 'practice') {
+        teamState.regularPracticeDates.push(newPracticeDate);
+        teamState.regularPracticeDates.sort();
+
+        // Update maxPracticeGapSoFar using ONLY regular practices
+        // This ensures teams that miss weekday practices get priority, even if they have
+        // Sunday paired practices keeping their "all practice" gaps small
+        if (teamState.regularPracticeDates.length >= 2) {
+          let maxGap = 0;
+          for (let i = 1; i < teamState.regularPracticeDates.length; i++) {
+            const gap = calculateDaysBetween(
+              teamState.regularPracticeDates[i - 1],
+              teamState.regularPracticeDates[i]
+            );
+            if (gap > maxGap) {
+              maxGap = gap;
+            }
+          }
+          teamState.maxPracticeGapSoFar = maxGap;
+        }
       }
       break;
     }

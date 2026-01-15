@@ -59,8 +59,10 @@ export interface ScoreBreakdown {
   sameDayCageFieldGap: number;
   weekendMorningPractice: number;
   shortRestBalance: number;
+  weekdayGameDiversity: number;
   practiceSpacing: number;
   backToBackPracticeBalance: number;
+  largeGapPenalty: number;
 }
 
 /**
@@ -95,8 +97,10 @@ export function calculatePlacementScore(
     sameDayCageFieldGap: 0,
     weekendMorningPractice: 0,
     shortRestBalance: 0,
+    weekdayGameDiversity: 0,
     practiceSpacing: 0,
     backToBackPracticeBalance: 0,
+    largeGapPenalty: 0,
   };
 
   // Continuous positive factors (rawScore 0-1)
@@ -117,6 +121,10 @@ export function calculatePlacementScore(
       breakdown.matchupHomeAwayBalance = calculateMatchupHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.matchupHomeAwayBalance;
       breakdown.shortRestBalance = calculateShortRestBalanceRaw(candidate, context) * weights.shortRestBalance;
     }
+
+    // Weekday game diversity: penalize concentrating weekday games on the same day
+    // Only applies to weekdays (Mon=1 through Fri=5), not weekends
+    breakdown.weekdayGameDiversity = calculateWeekdayGameDiversityRaw(candidate, context) * weights.weekdayGameDiversity;
   }
 
   // Field preference for games and practices (not cage events)
@@ -135,6 +143,8 @@ export function calculatePlacementScore(
     breakdown.practiceSpacing = calculatePracticeSpacingRaw(candidate.date, teamState) * weights.practiceSpacing;
     // Penalize back-to-back when team already has more than average
     breakdown.backToBackPracticeBalance = calculateBackToBackPracticeBalanceRaw(candidate.date, teamState, context) * weights.backToBackPracticeBalance;
+    // Penalize creating large gaps (> 5 days from last practice)
+    breakdown.largeGapPenalty = calculateLargeGapPenaltyRaw(candidate.date, teamState) * weights.largeGapPenalty;
   }
 
   // Binary penalty: same-day event (only for same resource type)
@@ -512,6 +522,69 @@ export function calculateBackToBackPracticeBalanceRaw(
 }
 
 /**
+ * Calculate large gap penalty raw score for practices
+ * Returns 0-1 where higher values indicate this placement would create/leave a larger max gap
+ *
+ * The goal is to prefer placements that minimize the maximum gap between practices.
+ * This looks at where the candidate date falls relative to existing practices and
+ * calculates what the max gap would be.
+ *
+ * Score interpretation:
+ * - 0 = placing here keeps max gap <= 5 days (ideal)
+ * - 0.5 = placing here results in max gap of 6-7 days
+ * - 1.0 = placing here results in max gap of 8+ days (worst)
+ */
+export function calculateLargeGapPenaltyRaw(
+  candidateDate: string,
+  teamState: TeamSchedulingState
+): number {
+  // Find existing practice dates (field dates that aren't games)
+  const practiceDates: string[] = [];
+  for (const usedDate of teamState.fieldDatesUsed) {
+    if (!teamState.gameDates.includes(usedDate)) {
+      practiceDates.push(usedDate);
+    }
+  }
+
+  // If no existing practices, no penalty
+  if (practiceDates.length === 0) {
+    return 0;
+  }
+
+  const candidateDayNum = dateToDayNumber(candidateDate);
+
+  // Convert all practice dates to day numbers and sort
+  const practiceDayNums = practiceDates.map(d => dateToDayNumber(d)).sort((a, b) => a - b);
+
+  // Add the candidate to the list and calculate what the max gap would be
+  const withCandidate = [...practiceDayNums, candidateDayNum].sort((a, b) => a - b);
+
+  let maxGap = 0;
+  for (let i = 1; i < withCandidate.length; i++) {
+    const gap = withCandidate[i] - withCandidate[i - 1];
+    maxGap = Math.max(maxGap, gap);
+  }
+
+  // Score based on resulting max gap:
+  // <= 5 days: 0 (ideal)
+  // 6 days: 0.3
+  // 7 days: 0.5
+  // 8 days: 0.7
+  // 9+ days: 1.0 (worst)
+  if (maxGap <= 5) {
+    return 0;
+  } else if (maxGap === 6) {
+    return 0.3;
+  } else if (maxGap === 7) {
+    return 0.5;
+  } else if (maxGap === 8) {
+    return 0.7;
+  } else {
+    return 1.0;
+  }
+}
+
+/**
  * Calculate home/away balance raw score
  * Returns 0-1 where 1 = balanced, 0 = very imbalanced
  */
@@ -650,6 +723,65 @@ export function calculateShortRestBalanceRaw(
   if (wouldBeShortRestForAway) {
     const excess = awayTeam.shortRestGamesCount - avgShortRest;
     const penalty = Math.min(1, 0.3 + Math.max(0, excess) * 0.35);
+    maxPenalty = Math.max(maxPenalty, penalty);
+  }
+
+  return maxPenalty;
+}
+
+/**
+ * Calculate weekday game diversity raw score
+ * Returns 0-1 where higher values mean MORE concentration on a single weekday.
+ * This is used with a negative weight to penalize concentrated weekday games.
+ *
+ * The goal is to spread weekday games across different days (Mon-Fri) so teams
+ * have days free for practices. If all weekday games are on Tuesday, no other
+ * weekdays are available for practice during game weeks.
+ *
+ * Only applies to weekdays (Mon=1 through Fri=5), not weekends (Sat/Sun).
+ */
+export function calculateWeekdayGameDiversityRaw(
+  candidate: PlacementCandidate,
+  context: ScoringContext
+): number {
+  const dayOfWeek = candidate.dayOfWeek;
+
+  // Only penalize weekday games (Mon=1 through Fri=5)
+  // Weekend games (Sat=6, Sun=0) don't block weekday practice slots
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return 0;
+  }
+
+  if (!candidate.homeTeamId || !candidate.awayTeamId) {
+    return 0;
+  }
+
+  const homeTeam = context.teamStates.get(candidate.homeTeamId);
+  const awayTeam = context.teamStates.get(candidate.awayTeamId);
+
+  if (!homeTeam || !awayTeam) {
+    return 0;
+  }
+
+  // Calculate concentration penalty for each team
+  // Penalty increases when this day already has many games for the team
+  let maxPenalty = 0;
+
+  for (const team of [homeTeam, awayTeam]) {
+    const gamesOnThisDay = team.weekdayGamesByDayOfWeek.get(dayOfWeek) || 0;
+    const totalWeekdayGames = Array.from(team.weekdayGamesByDayOfWeek.values()).reduce((a, b) => a + b, 0);
+
+    // If team has no weekday games yet, no penalty for first one
+    if (totalWeekdayGames === 0) {
+      continue;
+    }
+
+    // Penalty based on how concentrated games are on this day
+    // 0 games on this day = 0 penalty (spreading to new day)
+    // 1 game on this day = 0.3 penalty (some concentration)
+    // 2 games on this day = 0.6 penalty (more concentration)
+    // 3+ games on this day = 1.0 penalty (heavy concentration)
+    const penalty = Math.min(1, gamesOnThisDay * 0.3);
     maxPenalty = Math.max(maxPenalty, penalty);
   }
 

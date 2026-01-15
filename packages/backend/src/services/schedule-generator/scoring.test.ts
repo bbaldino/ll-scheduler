@@ -26,7 +26,10 @@ function createTeamState(overrides: Partial<TeamSchedulingState> = {}): TeamSche
     minDaysBetweenEvents: 1,
     gameDates: [],
     shortRestGamesCount: 0,
+    weekdayGamesByDayOfWeek: new Map(),
     backToBackPracticesCount: 0,
+    regularPracticeDates: [],
+    maxPracticeGapSoFar: 0,
     ...overrides,
   };
 }
