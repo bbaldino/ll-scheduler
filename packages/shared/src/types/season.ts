@@ -1,11 +1,13 @@
 /**
  * Season-level blackout date or date range
  * Blocks specified event types (or all types if blockedEventTypes is not set) on the specified date(s)
+ * Can apply to all divisions (default) or specific divisions
  */
 export interface SeasonBlackout {
   date: string; // Start date (ISO date YYYY-MM-DD)
   endDate?: string; // End date for range (ISO date YYYY-MM-DD, inclusive). If not set, it's a single date.
   blockedEventTypes?: EventType[]; // Which event types to block (if not set, blocks all types)
+  divisionIds?: string[]; // Which divisions this applies to (if not set or empty, applies to ALL divisions)
   reason?: string; // Optional reason (e.g., "Easter", "Spring break")
 }
 

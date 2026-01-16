@@ -586,12 +586,18 @@ export default function CalendarView({
                     )}
                     {blackouts.length > 0 && (
                       <div className={styles.blackouts}>
-                        {blackouts.map((blackout, idx) => (
-                          <div key={idx} className={styles.blackout} title={blackout.description || 'Blackout'}>
-                            {blackout.description || 'Blackout'}
-                            {blackout.divisionName && ` (${blackout.divisionName})`}
-                          </div>
-                        ))}
+                        {blackouts.map((blackout, idx) => {
+                          const titleParts: string[] = [];
+                          if (blackout.description) titleParts.push(blackout.description);
+                          if (blackout.divisionName) titleParts.push(`Divisions: ${blackout.divisionName}`);
+                          const title = titleParts.length > 0 ? titleParts.join('\n') : 'Blackout (all divisions)';
+                          return (
+                            <div key={idx} className={styles.blackout} title={title}>
+                              {blackout.description || 'Blackout'}
+                              {blackout.divisionName && ` (${blackout.divisionName})`}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                     <div className={styles.dayEvents}>
@@ -664,12 +670,18 @@ export default function CalendarView({
                   )}
                   {blackouts.length > 0 && (
                     <div className={styles.weekBlackouts}>
-                      {blackouts.map((blackout, idx) => (
-                        <div key={idx} className={styles.weekBlackout} title={blackout.description || 'Blackout'}>
-                          {blackout.description || 'Blackout'}
-                          {blackout.divisionName && ` (${blackout.divisionName})`}
-                        </div>
-                      ))}
+                      {blackouts.map((blackout, idx) => {
+                        const titleParts: string[] = [];
+                        if (blackout.description) titleParts.push(blackout.description);
+                        if (blackout.divisionName) titleParts.push(`Divisions: ${blackout.divisionName}`);
+                        const title = titleParts.length > 0 ? titleParts.join('\n') : 'Blackout (all divisions)';
+                        return (
+                          <div key={idx} className={styles.weekBlackout} title={title}>
+                            {blackout.description || 'Blackout'}
+                            {blackout.divisionName && ` (${blackout.divisionName})`}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

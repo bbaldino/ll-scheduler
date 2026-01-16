@@ -13,7 +13,6 @@ import {
   deleteScheduledEvent,
 } from '../api/scheduled-events';
 import { fetchDivisions } from '../api/divisions';
-import { fetchDivisionConfigs } from '../api/division-configs';
 import { fetchTeams } from '../api/teams';
 import { fetchSeasonFields } from '../api/fields';
 import { fetchSeasonCages } from '../api/batting-cages';
@@ -23,7 +22,6 @@ import type {
   CreateScheduledEventInput,
   UpdateScheduledEventInput,
   Division,
-  DivisionConfig,
   Team,
   SeasonField,
   SeasonCage,
@@ -50,7 +48,6 @@ export default function ScheduledEventsPage() {
   const { currentSeason } = useSeason();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
-  const [divisionConfigs, setDivisionConfigs] = useState<DivisionConfig[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [seasonFields, setSeasonFields] = useState<SeasonField[]>([]);
   const [seasonCages, setSeasonCages] = useState<SeasonCage[]>([]);
@@ -110,15 +107,13 @@ export default function ScheduledEventsPage() {
   const loadData = async () => {
     if (!currentSeason) return;
     try {
-      const [divisionsData, divisionConfigsData, teamsData, fieldsData, cagesData] = await Promise.all([
+      const [divisionsData, teamsData, fieldsData, cagesData] = await Promise.all([
         fetchDivisions(),
-        fetchDivisionConfigs(currentSeason.id),
         fetchTeams(currentSeason.id),
         fetchSeasonFields(currentSeason.id),
         fetchSeasonCages(currentSeason.id),
       ]);
       setDivisions(divisionsData);
-      setDivisionConfigs(divisionConfigsData);
       setTeams(teamsData);
       setSeasonFields(fieldsData);
       setSeasonCages(cagesData);
@@ -378,42 +373,34 @@ export default function ScheduledEventsPage() {
     return dates;
   };
 
-  // Combine season and division blackout dates for calendar display
+  // Combine season blackout dates for calendar display
   const calendarBlackoutDates = useMemo(() => {
     const blackouts: Array<{ date: string; description?: string; divisionName?: string }> = [];
 
-    // Add season-level blackouts (apply to all divisions)
+    // Add season-level blackouts (may apply to all divisions or specific ones)
     if (currentSeason?.blackoutDates) {
       for (const blackout of currentSeason.blackoutDates) {
         const dates = expandDateRange(blackout.date, blackout.endDate);
+        // Get division names if this blackout is division-specific
+        let divisionName: string | undefined;
+        if (blackout.divisionIds && blackout.divisionIds.length > 0) {
+          const divisionNames = blackout.divisionIds
+            .map(id => divisions.find(d => d.id === id)?.name)
+            .filter(Boolean);
+          divisionName = divisionNames.join(', ');
+        }
         for (const date of dates) {
           blackouts.push({
             date,
             description: blackout.reason,
+            divisionName,
           });
         }
       }
     }
 
-    // Add division-specific blackouts
-    for (const config of divisionConfigs) {
-      if (config.blackoutDates) {
-        const division = divisions.find((d) => d.id === config.divisionId);
-        for (const blackout of config.blackoutDates) {
-          const dates = expandDateRange(blackout.date, blackout.endDate);
-          for (const date of dates) {
-            blackouts.push({
-              date,
-              description: blackout.reason,
-              divisionName: division?.name,
-            });
-          }
-        }
-      }
-    }
-
     return blackouts;
-  }, [currentSeason, divisionConfigs, divisions]);
+  }, [currentSeason, divisions]);
 
   // Group events by date
   const eventsByDate = useMemo(() => {

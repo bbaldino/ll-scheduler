@@ -24,7 +24,6 @@ import type {
   CreateDivisionConfigInput,
   GameDayPreference,
   GameWeekOverride,
-  DivisionBlackout,
   SeasonField,
   SeasonCage,
   Team,
@@ -259,7 +258,6 @@ export default function SeasonsPage() {
       cageSessionDurationHours: config.cageSessionDurationHours,
       fieldPreferences: config.fieldPreferences,
       maxGamesPerSeason: config.maxGamesPerSeason,
-      blackoutDates: config.blackoutDates,
       sundayPairedPracticeEnabled: config.sundayPairedPracticeEnabled,
       sundayPairedPracticeDurationHours: config.sundayPairedPracticeDurationHours,
       sundayPairedPracticeFieldId: config.sundayPairedPracticeFieldId,
@@ -303,7 +301,6 @@ export default function SeasonsPage() {
         cageSessionDurationHours: configFormData.cageSessionDurationHours,
         fieldPreferences: configFormData.fieldPreferences,
         maxGamesPerSeason: configFormData.maxGamesPerSeason,
-        blackoutDates: configFormData.blackoutDates,
         sundayPairedPracticeEnabled: configFormData.sundayPairedPracticeEnabled,
         sundayPairedPracticeDurationHours: configFormData.sundayPairedPracticeDurationHours,
         sundayPairedPracticeFieldId: configFormData.sundayPairedPracticeFieldId,
@@ -354,52 +351,6 @@ export default function SeasonsPage() {
     const preferences = configFormData.gameDayPreferences || [];
     const updated = preferences.filter((_, i) => i !== index);
     setConfigFormData({ ...configFormData, gameDayPreferences: updated.length > 0 ? updated : undefined });
-  };
-
-  // Division blackout date helpers
-  const addDivisionBlackout = (startDate: string) => {
-    const blackouts = configFormData.blackoutDates || [];
-    const newBlackout: DivisionBlackout = {
-      date: startDate,
-      blockedEventTypes: ['game', 'practice', 'cage'],
-    };
-    setConfigFormData({
-      ...configFormData,
-      blackoutDates: [...blackouts, newBlackout].sort((a, b) => a.date.localeCompare(b.date)),
-    });
-  };
-
-  const updateDivisionBlackoutByIndex = (index: number, updates: Partial<DivisionBlackout>) => {
-    const blackouts = configFormData.blackoutDates || [];
-    const updated = blackouts.map((b, i) =>
-      i === index ? { ...b, ...updates } : b
-    );
-    setConfigFormData({ ...configFormData, blackoutDates: updated });
-  };
-
-  const toggleBlackoutEventTypeByIndex = (index: number, eventType: 'game' | 'practice' | 'cage') => {
-    const blackouts = configFormData.blackoutDates || [];
-    const blackout = blackouts[index];
-    if (!blackout) return;
-
-    const currentTypes = blackout.blockedEventTypes || [];
-    const newTypes = currentTypes.includes(eventType)
-      ? currentTypes.filter(t => t !== eventType)
-      : [...currentTypes, eventType];
-
-    // If no types are selected, remove the blackout entirely
-    if (newTypes.length === 0) {
-      removeDivisionBlackoutByIndex(index);
-      return;
-    }
-
-    updateDivisionBlackoutByIndex(index, { blockedEventTypes: newTypes });
-  };
-
-  const removeDivisionBlackoutByIndex = (index: number) => {
-    const blackouts = configFormData.blackoutDates || [];
-    const updated = blackouts.filter((_, i) => i !== index);
-    setConfigFormData({ ...configFormData, blackoutDates: updated.length > 0 ? updated : undefined });
   };
 
   // Game week override handlers
@@ -525,6 +476,45 @@ export default function SeasonsPage() {
       `Field availabilities: ${result.fieldAvailabilitiesRestored}, ` +
       `Cage availabilities: ${result.cageAvailabilitiesRestored}`
     );
+  };
+
+  // Season blackout division toggle
+  const toggleSeasonBlackoutDivision = (
+    season: Season,
+    index: number,
+    divisionId: string
+  ) => {
+    const blackouts = season.blackoutDates || [];
+    const blackout = blackouts[index];
+    if (!blackout) return;
+
+    const currentDivisionIds = blackout.divisionIds || [];
+    const newDivisionIds = currentDivisionIds.includes(divisionId)
+      ? currentDivisionIds.filter((id) => id !== divisionId)
+      : [...currentDivisionIds, divisionId];
+
+    // If all divisions are now selected, set to empty (meaning "all divisions")
+    const updated = blackouts.map((b, i) =>
+      i === index
+        ? { ...b, divisionIds: newDivisionIds.length > 0 ? newDivisionIds : undefined }
+        : b
+    );
+    handleUpdate(season, { blackoutDates: updated });
+  };
+
+  // Set blackout to apply to all divisions or specific ones
+  const setSeasonBlackoutAllDivisions = (
+    season: Season,
+    index: number,
+    allDivisions: boolean
+  ) => {
+    const blackouts = season.blackoutDates || [];
+    const updated = blackouts.map((b, i) =>
+      i === index
+        ? { ...b, divisionIds: allDivisions ? undefined : [] }
+        : b
+    );
+    handleUpdate(season, { blackoutDates: updated });
   };
 
   // Season blackout event type toggle
@@ -800,6 +790,31 @@ export default function SeasonsPage() {
                           />
                           Cage
                         </label>
+                      </div>
+                      <div className={styles.seasonBlackoutDivisions}>
+                        <label className={styles.seasonBlackoutDivisionLabel}>
+                          <input
+                            type="checkbox"
+                            checked={blackout.divisionIds === undefined}
+                            onChange={(e) => setSeasonBlackoutAllDivisions(season, index, e.target.checked)}
+                          />
+                          All Divisions
+                        </label>
+                        {blackout.divisionIds !== undefined && (
+                          <>
+                            <span className={styles.divisionSeparator}>|</span>
+                            {divisions.map((division) => (
+                              <label key={division.id} className={styles.seasonBlackoutDivisionLabel}>
+                                <input
+                                  type="checkbox"
+                                  checked={blackout.divisionIds?.includes(division.id) || false}
+                                  onChange={() => toggleSeasonBlackoutDivision(season, index, division.id)}
+                                />
+                                {division.name}
+                              </label>
+                            ))}
+                          </>
+                        )}
                       </div>
                       <input
                         type="text"
@@ -1566,117 +1581,6 @@ export default function SeasonsPage() {
                                     </div>
                                   </div>
                                 </div>
-                                {/* Division Blackout Dates */}
-                                <div className={styles.formRow}>
-                                  <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
-                                    <label>Division Blackout Dates</label>
-                                    <p className={styles.helperText}>
-                                      Block specific event types on specific dates or date ranges for this division only.
-                                    </p>
-                                    {configFormData.blackoutDates && configFormData.blackoutDates.length > 0 && (
-                                      <div className={styles.divisionBlackoutsList}>
-                                        {configFormData.blackoutDates.map((blackout, index) => (
-                                          <div key={`${blackout.date}-${index}`} className={styles.divisionBlackoutItem}>
-                                            <div className={styles.divisionBlackoutDateRange}>
-                                              <input
-                                                type="date"
-                                                value={blackout.date}
-                                                min={season.startDate}
-                                                max={blackout.endDate || season.endDate}
-                                                onChange={(e) =>
-                                                  updateDivisionBlackoutByIndex(index, { date: e.target.value })
-                                                }
-                                                className={styles.divisionBlackoutDateInput}
-                                              />
-                                              {blackout.endDate ? (
-                                                <>
-                                                  <span className={styles.blackoutDateSeparator}>to</span>
-                                                  <input
-                                                    type="date"
-                                                    value={blackout.endDate}
-                                                    min={blackout.date}
-                                                    max={season.endDate}
-                                                    onChange={(e) =>
-                                                      updateDivisionBlackoutByIndex(index, { endDate: e.target.value || undefined })
-                                                    }
-                                                    className={styles.divisionBlackoutDateInput}
-                                                  />
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => updateDivisionBlackoutByIndex(index, { endDate: undefined })}
-                                                    className={styles.clearEndDateBtn}
-                                                    title="Remove end date"
-                                                  >
-                                                    ×
-                                                  </button>
-                                                </>
-                                              ) : (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => updateDivisionBlackoutByIndex(index, { endDate: blackout.date })}
-                                                  className={styles.addEndDateBtn}
-                                                >
-                                                  + Range
-                                                </button>
-                                              )}
-                                            </div>
-                                            <div className={styles.divisionBlackoutTypes}>
-                                              <label className={styles.divisionBlackoutTypeLabel}>
-                                                <input
-                                                  type="checkbox"
-                                                  checked={blackout.blockedEventTypes.includes('game')}
-                                                  onChange={() => toggleBlackoutEventTypeByIndex(index, 'game')}
-                                                />
-                                                Game
-                                              </label>
-                                              <label className={styles.divisionBlackoutTypeLabel}>
-                                                <input
-                                                  type="checkbox"
-                                                  checked={blackout.blockedEventTypes.includes('practice')}
-                                                  onChange={() => toggleBlackoutEventTypeByIndex(index, 'practice')}
-                                                />
-                                                Practice
-                                              </label>
-                                              <label className={styles.divisionBlackoutTypeLabel}>
-                                                <input
-                                                  type="checkbox"
-                                                  checked={blackout.blockedEventTypes.includes('cage')}
-                                                  onChange={() => toggleBlackoutEventTypeByIndex(index, 'cage')}
-                                                />
-                                                Cage
-                                              </label>
-                                            </div>
-                                            <input
-                                              type="text"
-                                              placeholder="Reason (optional)"
-                                              value={blackout.reason || ''}
-                                              onChange={(e) =>
-                                                updateDivisionBlackoutByIndex(index, { reason: e.target.value || undefined })
-                                              }
-                                              className={styles.divisionBlackoutReason}
-                                            />
-                                            <button
-                                              type="button"
-                                              onClick={() => removeDivisionBlackoutByIndex(index)}
-                                              className={styles.removeDivisionBlackoutBtn}
-                                            >
-                                              ×
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                    <div className={styles.addDivisionBlackout}>
-                                      <button
-                                        type="button"
-                                        onClick={() => addDivisionBlackout(season.startDate)}
-                                        className={styles.addBlackoutBtn}
-                                      >
-                                        + Add Blackout Date
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
                                 <div className={styles.formActions}>
                                   <button type="submit">{existingConfig ? 'Save' : 'Create'}</button>
                                   <button type="button" onClick={() => setEditingConfigId(null)}>
@@ -1758,25 +1662,6 @@ export default function SeasonsPage() {
                                     }).join(', ')}</span>
                                   </div>
                                 )}
-                                {existingConfig.blackoutDates && existingConfig.blackoutDates.length > 0 && (
-                                  <div className={styles.configDetailRow}>
-                                    <span>Division blackouts: {existingConfig.blackoutDates.map((blackout) => {
-                                      const startStr = new Date(blackout.date + 'T00:00:00').toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                      });
-                                      const endStr = blackout.endDate ? new Date(blackout.endDate + 'T00:00:00').toLocaleDateString('en-US', {
-                                        month: 'short',
-                                        day: 'numeric',
-                                      }) : null;
-                                      const dateStr = endStr ? `${startStr}-${endStr}` : startStr;
-                                      const typesStr = blackout.blockedEventTypes.map(t => t.charAt(0).toUpperCase()).join('');
-                                      const reasonStr = blackout.reason ? ` "${blackout.reason}"` : '';
-                                      return `${dateStr}(${typesStr})${reasonStr}`;
-                                    }).join(', ')}</span>
-                                  </div>
-                                )}
-
                                 {/* Game Week Overrides Section */}
                                 {existingConfig.gamesPerWeek > 0 && (
                                   <div className={styles.gameWeekOverrides}>

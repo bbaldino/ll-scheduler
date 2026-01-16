@@ -21,7 +21,6 @@ interface DivisionConfigRow {
   field_preferences: string | null; // JSON string
   game_week_overrides: string | null; // JSON string
   max_games_per_season: number | null;
-  blackout_dates: string | null; // JSON string
   sunday_paired_practice_enabled: number | null; // 0 or 1
   sunday_paired_practice_duration_hours: number | null;
   sunday_paired_practice_field_id: string | null;
@@ -48,7 +47,6 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     fieldPreferences: row.field_preferences ? JSON.parse(row.field_preferences) : undefined,
     gameWeekOverrides: row.game_week_overrides ? JSON.parse(row.game_week_overrides) : undefined,
     maxGamesPerSeason: row.max_games_per_season || undefined,
-    blackoutDates: row.blackout_dates ? JSON.parse(row.blackout_dates) : undefined,
     sundayPairedPracticeEnabled: row.sunday_paired_practice_enabled === 1,
     sundayPairedPracticeDurationHours: row.sunday_paired_practice_duration_hours || undefined,
     sundayPairedPracticeFieldId: row.sunday_paired_practice_field_id || undefined,
@@ -105,8 +103,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_arrive_before_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, blackout_dates, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, game_spacing_enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_arrive_before_hours, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, game_spacing_enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -124,7 +122,6 @@ export async function createDivisionConfig(
       input.fieldPreferences ? JSON.stringify(input.fieldPreferences) : null,
       input.gameWeekOverrides ? JSON.stringify(input.gameWeekOverrides) : null,
       input.maxGamesPerSeason || null,
-      input.blackoutDates ? JSON.stringify(input.blackoutDates) : null,
       input.sundayPairedPracticeEnabled ? 1 : 0,
       input.sundayPairedPracticeDurationHours || null,
       input.sundayPairedPracticeFieldId || null,
@@ -203,10 +200,6 @@ export async function updateDivisionConfig(
   if (input.maxGamesPerSeason !== undefined) {
     updates.push('max_games_per_season = ?');
     values.push(input.maxGamesPerSeason || null);
-  }
-  if (input.blackoutDates !== undefined) {
-    updates.push('blackout_dates = ?');
-    values.push(input.blackoutDates ? JSON.stringify(input.blackoutDates) : null);
   }
   if (input.sundayPairedPracticeEnabled !== undefined) {
     updates.push('sunday_paired_practice_enabled = ?');

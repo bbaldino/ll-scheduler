@@ -163,6 +163,7 @@ export async function saveConfig(
       const batch = divisionConfigs.slice(i, i + BATCH_SIZE);
       const statements = batch.map((config) => {
         // Extract only the config fields we want to save (exclude id, seasonId, createdAt, updatedAt)
+        // Note: blackoutDates are now managed at the season level, not division level
         const configData = {
           practicesPerWeek: config.practicesPerWeek,
           practiceDurationHours: config.practiceDurationHours,
@@ -176,7 +177,6 @@ export async function saveConfig(
           fieldPreferences: config.fieldPreferences,
           gameWeekOverrides: config.gameWeekOverrides,
           maxGamesPerSeason: config.maxGamesPerSeason,
-          blackoutDates: config.blackoutDates,
           sundayPairedPracticeEnabled: config.sundayPairedPracticeEnabled,
           sundayPairedPracticeDurationHours: config.sundayPairedPracticeDurationHours,
           sundayPairedPracticeFieldId: config.sundayPairedPracticeFieldId,
@@ -327,6 +327,7 @@ export async function restoreConfig(
     const batch = divisionConfigRows.slice(i, i + BATCH_SIZE);
     const statements = batch.map((row) => {
       const configData = JSON.parse(row.config_json);
+      // Note: blackoutDates are now managed at the season level, not division level
       return db
         .prepare(
           `INSERT INTO division_configs (
@@ -334,12 +335,12 @@ export async function restoreConfig(
             practices_per_week, practice_duration_hours, games_per_week, game_duration_hours,
             game_arrive_before_hours, game_day_preferences, min_consecutive_day_gap,
             cage_sessions_per_week, cage_session_duration_hours, field_preferences,
-            game_week_overrides, max_games_per_season, blackout_dates,
+            game_week_overrides, max_games_per_season,
             sunday_paired_practice_enabled, sunday_paired_practice_duration_hours,
             sunday_paired_practice_field_id, sunday_paired_practice_cage_id,
             game_spacing_enabled,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           generateId(),
@@ -357,7 +358,6 @@ export async function restoreConfig(
           configData.fieldPreferences ? JSON.stringify(configData.fieldPreferences) : null,
           configData.gameWeekOverrides ? JSON.stringify(configData.gameWeekOverrides) : null,
           configData.maxGamesPerSeason || null,
-          configData.blackoutDates ? JSON.stringify(configData.blackoutDates) : null,
           configData.sundayPairedPracticeEnabled ? 1 : 0,
           configData.sundayPairedPracticeDurationHours || null,
           configData.sundayPairedPracticeFieldId || null,
