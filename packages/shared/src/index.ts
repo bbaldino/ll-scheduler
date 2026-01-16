@@ -11,3 +11,4 @@ export * from './types/scheduled-event.js';
 export * from './types/schedule-generator.js';
 export * from './types/schedule-evaluation.js';
 export * from './types/saved-schedule.js';
+export * from './types/saved-config.js';

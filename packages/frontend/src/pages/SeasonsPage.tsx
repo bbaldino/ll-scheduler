@@ -12,6 +12,12 @@ import { fetchSeasonFields } from '../api/fields';
 import { fetchSeasonCages } from '../api/batting-cages';
 import { fetchTeams } from '../api/teams';
 import { deleteScheduledEventsBulk } from '../api/scheduled-events';
+import {
+  fetchSavedConfigs,
+  saveConfig,
+  restoreConfig,
+  deleteSavedConfig,
+} from '../api/saved-configs';
 import type {
   Season,
   CreateSeasonInput,
@@ -27,6 +33,7 @@ import type {
   SeasonCage,
   Team,
   EventType,
+  SavedConfig,
 } from '@ll-scheduler/shared';
 import styles from './SeasonsPage.module.css';
 
@@ -115,6 +122,17 @@ export default function SeasonsPage() {
   const [isDeletingEvents, setIsDeletingEvents] = useState(false);
   const [deleteEventsStatus, setDeleteEventsStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Saved configs state
+  const [savedConfigs, setSavedConfigs] = useState<Record<string, SavedConfig[]>>({});
+  const [showSaveConfigForSeasonId, setShowSaveConfigForSeasonId] = useState<string | null>(null);
+  const [showManageConfigsForSeasonId, setShowManageConfigsForSeasonId] = useState<string | null>(null);
+  const [saveConfigName, setSaveConfigName] = useState('');
+  const [saveConfigDescription, setSaveConfigDescription] = useState('');
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [isRestoringConfig, setIsRestoringConfig] = useState(false);
+  const [configToRestore, setConfigToRestore] = useState<SavedConfig | null>(null);
+  const [configToDelete, setConfigToDelete] = useState<SavedConfig | null>(null);
 
   // Load divisions on mount
   useEffect(() => {
@@ -498,6 +516,87 @@ export default function SeasonsPage() {
     }
   };
 
+  // Saved config handlers
+  const loadSavedConfigsForSeason = async (seasonId: string) => {
+    try {
+      const configs = await fetchSavedConfigs(seasonId);
+      setSavedConfigs((prev) => ({ ...prev, [seasonId]: configs }));
+    } catch (error) {
+      console.error('Failed to load saved configs:', error);
+    }
+  };
+
+  const handleSaveConfig = async (seasonId: string) => {
+    if (!saveConfigName.trim()) {
+      alert('Please enter a name for the saved config');
+      return;
+    }
+
+    setIsSavingConfig(true);
+    try {
+      await saveConfig({
+        seasonId,
+        name: saveConfigName.trim(),
+        description: saveConfigDescription.trim() || undefined,
+      });
+      await loadSavedConfigsForSeason(seasonId);
+      setShowSaveConfigForSeasonId(null);
+      setSaveConfigName('');
+      setSaveConfigDescription('');
+      alert('Configuration saved successfully!');
+    } catch (error) {
+      console.error('Failed to save config:', error);
+      alert('Failed to save configuration');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
+  const handleRestoreConfig = async (config: SavedConfig) => {
+    setIsRestoringConfig(true);
+    try {
+      const result = await restoreConfig(config.id);
+      await loadDivisionConfigsForSeason(config.seasonId);
+      await loadSavedConfigsForSeason(config.seasonId);
+      // Also refresh the season to get updated blackout dates
+      await refreshSeasons();
+      setConfigToRestore(null);
+      setShowManageConfigsForSeasonId(null);
+      alert(
+        `Configuration restored! Division configs: ${result.divisionConfigsRestored}, ` +
+        `Field availabilities: ${result.fieldAvailabilitiesRestored}, ` +
+        `Cage availabilities: ${result.cageAvailabilitiesRestored}`
+      );
+    } catch (error) {
+      console.error('Failed to restore config:', error);
+      alert('Failed to restore configuration');
+    } finally {
+      setIsRestoringConfig(false);
+    }
+  };
+
+  const handleDeleteConfig = async (config: SavedConfig) => {
+    try {
+      await deleteSavedConfig(config.id);
+      await loadSavedConfigsForSeason(config.seasonId);
+      setConfigToDelete(null);
+    } catch (error) {
+      console.error('Failed to delete config:', error);
+      alert('Failed to delete configuration');
+    }
+  };
+
+  const formatConfigDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -588,6 +687,26 @@ export default function SeasonsPage() {
               <div className={styles.seasonActions}>
                 <button onClick={() => toggleSeasonExpanded(season.id)} disabled={isSubmitting}>
                   {expandedSeasonId === season.id ? 'Hide' : 'Show'} Details
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSaveConfigForSeasonId(season.id);
+                    loadSavedConfigsForSeason(season.id);
+                  }}
+                  className={styles.saveConfigBtn}
+                >
+                  Save Config
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowManageConfigsForSeasonId(season.id);
+                    loadSavedConfigsForSeason(season.id);
+                  }}
+                  className={styles.manageConfigsBtn}
+                >
+                  Manage Saved
                 </button>
                 <button onClick={() => handleDelete(season.id)} disabled={isSubmitting}>
                   {isSubmitting ? 'Deleting...' : 'Delete'}
@@ -991,6 +1110,152 @@ export default function SeasonsPage() {
                 )}
               </div>
             </div>
+
+            {/* Save Config Form */}
+            {showSaveConfigForSeasonId === season.id && (
+              <div className={styles.saveConfigForm}>
+                <h5>Save Current Configuration</h5>
+                <p className={styles.saveConfigDescription}>
+                  Saves: season blackout dates, division configs, field/cage availabilities and overrides.
+                </p>
+                <div className={styles.saveConfigFormRow}>
+                  <input
+                    type="text"
+                    placeholder="Name (e.g., 'v1', 'before changes')"
+                    value={saveConfigName}
+                    onChange={(e) => setSaveConfigName(e.target.value)}
+                    className={styles.saveConfigInput}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Description (optional)"
+                    value={saveConfigDescription}
+                    onChange={(e) => setSaveConfigDescription(e.target.value)}
+                    className={styles.saveConfigInput}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveConfig(season.id)}
+                    disabled={isSavingConfig || !saveConfigName.trim()}
+                    className={styles.saveConfigSubmitBtn}
+                  >
+                    {isSavingConfig ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSaveConfigForSeasonId(null);
+                      setSaveConfigName('');
+                      setSaveConfigDescription('');
+                    }}
+                    className={styles.saveConfigCancelBtn}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Manage Saved Configs Panel */}
+            {showManageConfigsForSeasonId === season.id && (
+              <div className={styles.manageConfigsPanel}>
+                <div className={styles.manageConfigsHeader}>
+                  <h5>Saved Configurations</h5>
+                  <button
+                    type="button"
+                    onClick={() => setShowManageConfigsForSeasonId(null)}
+                    className={styles.closeManageConfigsBtn}
+                  >
+                    ×
+                  </button>
+                </div>
+                {!savedConfigs[season.id] || savedConfigs[season.id].length === 0 ? (
+                  <p className={styles.noSavedConfigs}>No saved configurations yet.</p>
+                ) : (
+                  <div className={styles.savedConfigsList}>
+                    {savedConfigs[season.id].map((config) => (
+                      <div key={config.id} className={styles.savedConfigItem}>
+                        <div className={styles.savedConfigInfo}>
+                          <strong>{config.name}</strong>
+                          {config.description && <span> - {config.description}</span>}
+                          <div className={styles.savedConfigMeta}>
+                            {formatConfigDate(config.createdAt)}
+                          </div>
+                        </div>
+                        <div className={styles.savedConfigActions}>
+                          <button
+                            type="button"
+                            onClick={() => setConfigToRestore(config)}
+                            disabled={isRestoringConfig}
+                            className={styles.restoreConfigBtn}
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfigToDelete(config)}
+                            className={styles.deleteConfigBtn}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Restore Confirmation */}
+                {configToRestore && (
+                  <div className={styles.configConfirmation}>
+                    <p>
+                      Restore configuration "{configToRestore.name}"? This will overwrite all current
+                      division configs, field/cage availabilities, and date overrides.
+                    </p>
+                    <div className={styles.configConfirmActions}>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreConfig(configToRestore)}
+                        disabled={isRestoringConfig}
+                        className={styles.confirmRestoreBtn}
+                      >
+                        {isRestoringConfig ? 'Restoring...' : 'Yes, Restore'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfigToRestore(null)}
+                        disabled={isRestoringConfig}
+                        className={styles.cancelConfirmBtn}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Delete Confirmation */}
+                {configToDelete && (
+                  <div className={styles.configConfirmation}>
+                    <p>Delete saved configuration "{configToDelete.name}"? This cannot be undone.</p>
+                    <div className={styles.configConfirmActions}>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteConfig(configToDelete)}
+                        className={styles.confirmDeleteBtn}
+                      >
+                        Yes, Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfigToDelete(null)}
+                        className={styles.cancelConfirmBtn}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {expandedSeasonId === season.id && (
               <>

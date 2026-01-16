@@ -15,6 +15,7 @@ import cageDateOverridesRouter from './routes/cage-date-overrides.js';
 import scheduledEventsRouter from './routes/scheduled-events.js';
 import scheduleGeneratorRouter from './routes/schedule-generator.js';
 import savedSchedulesRouter from './routes/saved-schedules.js';
+import savedConfigsRouter from './routes/saved-configs.js';
 
 export type Env = {
   DB: D1Database;
@@ -64,6 +65,7 @@ app.route('/api/cage-date-overrides', cageDateOverridesRouter);
 app.route('/api/scheduled-events', scheduledEventsRouter);
 app.route('/api/schedule-generator', scheduleGeneratorRouter);
 app.route('/api/saved-schedules', savedSchedulesRouter);
+app.route('/api/saved-configs', savedConfigsRouter);
 
 // 404 handler
 app.notFound((c) => {
