@@ -23,8 +23,17 @@ export function SeasonProvider({ children }: { children: ReactNode }) {
       const data = await fetchSeasons();
       setSeasons(data);
 
-      // Auto-select the first active season, or the first season if none are active
-      if (!currentSeason && data.length > 0) {
+      if (currentSeason) {
+        // Update currentSeason with fresh data from the server
+        const updatedCurrentSeason = data.find((s) => s.id === currentSeason.id);
+        if (updatedCurrentSeason) {
+          setCurrentSeason(updatedCurrentSeason);
+        } else {
+          // Current season was deleted, clear selection
+          setCurrentSeason(null);
+        }
+      } else if (data.length > 0) {
+        // Auto-select the first active season, or the first season if none are active
         const activeSeason = data.find((s) => s.status === 'active') || data[0];
         setCurrentSeason(activeSeason);
       }
