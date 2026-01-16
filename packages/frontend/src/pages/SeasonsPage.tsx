@@ -657,12 +657,15 @@ export default function SeasonsPage() {
                       <input
                         type="text"
                         placeholder="Reason (optional)"
-                        value={blackout.reason || ''}
-                        onChange={(e) => {
-                          const updated = (season.blackoutDates || []).map(b =>
-                            b.date === blackout.date ? { ...b, reason: e.target.value || undefined } : b
-                          );
-                          handleUpdate(season, { blackoutDates: updated });
+                        defaultValue={blackout.reason || ''}
+                        onBlur={(e) => {
+                          const newReason = e.target.value || undefined;
+                          if (newReason !== blackout.reason) {
+                            const updated = (season.blackoutDates || []).map(b =>
+                              b.date === blackout.date ? { ...b, reason: newReason } : b
+                            );
+                            handleUpdate(season, { blackoutDates: updated });
+                          }
                         }}
                         className={styles.seasonBlackoutReason}
                       />
