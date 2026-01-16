@@ -597,6 +597,30 @@ export default function SeasonsPage() {
     });
   };
 
+  // Season blackout event type toggle
+  const toggleSeasonBlackoutEventType = (
+    season: Season,
+    index: number,
+    eventType: 'game' | 'practice' | 'cage'
+  ) => {
+    const blackouts = season.blackoutDates || [];
+    const blackout = blackouts[index];
+    if (!blackout) return;
+
+    const currentTypes = blackout.blockedEventTypes || [];
+    const newTypes = currentTypes.includes(eventType)
+      ? currentTypes.filter((t) => t !== eventType)
+      : [...currentTypes, eventType];
+
+    // If no types are selected, remove the blockedEventTypes field (blocks all types)
+    const updated = blackouts.map((b, i) =>
+      i === index
+        ? { ...b, blockedEventTypes: newTypes.length > 0 ? newTypes : undefined }
+        : b
+    );
+    handleUpdate(season, { blackoutDates: updated });
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -761,7 +785,7 @@ export default function SeasonsPage() {
               <div className={styles.blackoutDatesSection}>
                 <strong>Blackout Dates:</strong>
                 <p className={styles.helperText}>
-                  No games, practices, or cage sessions will be scheduled on these dates. You can specify single dates or date ranges.
+                  Block specific event types on specific dates or date ranges. If no event types are checked, all types are blocked.
                 </p>
                 <div className={styles.blackoutDatesList}>
                   {(season.blackoutDates || [])
@@ -826,6 +850,32 @@ export default function SeasonsPage() {
                             + Range
                           </button>
                         )}
+                      </div>
+                      <div className={styles.seasonBlackoutTypes}>
+                        <label className={styles.seasonBlackoutTypeLabel}>
+                          <input
+                            type="checkbox"
+                            checked={!blackout.blockedEventTypes || blackout.blockedEventTypes.includes('game')}
+                            onChange={() => toggleSeasonBlackoutEventType(season, index, 'game')}
+                          />
+                          Game
+                        </label>
+                        <label className={styles.seasonBlackoutTypeLabel}>
+                          <input
+                            type="checkbox"
+                            checked={!blackout.blockedEventTypes || blackout.blockedEventTypes.includes('practice')}
+                            onChange={() => toggleSeasonBlackoutEventType(season, index, 'practice')}
+                          />
+                          Practice
+                        </label>
+                        <label className={styles.seasonBlackoutTypeLabel}>
+                          <input
+                            type="checkbox"
+                            checked={!blackout.blockedEventTypes || blackout.blockedEventTypes.includes('cage')}
+                            onChange={() => toggleSeasonBlackoutEventType(season, index, 'cage')}
+                          />
+                          Cage
+                        </label>
                       </div>
                       <input
                         type="text"

@@ -661,40 +661,71 @@ export class ScheduleGenerator {
 
     const allDatesRaw = getDateRange(this.season.startDate, this.season.endDate);
 
-    // Filter out season-level blackout dates (expanding ranges)
-    const blackoutSet = new Set<string>();
+    // Build a map of date -> blocked event types for season-level blackouts
+    // If blockedEventTypes is not set, all types are blocked for that date
+    const blackoutsByDate = new Map<string, Set<'game' | 'practice' | 'cage'>>();
     for (const blackout of this.season.blackoutDates || []) {
-      if (blackout.endDate) {
-        // It's a range - expand to all dates
-        const rangeDates = getDateRange(blackout.date, blackout.endDate);
-        for (const d of rangeDates) {
-          blackoutSet.add(d);
+      const dates = blackout.endDate
+        ? getDateRange(blackout.date, blackout.endDate)
+        : [blackout.date];
+
+      // If no blockedEventTypes specified, block all types
+      const blockedTypes = blackout.blockedEventTypes && blackout.blockedEventTypes.length > 0
+        ? blackout.blockedEventTypes
+        : ['game', 'practice', 'cage'] as const;
+
+      for (const d of dates) {
+        if (!blackoutsByDate.has(d)) {
+          blackoutsByDate.set(d, new Set());
         }
-      } else {
-        // Single date
-        blackoutSet.add(blackout.date);
+        for (const eventType of blockedTypes) {
+          blackoutsByDate.get(d)!.add(eventType);
+        }
       }
     }
-    const allDates = allDatesRaw.filter(date => !blackoutSet.has(date));
 
-    if (blackoutSet.size > 0) {
-      this.log('info', 'general', `Excluding ${blackoutSet.size} blackout dates from scheduling`, {
-        blackoutDates: Array.from(blackoutSet).sort(),
+    // Helper to check if a date is blocked for a specific event type
+    const isDateBlockedForEventType = (date: string, eventType: 'game' | 'practice' | 'cage'): boolean => {
+      const blockedTypes = blackoutsByDate.get(date);
+      return blockedTypes !== undefined && blockedTypes.has(eventType);
+    };
+
+    if (blackoutsByDate.size > 0) {
+      // Count dates fully blocked (all event types)
+      const fullyBlockedDates = Array.from(blackoutsByDate.entries())
+        .filter(([_, types]) => types.size === 3)
+        .map(([date]) => date);
+      const partiallyBlockedDates = Array.from(blackoutsByDate.entries())
+        .filter(([_, types]) => types.size < 3)
+        .map(([date, types]) => `${date} (${Array.from(types).join(', ')})`);
+
+      this.log('info', 'general', `Season blackouts: ${fullyBlockedDates.length} fully blocked dates, ${partiallyBlockedDates.length} partially blocked dates`, {
+        fullyBlockedDates: fullyBlockedDates.sort(),
+        partiallyBlockedDates: partiallyBlockedDates.sort(),
       });
     }
 
     // Build game field slots for dates from gamesStartDate onwards
     // Exclude practice-only fields for games
-    const gameDates = allDates.filter(date => this.isGameDateAllowed(date));
+    // Filter out dates where games are blocked
+    const gameDates = allDatesRaw.filter(date =>
+      this.isGameDateAllowed(date) && !isDateBlockedForEventType(date, 'game')
+    );
     this.buildFieldSlotsForDates(gameDates, this.gameFieldSlots, true);
 
     // Build practice field slots for all season dates
     // Include all fields (both game-capable and practice-only)
-    const practiceDates = allDates.filter(date => this.isPracticeDateAllowed(date));
+    // Filter out dates where practices are blocked
+    const practiceDates = allDatesRaw.filter(date =>
+      this.isPracticeDateAllowed(date) && !isDateBlockedForEventType(date, 'practice')
+    );
     this.buildFieldSlotsForDates(practiceDates, this.practiceFieldSlots, false);
 
     // Build cage slots for all season dates
-    const cageDates = allDates.filter(date => this.isPracticeDateAllowed(date));
+    // Filter out dates where cages are blocked
+    const cageDates = allDatesRaw.filter(date =>
+      this.isPracticeDateAllowed(date) && !isDateBlockedForEventType(date, 'cage')
+    );
     this.buildCageSlotsForDates(cageDates);
 
     // Log summary of slots by day of week
@@ -2887,8 +2918,15 @@ export class ScheduleGenerator {
     for (const date of allDates) {
       const dayOfWeek = parseLocalDate(date).getDay();
       if (dayOfWeek === 0) {
-        // Check if date is not blacked out at season level (handles ranges)
+        // Check if practice is blocked on this date at season level (handles ranges and event types)
         const isSeasonBlackout = this.season.blackoutDates?.some((b) => {
+          // Check if this blackout applies to practices (or all types if not specified)
+          const blocksPractice = !b.blockedEventTypes || b.blockedEventTypes.length === 0 ||
+            b.blockedEventTypes.includes('practice');
+          if (!blocksPractice) {
+            return false;
+          }
+          // Check if date falls within blackout range
           if (b.endDate) {
             return date >= b.date && date <= b.endDate;
           }
