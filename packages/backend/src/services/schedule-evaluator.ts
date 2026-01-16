@@ -28,6 +28,7 @@ import type {
   DivisionConfig,
   Season,
   SeasonField,
+  SeasonCage,
   GameDayPreference,
 } from '@ll-scheduler/shared';
 import { listScheduledEvents } from './scheduled-events.js';
@@ -36,6 +37,7 @@ import { listTeams } from './teams.js';
 import { listDivisions } from './divisions.js';
 import { listDivisionConfigsBySeasonId } from './division-configs.js';
 import { listSeasonFields } from './season-fields.js';
+import { listSeasonCages } from './season-cages.js';
 
 /**
  * Main evaluation function that runs all checks on a schedule
@@ -50,12 +52,13 @@ export async function evaluateSchedule(
     throw new Error('Season not found');
   }
 
-  const [events, teams, divisions, divisionConfigs, seasonFields] = await Promise.all([
+  const [events, teams, divisions, divisionConfigs, seasonFields, seasonCages] = await Promise.all([
     listScheduledEvents(db, { seasonId }),
     listTeams(db, seasonId),
     listDivisions(db),
     listDivisionConfigsBySeasonId(db, seasonId),
     listSeasonFields(db, seasonId),
+    listSeasonCages(db, seasonId),
   ]);
 
   // Create lookup maps
@@ -63,6 +66,7 @@ export async function evaluateSchedule(
   const divisionMap = new Map(divisions.map((d) => [d.id, d]));
   const configByDivision = new Map(divisionConfigs.map((c) => [c.divisionId, c]));
   const fieldMap = new Map(seasonFields.map((f) => [f.fieldId, f]));
+  const cageMap = new Map(seasonCages.map((c) => [c.cageId, c]));
 
   // Run all evaluations
   const weeklyRequirements = evaluateWeeklyRequirements(
@@ -78,6 +82,8 @@ export async function evaluateSchedule(
     teamMap,
     divisionMap,
     configByDivision,
+    fieldMap,
+    cageMap,
     season
   );
   const gameDayPreferences = evaluateGameDayPreferences(
@@ -415,6 +421,8 @@ function evaluateConstraintViolations(
   teamMap: Map<string, Team>,
   divisionMap: Map<string, Division>,
   configByDivision: Map<string, DivisionConfig>,
+  fieldMap: Map<string, SeasonField>,
+  cageMap: Map<string, SeasonCage>,
   season: Season
 ): ConstraintViolationsReport {
   const violations: ConstraintViolation[] = [];
@@ -520,19 +528,31 @@ function evaluateConstraintViolations(
   }
 
   // Check resource conflicts (same field/cage at overlapping times)
-  const eventsByResourceDate = new Map<string, ScheduledEvent[]>();
+  // Store both resourceId and resourceType for lookup
+  const eventsByResourceDate = new Map<string, { resourceId: string; resourceType: 'field' | 'cage'; events: ScheduledEvent[] }>();
   for (const event of events) {
     const resourceId = event.fieldId || event.cageId;
+    const resourceType = event.fieldId ? 'field' : 'cage';
     if (!resourceId) continue;
 
     const key = `${resourceId}-${event.date}`;
-    const existing = eventsByResourceDate.get(key) || [];
-    existing.push(event);
+    const existing = eventsByResourceDate.get(key) || { resourceId, resourceType, events: [] };
+    existing.events.push(event);
     eventsByResourceDate.set(key, existing);
   }
 
-  for (const [, resourceEvents] of eventsByResourceDate) {
+  for (const [, { resourceId, resourceType, events: resourceEvents }] of eventsByResourceDate) {
     if (resourceEvents.length <= 1) continue;
+
+    // Look up resource name
+    let resourceName: string;
+    if (resourceType === 'field') {
+      const field = fieldMap.get(resourceId);
+      resourceName = field?.fieldName || field?.field?.name || resourceId;
+    } else {
+      const cage = cageMap.get(resourceId);
+      resourceName = cage?.cageName || cage?.cage?.name || resourceId;
+    }
 
     // Sort by start time
     const sorted = [...resourceEvents].sort((a, b) =>
@@ -549,7 +569,7 @@ function evaluateConstraintViolations(
           type: 'resource_conflict',
           severity: 'error',
           date: current.date,
-          description: `Resource time overlap: ${current.startTime}-${current.endTime} overlaps with ${next.startTime}-${next.endTime}`,
+          description: `${resourceName}: ${current.startTime}-${current.endTime} overlaps with ${next.startTime}-${next.endTime}`,
           eventIds: [current.id, next.id],
         });
       }
