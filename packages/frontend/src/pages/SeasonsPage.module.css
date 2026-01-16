@@ -498,6 +498,66 @@
   border-radius: 8px;
 }
 
+.blackoutDatesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.editBlackoutsBtn {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85em;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editBlackoutsBtn:hover {
+  background: #f0f0f0;
+}
+
+.blackoutDatesReadOnly {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.noBlackouts {
+  color: #666;
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.blackoutReadOnlyItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.9em;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.blackoutReadOnlyItem:last-child {
+  border-bottom: none;
+}
+
+.blackoutReadOnlyDate {
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.blackoutReadOnlyReason {
+  color: #333;
+}
+
+.blackoutReadOnlyMeta {
+  color: #666;
+  font-size: 0.85em;
+}
+
 .blackoutDatesList {
   display: flex;
   flex-wrap: wrap;

@@ -122,6 +122,9 @@ export default function SeasonsPage() {
   const [showSaveConfigForSeasonId, setShowSaveConfigForSeasonId] = useState<string | null>(null);
   const [showManageConfigsForSeasonId, setShowManageConfigsForSeasonId] = useState<string | null>(null);
 
+  // Blackout dates editing state
+  const [editingBlackoutsForSeasonId, setEditingBlackoutsForSeasonId] = useState<string | null>(null);
+
   // Load divisions on mount
   useEffect(() => {
     loadDivisions();
@@ -697,165 +700,231 @@ export default function SeasonsPage() {
                 </select>
               </p>
               <div className={styles.blackoutDatesSection}>
-                <strong>Blackout Dates:</strong>
-                <p className={styles.helperText}>
-                  Block specific event types on specific dates or date ranges. If no event types are checked, all types are blocked.
-                </p>
-                <div className={styles.blackoutDatesList}>
-                  {(season.blackoutDates || [])
-                    .sort((a, b) => a.date.localeCompare(b.date))
-                    .map((blackout, index) => (
-                    <div key={`${blackout.date}-${index}`} className={styles.blackoutDateItem}>
-                      <div className={styles.blackoutDateRange}>
-                        <input
-                          type="date"
-                          value={blackout.date}
-                          min={season.startDate}
-                          max={blackout.endDate || season.endDate}
-                          onChange={(e) => {
-                            const updated = (season.blackoutDates || []).map((b, i) =>
-                              i === index ? { ...b, date: e.target.value } : b
-                            );
-                            handleUpdate(season, { blackoutDates: updated });
-                          }}
-                          className={styles.blackoutDateInput}
-                        />
-                        {blackout.endDate ? (
-                          <>
-                            <span className={styles.blackoutDateSeparator}>to</span>
+                <div className={styles.blackoutDatesHeader}>
+                  <strong>Blackout Dates:</strong>
+                  <button
+                    type="button"
+                    onClick={() => setEditingBlackoutsForSeasonId(
+                      editingBlackoutsForSeasonId === season.id ? null : season.id
+                    )}
+                    className={styles.editBlackoutsBtn}
+                  >
+                    {editingBlackoutsForSeasonId === season.id ? 'Done' : 'Edit'}
+                  </button>
+                </div>
+                {editingBlackoutsForSeasonId === season.id ? (
+                  <>
+                    <p className={styles.helperText}>
+                      Block specific event types on specific dates or date ranges. If no event types are checked, all types are blocked.
+                    </p>
+                    <div className={styles.blackoutDatesList}>
+                      {(season.blackoutDates || [])
+                        .sort((a, b) => a.date.localeCompare(b.date))
+                        .map((blackout, index) => (
+                        <div key={`${blackout.date}-${index}`} className={styles.blackoutDateItem}>
+                          <div className={styles.blackoutDateRange}>
                             <input
                               type="date"
-                              value={blackout.endDate}
-                              min={blackout.date}
-                              max={season.endDate}
+                              value={blackout.date}
+                              min={season.startDate}
+                              max={blackout.endDate || season.endDate}
                               onChange={(e) => {
                                 const updated = (season.blackoutDates || []).map((b, i) =>
-                                  i === index ? { ...b, endDate: e.target.value || undefined } : b
+                                  i === index ? { ...b, date: e.target.value } : b
                                 );
                                 handleUpdate(season, { blackoutDates: updated });
                               }}
                               className={styles.blackoutDateInput}
                             />
-                            <button
-                              type="button"
-                              onClick={() => {
+                            {blackout.endDate ? (
+                              <>
+                                <span className={styles.blackoutDateSeparator}>to</span>
+                                <input
+                                  type="date"
+                                  value={blackout.endDate}
+                                  min={blackout.date}
+                                  max={season.endDate}
+                                  onChange={(e) => {
+                                    const updated = (season.blackoutDates || []).map((b, i) =>
+                                      i === index ? { ...b, endDate: e.target.value || undefined } : b
+                                    );
+                                    handleUpdate(season, { blackoutDates: updated });
+                                  }}
+                                  className={styles.blackoutDateInput}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = (season.blackoutDates || []).map((b, i) =>
+                                      i === index ? { ...b, endDate: undefined } : b
+                                    );
+                                    handleUpdate(season, { blackoutDates: updated });
+                                  }}
+                                  className={styles.clearEndDateBtn}
+                                  title="Remove end date"
+                                >
+                                  ×
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = (season.blackoutDates || []).map((b, i) =>
+                                    i === index ? { ...b, endDate: b.date } : b
+                                  );
+                                  handleUpdate(season, { blackoutDates: updated });
+                                }}
+                                className={styles.addEndDateBtn}
+                              >
+                                + Range
+                              </button>
+                            )}
+                          </div>
+                          <div className={styles.seasonBlackoutTypes}>
+                            <label className={styles.seasonBlackoutTypeLabel}>
+                              <input
+                                type="checkbox"
+                                checked={blackout.blockedEventTypes === undefined}
+                                onChange={(e) => {
+                                  const allEventTypes: EventType[] = ['game', 'practice', 'cage'];
+                                  const updated = (season.blackoutDates || []).map((b, i) =>
+                                    i === index ? { ...b, blockedEventTypes: e.target.checked ? undefined : allEventTypes } : b
+                                  );
+                                  handleUpdate(season, { blackoutDates: updated });
+                                }}
+                              />
+                              All event types
+                            </label>
+                            {blackout.blockedEventTypes !== undefined && (
+                              <>
+                                <span className={styles.divisionSeparator}>|</span>
+                                <label className={styles.seasonBlackoutTypeLabel}>
+                                  <input
+                                    type="checkbox"
+                                    checked={blackout.blockedEventTypes.includes('game')}
+                                    onChange={() => toggleSeasonBlackoutEventType(season, index, 'game')}
+                                  />
+                                  Game
+                                </label>
+                                <label className={styles.seasonBlackoutTypeLabel}>
+                                  <input
+                                    type="checkbox"
+                                    checked={blackout.blockedEventTypes.includes('practice')}
+                                    onChange={() => toggleSeasonBlackoutEventType(season, index, 'practice')}
+                                  />
+                                  Practice
+                                </label>
+                                <label className={styles.seasonBlackoutTypeLabel}>
+                                  <input
+                                    type="checkbox"
+                                    checked={blackout.blockedEventTypes.includes('cage')}
+                                    onChange={() => toggleSeasonBlackoutEventType(season, index, 'cage')}
+                                  />
+                                  Cage
+                                </label>
+                              </>
+                            )}
+                          </div>
+                          <div className={styles.seasonBlackoutDivisions}>
+                            <label className={styles.seasonBlackoutDivisionLabel}>
+                              <input
+                                type="checkbox"
+                                checked={blackout.divisionIds === undefined}
+                                onChange={(e) => setSeasonBlackoutAllDivisions(season, index, e.target.checked)}
+                              />
+                              All Divisions
+                            </label>
+                            {blackout.divisionIds !== undefined && (
+                              <>
+                                <span className={styles.divisionSeparator}>|</span>
+                                {divisions.map((division) => (
+                                  <label key={division.id} className={styles.seasonBlackoutDivisionLabel}>
+                                    <input
+                                      type="checkbox"
+                                      checked={blackout.divisionIds?.includes(division.id) || false}
+                                      onChange={() => toggleSeasonBlackoutDivision(season, index, division.id)}
+                                    />
+                                    {division.name}
+                                  </label>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Reason (optional)"
+                            defaultValue={blackout.reason || ''}
+                            onBlur={(e) => {
+                              const newReason = e.target.value || undefined;
+                              if (newReason !== blackout.reason) {
                                 const updated = (season.blackoutDates || []).map((b, i) =>
-                                  i === index ? { ...b, endDate: undefined } : b
+                                  i === index ? { ...b, reason: newReason } : b
                                 );
                                 handleUpdate(season, { blackoutDates: updated });
-                              }}
-                              className={styles.clearEndDateBtn}
-                              title="Remove end date"
-                            >
-                              ×
-                            </button>
-                          </>
-                        ) : (
+                              }
+                            }}
+                            className={styles.seasonBlackoutReason}
+                          />
                           <button
                             type="button"
                             onClick={() => {
-                              const updated = (season.blackoutDates || []).map((b, i) =>
-                                i === index ? { ...b, endDate: b.date } : b
-                              );
+                              const updated = (season.blackoutDates || []).filter((_, i) => i !== index);
                               handleUpdate(season, { blackoutDates: updated });
                             }}
-                            className={styles.addEndDateBtn}
+                            className={styles.removeBlackoutBtn}
                           >
-                            + Range
+                            ×
                           </button>
-                        )}
-                      </div>
-                      <div className={styles.seasonBlackoutTypes}>
-                        <label className={styles.seasonBlackoutTypeLabel}>
-                          <input
-                            type="checkbox"
-                            checked={!blackout.blockedEventTypes || blackout.blockedEventTypes.includes('game')}
-                            onChange={() => toggleSeasonBlackoutEventType(season, index, 'game')}
-                          />
-                          Game
-                        </label>
-                        <label className={styles.seasonBlackoutTypeLabel}>
-                          <input
-                            type="checkbox"
-                            checked={!blackout.blockedEventTypes || blackout.blockedEventTypes.includes('practice')}
-                            onChange={() => toggleSeasonBlackoutEventType(season, index, 'practice')}
-                          />
-                          Practice
-                        </label>
-                        <label className={styles.seasonBlackoutTypeLabel}>
-                          <input
-                            type="checkbox"
-                            checked={!blackout.blockedEventTypes || blackout.blockedEventTypes.includes('cage')}
-                            onChange={() => toggleSeasonBlackoutEventType(season, index, 'cage')}
-                          />
-                          Cage
-                        </label>
-                      </div>
-                      <div className={styles.seasonBlackoutDivisions}>
-                        <label className={styles.seasonBlackoutDivisionLabel}>
-                          <input
-                            type="checkbox"
-                            checked={blackout.divisionIds === undefined}
-                            onChange={(e) => setSeasonBlackoutAllDivisions(season, index, e.target.checked)}
-                          />
-                          All Divisions
-                        </label>
-                        {blackout.divisionIds !== undefined && (
-                          <>
-                            <span className={styles.divisionSeparator}>|</span>
-                            {divisions.map((division) => (
-                              <label key={division.id} className={styles.seasonBlackoutDivisionLabel}>
-                                <input
-                                  type="checkbox"
-                                  checked={blackout.divisionIds?.includes(division.id) || false}
-                                  onChange={() => toggleSeasonBlackoutDivision(season, index, division.id)}
-                                />
-                                {division.name}
-                              </label>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Reason (optional)"
-                        defaultValue={blackout.reason || ''}
-                        onBlur={(e) => {
-                          const newReason = e.target.value || undefined;
-                          if (newReason !== blackout.reason) {
-                            const updated = (season.blackoutDates || []).map((b, i) =>
-                              i === index ? { ...b, reason: newReason } : b
-                            );
-                            handleUpdate(season, { blackoutDates: updated });
-                          }
-                        }}
-                        className={styles.seasonBlackoutReason}
-                      />
+                        </div>
+                      ))}
+                    </div>
+                    <div className={styles.addBlackoutDate}>
                       <button
                         type="button"
                         onClick={() => {
-                          const updated = (season.blackoutDates || []).filter((_, i) => i !== index);
-                          handleUpdate(season, { blackoutDates: updated });
+                          const newBlackout: SeasonBlackout = { date: season.startDate };
+                          handleUpdate(season, { blackoutDates: [...(season.blackoutDates || []), newBlackout] });
                         }}
-                        className={styles.removeBlackoutBtn}
+                        className={styles.addBlackoutBtn}
                       >
-                        ×
+                        + Add Blackout Date
                       </button>
                     </div>
-                  ))}
-                </div>
-                <div className={styles.addBlackoutDate}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newBlackout: SeasonBlackout = { date: season.startDate };
-                      handleUpdate(season, { blackoutDates: [...(season.blackoutDates || []), newBlackout] });
-                    }}
-                    className={styles.addBlackoutBtn}
-                  >
-                    + Add Blackout Date
-                  </button>
-                </div>
+                  </>
+                ) : (
+                  <div className={styles.blackoutDatesReadOnly}>
+                    {(season.blackoutDates || []).length === 0 ? (
+                      <span className={styles.noBlackouts}>None configured</span>
+                    ) : (
+                      (season.blackoutDates || [])
+                        .sort((a, b) => a.date.localeCompare(b.date))
+                        .map((blackout, index) => {
+                          const startDate = new Date(blackout.date + 'T00:00:00');
+                          const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          let dateStr = startStr;
+                          if (blackout.endDate) {
+                            const endDate = new Date(blackout.endDate + 'T00:00:00');
+                            const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            dateStr = `${startStr} - ${endStr}`;
+                          }
+                          const eventTypes = !blackout.blockedEventTypes || blackout.blockedEventTypes.length === 0 || blackout.blockedEventTypes.length === 3
+                            ? 'All'
+                            : blackout.blockedEventTypes.map(t => t.charAt(0).toUpperCase()).join('');
+                          const divisionInfo = blackout.divisionIds
+                            ? blackout.divisionIds.map(id => divisions.find(d => d.id === id)?.name).filter(Boolean).join(', ')
+                            : 'All divisions';
+                          return (
+                            <div key={`${blackout.date}-${index}`} className={styles.blackoutReadOnlyItem}>
+                              <span className={styles.blackoutReadOnlyDate}>{dateStr}</span>
+                              {blackout.reason && <span className={styles.blackoutReadOnlyReason}>{blackout.reason}</span>}
+                              <span className={styles.blackoutReadOnlyMeta}>({eventTypes}) {divisionInfo}</span>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Delete Events Section */}
