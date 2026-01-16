@@ -10,3 +10,4 @@ export * from './types/availability.js';
 export * from './types/scheduled-event.js';
 export * from './types/schedule-generator.js';
 export * from './types/schedule-evaluation.js';
+export * from './types/saved-schedule.js';

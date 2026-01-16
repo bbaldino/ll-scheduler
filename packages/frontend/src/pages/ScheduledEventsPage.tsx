@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useSeason } from '../contexts/SeasonContext';
 import CalendarView from '../components/CalendarView';
 import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
+import { SaveScheduleModal } from '../components/SaveScheduleModal';
+import { RestoreScheduleModal } from '../components/RestoreScheduleModal';
 import {
   fetchScheduledEvents,
   createScheduledEvent,
@@ -69,6 +71,10 @@ export default function ScheduledEventsPage() {
   // Evaluation state
   const [evaluationResult, setEvaluationResult] = useState<ScheduleEvaluationResult | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  // Save/Restore modal state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
 
   const [formData, setFormData] = useState<CreateScheduledEventInput>({
     seasonId: '',
@@ -436,6 +442,8 @@ export default function ScheduledEventsPage() {
           <button onClick={handleEvaluate} disabled={isEvaluating}>
             {isEvaluating ? 'Evaluating...' : 'Evaluate Schedule'}
           </button>
+          <button onClick={() => setShowSaveModal(true)}>Save Schedule</button>
+          <button onClick={() => setShowRestoreModal(true)}>Manage Saved</button>
           {viewMode === 'list' && (
             <button onClick={() => setIsCreating(true)}>Create Event</button>
           )}
@@ -1094,6 +1102,31 @@ export default function ScheduledEventsPage() {
         <ScheduleEvaluationReport
           result={evaluationResult}
           onClose={() => setEvaluationResult(null)}
+        />
+      )}
+
+      {showSaveModal && (
+        <SaveScheduleModal
+          seasonId={currentSeason.id}
+          currentEventCount={events.length}
+          onClose={() => setShowSaveModal(false)}
+          onSaved={() => {
+            setShowSaveModal(false);
+            alert('Schedule saved successfully!');
+          }}
+        />
+      )}
+
+      {showRestoreModal && (
+        <RestoreScheduleModal
+          seasonId={currentSeason.id}
+          currentEventCount={events.length}
+          onClose={() => setShowRestoreModal(false)}
+          onRestored={(restoredCount) => {
+            setShowRestoreModal(false);
+            loadEvents();
+            alert(`Restored ${restoredCount} events successfully!`);
+          }}
         />
       )}
     </div>
