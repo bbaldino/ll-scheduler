@@ -1668,10 +1668,15 @@ export default function SeasonsPage() {
                                 {existingConfig.blackoutDates && existingConfig.blackoutDates.length > 0 && (
                                   <div className={styles.configDetailRow}>
                                     <span>Division blackouts: {existingConfig.blackoutDates.map((blackout) => {
-                                      const dateStr = new Date(blackout.date + 'T00:00:00').toLocaleDateString('en-US', {
+                                      const startStr = new Date(blackout.date + 'T00:00:00').toLocaleDateString('en-US', {
                                         month: 'short',
                                         day: 'numeric',
                                       });
+                                      const endStr = blackout.endDate ? new Date(blackout.endDate + 'T00:00:00').toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                      }) : null;
+                                      const dateStr = endStr ? `${startStr}-${endStr}` : startStr;
                                       const typesStr = blackout.blockedEventTypes.map(t => t.charAt(0).toUpperCase()).join('');
                                       const reasonStr = blackout.reason ? ` "${blackout.reason}"` : '';
                                       return `${dateStr}(${typesStr})${reasonStr}`;
