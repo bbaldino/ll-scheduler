@@ -661,8 +661,20 @@ export class ScheduleGenerator {
 
     const allDatesRaw = getDateRange(this.season.startDate, this.season.endDate);
 
-    // Filter out season-level blackout dates
-    const blackoutSet = new Set((this.season.blackoutDates || []).map(b => b.date));
+    // Filter out season-level blackout dates (expanding ranges)
+    const blackoutSet = new Set<string>();
+    for (const blackout of this.season.blackoutDates || []) {
+      if (blackout.endDate) {
+        // It's a range - expand to all dates
+        const rangeDates = getDateRange(blackout.date, blackout.endDate);
+        for (const d of rangeDates) {
+          blackoutSet.add(d);
+        }
+      } else {
+        // Single date
+        blackoutSet.add(blackout.date);
+      }
+    }
     const allDates = allDatesRaw.filter(date => !blackoutSet.has(date));
 
     if (blackoutSet.size > 0) {
@@ -2875,8 +2887,13 @@ export class ScheduleGenerator {
     for (const date of allDates) {
       const dayOfWeek = parseLocalDate(date).getDay();
       if (dayOfWeek === 0) {
-        // Check if date is not blacked out at season level
-        const isSeasonBlackout = this.season.blackoutDates?.some((b) => b.date === date);
+        // Check if date is not blacked out at season level (handles ranges)
+        const isSeasonBlackout = this.season.blackoutDates?.some((b) => {
+          if (b.endDate) {
+            return date >= b.date && date <= b.endDate;
+          }
+          return b.date === date;
+        });
         if (!isSeasonBlackout) {
           sundays.push(date);
         }
@@ -2895,10 +2912,16 @@ export class ScheduleGenerator {
       for (const { divisionId, config, teams } of divisionsWithComboPractice) {
         const divName = this.divisionNames.get(divisionId) || divisionId;
 
-        // Check division-level blackout
-        const divisionBlackout = config.blackoutDates?.find(
-          (b) => b.date === sunday && b.blockedEventTypes.includes('practice')
-        );
+        // Check division-level blackout (handles ranges)
+        const divisionBlackout = config.blackoutDates?.find((b) => {
+          if (!b.blockedEventTypes.includes('practice')) {
+            return false;
+          }
+          if (b.endDate) {
+            return sunday >= b.date && sunday <= b.endDate;
+          }
+          return b.date === sunday;
+        });
         if (divisionBlackout) {
           verboseLog(`  ${divName}: Skipping ${sunday} due to division blackout: ${divisionBlackout.reason}`);
           continue;
@@ -4396,6 +4419,7 @@ export class ScheduleGenerator {
   /**
    * Check if a date is blocked for a specific event type for a division.
    * Uses division config's blackoutDates to check if the date/event type is blocked.
+   * Supports both single dates and date ranges.
    */
   private isDateBlockedForDivision(
     date: string,
@@ -4406,9 +4430,16 @@ export class ScheduleGenerator {
     if (!config || !config.blackoutDates || config.blackoutDates.length === 0) {
       return false;
     }
-    return config.blackoutDates.some(
-      (blackout) => blackout.date === date && blackout.blockedEventTypes.includes(eventType)
-    );
+    return config.blackoutDates.some((blackout) => {
+      if (!blackout.blockedEventTypes.includes(eventType)) {
+        return false;
+      }
+      // Check if date falls within the blackout (single date or range)
+      if (blackout.endDate) {
+        return date >= blackout.date && date <= blackout.endDate;
+      }
+      return blackout.date === date;
+    });
   }
 
   /**

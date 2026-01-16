@@ -509,11 +509,52 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.5rem;
+  padding: 0.5rem 0.75rem;
   background: #ffebee;
   border: 1px solid #ffcdd2;
   border-radius: 4px;
   font-size: 0.9em;
+  flex-wrap: wrap;
+}
+
+.blackoutDateRange {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.blackoutDateSeparator {
+  color: #666;
+  font-size: 0.85em;
+}
+
+.addEndDateBtn {
+  padding: 0.2rem 0.5rem;
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #1565c0;
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+
+.addEndDateBtn:hover {
+  background-color: #bbdefb;
+}
+
+.clearEndDateBtn {
+  padding: 0 0.3rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  font-size: 1em;
+  line-height: 1;
+}
+
+.clearEndDateBtn:hover {
+  color: #c62828;
 }
 
 .blackoutDateText {
@@ -562,6 +603,21 @@
 .addBlackoutHint {
   color: #888;
   font-size: 0.85em;
+}
+
+.addBlackoutBtn {
+  padding: 0.4rem 0.75rem;
+  background-color: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #e65100;
+  font-weight: 500;
+  font-size: 0.9em;
+}
+
+.addBlackoutBtn:hover {
+  background-color: #ffe0b2;
 }
 
 /* Delete Events Section */
@@ -800,6 +856,13 @@
   border: 1px solid #ffcdd2;
   border-radius: 4px;
   font-size: 0.9em;
+  flex-wrap: wrap;
+}
+
+.divisionBlackoutDateRange {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .divisionBlackoutDate {

@@ -350,12 +350,10 @@ export default function SeasonsPage() {
   };
 
   // Division blackout date helpers
-  const addDivisionBlackout = (date: string) => {
+  const addDivisionBlackout = (startDate: string) => {
     const blackouts = configFormData.blackoutDates || [];
-    // Don't add duplicate dates
-    if (blackouts.some(b => b.date === date)) return;
     const newBlackout: DivisionBlackout = {
-      date,
+      date: startDate,
       blockedEventTypes: ['game', 'practice', 'cage'],
     };
     setConfigFormData({
@@ -364,17 +362,17 @@ export default function SeasonsPage() {
     });
   };
 
-  const updateDivisionBlackout = (date: string, updates: Partial<DivisionBlackout>) => {
+  const updateDivisionBlackoutByIndex = (index: number, updates: Partial<DivisionBlackout>) => {
     const blackouts = configFormData.blackoutDates || [];
-    const updated = blackouts.map(b =>
-      b.date === date ? { ...b, ...updates } : b
+    const updated = blackouts.map((b, i) =>
+      i === index ? { ...b, ...updates } : b
     );
     setConfigFormData({ ...configFormData, blackoutDates: updated });
   };
 
-  const toggleBlackoutEventType = (date: string, eventType: 'game' | 'practice' | 'cage') => {
+  const toggleBlackoutEventTypeByIndex = (index: number, eventType: 'game' | 'practice' | 'cage') => {
     const blackouts = configFormData.blackoutDates || [];
-    const blackout = blackouts.find(b => b.date === date);
+    const blackout = blackouts[index];
     if (!blackout) return;
 
     const currentTypes = blackout.blockedEventTypes || [];
@@ -384,16 +382,16 @@ export default function SeasonsPage() {
 
     // If no types are selected, remove the blackout entirely
     if (newTypes.length === 0) {
-      removeDivisionBlackout(date);
+      removeDivisionBlackoutByIndex(index);
       return;
     }
 
-    updateDivisionBlackout(date, { blockedEventTypes: newTypes });
+    updateDivisionBlackoutByIndex(index, { blockedEventTypes: newTypes });
   };
 
-  const removeDivisionBlackout = (date: string) => {
+  const removeDivisionBlackoutByIndex = (index: number) => {
     const blackouts = configFormData.blackoutDates || [];
-    const updated = blackouts.filter(b => b.date !== date);
+    const updated = blackouts.filter((_, i) => i !== index);
     setConfigFormData({ ...configFormData, blackoutDates: updated.length > 0 ? updated : undefined });
   };
 
@@ -644,16 +642,72 @@ export default function SeasonsPage() {
               <div className={styles.blackoutDatesSection}>
                 <strong>Blackout Dates:</strong>
                 <p className={styles.helperText}>
-                  No games, practices, or cage sessions will be scheduled on these dates.
+                  No games, practices, or cage sessions will be scheduled on these dates. You can specify single dates or date ranges.
                 </p>
                 <div className={styles.blackoutDatesList}>
                   {(season.blackoutDates || [])
                     .sort((a, b) => a.date.localeCompare(b.date))
-                    .map((blackout) => (
-                    <div key={blackout.date} className={styles.blackoutDateItem}>
-                      <span className={styles.blackoutDateText}>
-                        {new Date(blackout.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      </span>
+                    .map((blackout, index) => (
+                    <div key={`${blackout.date}-${index}`} className={styles.blackoutDateItem}>
+                      <div className={styles.blackoutDateRange}>
+                        <input
+                          type="date"
+                          value={blackout.date}
+                          min={season.startDate}
+                          max={blackout.endDate || season.endDate}
+                          onChange={(e) => {
+                            const updated = (season.blackoutDates || []).map((b, i) =>
+                              i === index ? { ...b, date: e.target.value } : b
+                            );
+                            handleUpdate(season, { blackoutDates: updated });
+                          }}
+                          className={styles.blackoutDateInput}
+                        />
+                        {blackout.endDate ? (
+                          <>
+                            <span className={styles.blackoutDateSeparator}>to</span>
+                            <input
+                              type="date"
+                              value={blackout.endDate}
+                              min={blackout.date}
+                              max={season.endDate}
+                              onChange={(e) => {
+                                const updated = (season.blackoutDates || []).map((b, i) =>
+                                  i === index ? { ...b, endDate: e.target.value || undefined } : b
+                                );
+                                handleUpdate(season, { blackoutDates: updated });
+                              }}
+                              className={styles.blackoutDateInput}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (season.blackoutDates || []).map((b, i) =>
+                                  i === index ? { ...b, endDate: undefined } : b
+                                );
+                                handleUpdate(season, { blackoutDates: updated });
+                              }}
+                              className={styles.clearEndDateBtn}
+                              title="Remove end date"
+                            >
+                              ×
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = (season.blackoutDates || []).map((b, i) =>
+                                i === index ? { ...b, endDate: b.date } : b
+                              );
+                              handleUpdate(season, { blackoutDates: updated });
+                            }}
+                            className={styles.addEndDateBtn}
+                          >
+                            + Range
+                          </button>
+                        )}
+                      </div>
                       <input
                         type="text"
                         placeholder="Reason (optional)"
@@ -661,8 +715,8 @@ export default function SeasonsPage() {
                         onBlur={(e) => {
                           const newReason = e.target.value || undefined;
                           if (newReason !== blackout.reason) {
-                            const updated = (season.blackoutDates || []).map(b =>
-                              b.date === blackout.date ? { ...b, reason: newReason } : b
+                            const updated = (season.blackoutDates || []).map((b, i) =>
+                              i === index ? { ...b, reason: newReason } : b
                             );
                             handleUpdate(season, { blackoutDates: updated });
                           }
@@ -672,7 +726,7 @@ export default function SeasonsPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          const updated = (season.blackoutDates || []).filter(b => b.date !== blackout.date);
+                          const updated = (season.blackoutDates || []).filter((_, i) => i !== index);
                           handleUpdate(season, { blackoutDates: updated });
                         }}
                         className={styles.removeBlackoutBtn}
@@ -683,21 +737,16 @@ export default function SeasonsPage() {
                   ))}
                 </div>
                 <div className={styles.addBlackoutDate}>
-                  <input
-                    type="date"
-                    min={season.startDate}
-                    max={season.endDate}
-                    onChange={(e) => {
-                      const date = e.target.value;
-                      if (date && !(season.blackoutDates || []).some(b => b.date === date)) {
-                        const newBlackout: SeasonBlackout = { date };
-                        handleUpdate(season, { blackoutDates: [...(season.blackoutDates || []), newBlackout] });
-                      }
-                      e.target.value = '';
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newBlackout: SeasonBlackout = { date: season.startDate };
+                      handleUpdate(season, { blackoutDates: [...(season.blackoutDates || []), newBlackout] });
                     }}
-                    className={styles.blackoutDateInput}
-                  />
-                  <span className={styles.addBlackoutHint}>Select a date to add</span>
+                    className={styles.addBlackoutBtn}
+                  >
+                    + Add Blackout Date
+                  </button>
                 </div>
               </div>
 
@@ -1429,25 +1478,61 @@ export default function SeasonsPage() {
                                   <div className={styles.formGroup} style={{ gridColumn: '1 / -1' }}>
                                     <label>Division Blackout Dates</label>
                                     <p className={styles.helperText}>
-                                      Block specific event types on specific dates for this division only.
+                                      Block specific event types on specific dates or date ranges for this division only.
                                     </p>
                                     {configFormData.blackoutDates && configFormData.blackoutDates.length > 0 && (
                                       <div className={styles.divisionBlackoutsList}>
-                                        {configFormData.blackoutDates.map((blackout) => (
-                                          <div key={blackout.date} className={styles.divisionBlackoutItem}>
-                                            <span className={styles.divisionBlackoutDate}>
-                                              {new Date(blackout.date + 'T00:00:00').toLocaleDateString('en-US', {
-                                                weekday: 'short',
-                                                month: 'short',
-                                                day: 'numeric',
-                                              })}
-                                            </span>
+                                        {configFormData.blackoutDates.map((blackout, index) => (
+                                          <div key={`${blackout.date}-${index}`} className={styles.divisionBlackoutItem}>
+                                            <div className={styles.divisionBlackoutDateRange}>
+                                              <input
+                                                type="date"
+                                                value={blackout.date}
+                                                min={season.startDate}
+                                                max={blackout.endDate || season.endDate}
+                                                onChange={(e) =>
+                                                  updateDivisionBlackoutByIndex(index, { date: e.target.value })
+                                                }
+                                                className={styles.divisionBlackoutDateInput}
+                                              />
+                                              {blackout.endDate ? (
+                                                <>
+                                                  <span className={styles.blackoutDateSeparator}>to</span>
+                                                  <input
+                                                    type="date"
+                                                    value={blackout.endDate}
+                                                    min={blackout.date}
+                                                    max={season.endDate}
+                                                    onChange={(e) =>
+                                                      updateDivisionBlackoutByIndex(index, { endDate: e.target.value || undefined })
+                                                    }
+                                                    className={styles.divisionBlackoutDateInput}
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => updateDivisionBlackoutByIndex(index, { endDate: undefined })}
+                                                    className={styles.clearEndDateBtn}
+                                                    title="Remove end date"
+                                                  >
+                                                    ×
+                                                  </button>
+                                                </>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => updateDivisionBlackoutByIndex(index, { endDate: blackout.date })}
+                                                  className={styles.addEndDateBtn}
+                                                >
+                                                  + Range
+                                                </button>
+                                              )}
+                                            </div>
                                             <div className={styles.divisionBlackoutTypes}>
                                               <label className={styles.divisionBlackoutTypeLabel}>
                                                 <input
                                                   type="checkbox"
                                                   checked={blackout.blockedEventTypes.includes('game')}
-                                                  onChange={() => toggleBlackoutEventType(blackout.date, 'game')}
+                                                  onChange={() => toggleBlackoutEventTypeByIndex(index, 'game')}
                                                 />
                                                 Game
                                               </label>
@@ -1455,7 +1540,7 @@ export default function SeasonsPage() {
                                                 <input
                                                   type="checkbox"
                                                   checked={blackout.blockedEventTypes.includes('practice')}
-                                                  onChange={() => toggleBlackoutEventType(blackout.date, 'practice')}
+                                                  onChange={() => toggleBlackoutEventTypeByIndex(index, 'practice')}
                                                 />
                                                 Practice
                                               </label>
@@ -1463,7 +1548,7 @@ export default function SeasonsPage() {
                                                 <input
                                                   type="checkbox"
                                                   checked={blackout.blockedEventTypes.includes('cage')}
-                                                  onChange={() => toggleBlackoutEventType(blackout.date, 'cage')}
+                                                  onChange={() => toggleBlackoutEventTypeByIndex(index, 'cage')}
                                                 />
                                                 Cage
                                               </label>
@@ -1473,13 +1558,13 @@ export default function SeasonsPage() {
                                               placeholder="Reason (optional)"
                                               value={blackout.reason || ''}
                                               onChange={(e) =>
-                                                updateDivisionBlackout(blackout.date, { reason: e.target.value || undefined })
+                                                updateDivisionBlackoutByIndex(index, { reason: e.target.value || undefined })
                                               }
                                               className={styles.divisionBlackoutReason}
                                             />
                                             <button
                                               type="button"
-                                              onClick={() => removeDivisionBlackout(blackout.date)}
+                                              onClick={() => removeDivisionBlackoutByIndex(index)}
                                               className={styles.removeDivisionBlackoutBtn}
                                             >
                                               ×
@@ -1489,19 +1574,13 @@ export default function SeasonsPage() {
                                       </div>
                                     )}
                                     <div className={styles.addDivisionBlackout}>
-                                      <input
-                                        type="date"
-                                        min={season.startDate}
-                                        max={season.endDate}
-                                        onChange={(e) => {
-                                          if (e.target.value) {
-                                            addDivisionBlackout(e.target.value);
-                                            e.target.value = '';
-                                          }
-                                        }}
-                                        className={styles.divisionBlackoutDateInput}
-                                      />
-                                      <span className={styles.addDivisionBlackoutHint}>Select a date to add a blackout</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => addDivisionBlackout(season.startDate)}
+                                        className={styles.addBlackoutBtn}
+                                      >
+                                        + Add Blackout Date
+                                      </button>
                                     </div>
                                   </div>
                                 </div>

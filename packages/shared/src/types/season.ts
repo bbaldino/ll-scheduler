@@ -1,9 +1,10 @@
 /**
- * Season-level blackout date
- * Blocks all event types (game, practice, cage) on the specified date
+ * Season-level blackout date or date range
+ * Blocks all event types (game, practice, cage) on the specified date(s)
  */
 export interface SeasonBlackout {
-  date: string; // ISO date (YYYY-MM-DD)
+  date: string; // Start date (ISO date YYYY-MM-DD)
+  endDate?: string; // End date for range (ISO date YYYY-MM-DD, inclusive). If not set, it's a single date.
   reason?: string; // Optional reason (e.g., "Easter", "Spring break")
 }
 

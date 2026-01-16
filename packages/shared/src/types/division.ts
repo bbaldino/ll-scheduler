@@ -38,11 +38,12 @@ export interface GameWeekOverride {
 }
 
 /**
- * Division-specific blackout date
+ * Division-specific blackout date or date range
  * Allows blocking specific event types on specific dates for a division
  */
 export interface DivisionBlackout {
-  date: string; // ISO date (YYYY-MM-DD)
+  date: string; // Start date (ISO date YYYY-MM-DD)
+  endDate?: string; // End date for range (ISO date YYYY-MM-DD, inclusive). If not set, it's a single date.
   blockedEventTypes: ('game' | 'practice' | 'cage')[]; // Which event types to block
   reason?: string; // Optional reason (e.g., "Easter", "Spring break")
 }
