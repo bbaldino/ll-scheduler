@@ -3039,6 +3039,12 @@ export class ScheduleGenerator {
           totalPractices += 2;
           totalCages += 2;
 
+          // Add events to context indexes for conflict detection
+          addEventToContext(this.scoringContext!, team1Practice);
+          addEventToContext(this.scoringContext!, team1Cage);
+          addEventToContext(this.scoringContext!, team2Cage);
+          addEventToContext(this.scoringContext!, team2Practice);
+
           // Update team states for all 4 events
           const team1State = this.teamSchedulingStates.get(team1Id);
           const team2State = this.teamSchedulingStates.get(team2Id);
