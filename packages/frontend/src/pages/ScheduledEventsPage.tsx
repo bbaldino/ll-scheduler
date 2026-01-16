@@ -365,6 +365,19 @@ export default function ScheduledEventsPage() {
     return result;
   }, [events, filterTeam, filterField, filterCage]);
 
+  // Helper to expand a date range into individual dates
+  const expandDateRange = (startDate: string, endDate?: string): string[] => {
+    if (!endDate) return [startDate];
+    const dates: string[] = [];
+    const current = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    while (current <= end) {
+      dates.push(current.toISOString().split('T')[0]);
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  };
+
   // Combine season and division blackout dates for calendar display
   const calendarBlackoutDates = useMemo(() => {
     const blackouts: Array<{ date: string; description?: string; divisionName?: string }> = [];
@@ -372,10 +385,13 @@ export default function ScheduledEventsPage() {
     // Add season-level blackouts (apply to all divisions)
     if (currentSeason?.blackoutDates) {
       for (const blackout of currentSeason.blackoutDates) {
-        blackouts.push({
-          date: blackout.date,
-          description: blackout.reason,
-        });
+        const dates = expandDateRange(blackout.date, blackout.endDate);
+        for (const date of dates) {
+          blackouts.push({
+            date,
+            description: blackout.reason,
+          });
+        }
       }
     }
 
@@ -384,11 +400,14 @@ export default function ScheduledEventsPage() {
       if (config.blackoutDates) {
         const division = divisions.find((d) => d.id === config.divisionId);
         for (const blackout of config.blackoutDates) {
-          blackouts.push({
-            date: blackout.date,
-            description: blackout.reason,
-            divisionName: division?.name,
-          });
+          const dates = expandDateRange(blackout.date, blackout.endDate);
+          for (const date of dates) {
+            blackouts.push({
+              date,
+              description: blackout.reason,
+              divisionName: division?.name,
+            });
+          }
         }
       }
     }
