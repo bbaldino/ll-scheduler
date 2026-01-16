@@ -1193,11 +1193,11 @@ function PracticeSpacingSection({
   // Calculate division-level stats
   const getDivisionStats = (teams: TeamPracticeSpacingReport[]) => {
     const teamsWithPractices = teams.filter(t => t.totalPractices >= 2);
-    if (teamsWithPractices.length === 0) return { avg: 0, passed: true, backToBack: 0 };
+    if (teamsWithPractices.length === 0) return { avg: 0, passed: true, avgStdDev: 0 };
     const avg = teamsWithPractices.reduce((sum, t) => sum + t.averageDaysBetweenPractices, 0) / teamsWithPractices.length;
     const passed = teams.every(t => t.passed);
-    const backToBack = teams.reduce((sum, t) => sum + t.backToBackCount, 0);
-    return { avg: Math.round(avg * 10) / 10, passed, backToBack };
+    const avgStdDev = teamsWithPractices.reduce((sum, t) => sum + t.gapStdDev, 0) / teamsWithPractices.length;
+    return { avg: Math.round(avg * 10) / 10, passed, avgStdDev: Math.round(avgStdDev * 100) / 100 };
   };
 
   return (
@@ -1230,10 +1230,7 @@ function PracticeSpacingSection({
                     </span>
                     <span className={styles.divisionName}>{divisionName}</span>
                     <span className={styles.complianceRate}>
-                      Avg: {divisionStats.avg} days
-                      {divisionStats.backToBack > 0 && (
-                        <span className={styles.warningText}> ({divisionStats.backToBack} back-to-back)</span>
-                      )}
+                      Avg: {divisionStats.avg} days, σ: {divisionStats.avgStdDev}
                     </span>
                     <span className={styles.expandIcon}>
                       {expandedDivisions.has(divisionId) ? '▼' : '▶'}
@@ -1258,12 +1255,7 @@ function PracticeSpacingSection({
                               </span>
                               <span className={styles.teamName}>{team.teamName}</span>
                               <span className={styles.teamGameCount}>
-                                {team.totalPractices} practices, avg {team.averageDaysBetweenPractices || 0} days
-                                {team.backToBackCount > 0 && (
-                                  <span className={styles.warningText}>
-                                    , {team.backToBackCount} back-to-back
-                                  </span>
-                                )}
+                                {team.totalPractices} practices, avg {team.averageDaysBetweenPractices || 0} days, σ: {team.gapStdDev}
                               </span>
                               <span className={styles.expandIcon}>
                                 {isTeamExpanded ? '▼' : '▶'}
@@ -1276,6 +1268,7 @@ function PracticeSpacingSection({
                                   <span>Min: {team.minDaysBetweenPractices || '-'} days</span>
                                   <span>Max: {team.maxDaysBetweenPractices || '-'} days</span>
                                   <span>Avg: {team.averageDaysBetweenPractices || '-'} days</span>
+                                  <span>Consistency (σ): {team.gapStdDev}</span>
                                 </div>
 
                                 {gapKeys.length > 0 ? (

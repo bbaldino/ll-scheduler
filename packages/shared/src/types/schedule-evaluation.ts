@@ -211,7 +211,7 @@ export interface TeamPracticeSpacingReport {
   minDaysBetweenPractices: number; // Minimum gap found
   maxDaysBetweenPractices: number; // Maximum gap found
   practiceGaps: number[]; // Array of days between each consecutive practice pair
-  backToBackCount: number; // Number of gaps with 1 day or less
+  gapStdDev: number; // Standard deviation of gaps - measures consistency
   passed: boolean;
 }
 

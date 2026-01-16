@@ -1210,9 +1210,9 @@ function evaluateMatchupSpacing(
 
 /**
  * Evaluate practice spacing - tracks days between consecutive practices for each team
- * Checks for:
- * 1. Back-to-back balance - flags if distribution of back-to-backs is imbalanced within a division
- * 2. Large gaps - flags if any team has gaps > 7 days between practices
+ * Checks for spacing consistency imbalance within divisions using standard deviation.
+ * Teams with higher std dev have less consistent practice spacing.
+ * Flags divisions where teams have significantly different consistency levels.
  */
 function evaluatePracticeSpacing(
   events: ScheduledEvent[],
@@ -1220,8 +1220,17 @@ function evaluatePracticeSpacing(
   divisionMap: Map<string, Division>
 ): PracticeSpacingReport {
   const teamReports: TeamPracticeSpacingReport[] = [];
-  const MAX_BTB_RANGE = 2; // Max allowed difference in back-to-back count within a division
-  const MAX_GAP_DAYS = 7; // Max allowed days between consecutive practices
+  // Max allowed difference in std dev within a division before flagging imbalance
+  const MAX_STDDEV_RANGE = 1.5;
+
+  // Helper to calculate standard deviation
+  const calculateStdDev = (values: number[]): number => {
+    if (values.length < 2) return 0;
+    const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    const squaredDiffs = values.map((v) => Math.pow(v - mean, 2));
+    const variance = squaredDiffs.reduce((sum, v) => sum + v, 0) / values.length;
+    return Math.sqrt(variance);
+  };
 
   // Filter to only practices
   const practices = events.filter((e) => e.eventType === 'practice');
@@ -1247,7 +1256,7 @@ function evaluatePracticeSpacing(
         minDaysBetweenPractices: 0,
         maxDaysBetweenPractices: 0,
         practiceGaps: [],
-        backToBackCount: 0,
+        gapStdDev: 0,
         passed: true, // Can't fail with < 2 practices
       });
       continue;
@@ -1267,10 +1276,7 @@ function evaluatePracticeSpacing(
     const avgDays = practiceGaps.reduce((sum, gap) => sum + gap, 0) / practiceGaps.length;
     const minDays = Math.min(...practiceGaps);
     const maxDays = Math.max(...practiceGaps);
-    const backToBackCount = practiceGaps.filter((gap) => gap <= 1).length;
-
-    // Individual team passes if no excessively large gaps
-    const hasLargeGap = maxDays > MAX_GAP_DAYS;
+    const gapStdDev = calculateStdDev(practiceGaps);
 
     teamReports.push({
       teamId: team.id,
@@ -1278,12 +1284,12 @@ function evaluatePracticeSpacing(
       divisionId: team.divisionId,
       divisionName: division.name,
       totalPractices: teamPractices.length,
-      averageDaysBetweenPractices: Math.round(avgDays * 10) / 10, // Round to 1 decimal
+      averageDaysBetweenPractices: Math.round(avgDays * 10) / 10,
       minDaysBetweenPractices: minDays,
       maxDaysBetweenPractices: maxDays,
       practiceGaps,
-      backToBackCount,
-      passed: !hasLargeGap, // Pass if no excessively large gaps
+      gapStdDev: Math.round(gapStdDev * 100) / 100,
+      passed: true, // Individual teams always pass; we check division-level imbalance
     });
   }
 
@@ -1294,47 +1300,48 @@ function evaluatePracticeSpacing(
     return a.teamName.localeCompare(b.teamName);
   });
 
-  // Check back-to-back balance within each division
+  // Check spacing consistency imbalance within each division
   const divisionIds = [...new Set(teamReports.map((r) => r.divisionId))];
   const imbalancedDivisions: string[] = [];
   for (const divId of divisionIds) {
-    const divTeams = teamReports.filter((r) => r.divisionId === divId);
+    const divTeams = teamReports.filter((r) => r.divisionId === divId && r.practiceGaps.length > 0);
     if (divTeams.length < 2) continue;
-    const btbCounts = divTeams.map((t) => t.backToBackCount);
-    const btbRange = Math.max(...btbCounts) - Math.min(...btbCounts);
-    if (btbRange > MAX_BTB_RANGE) {
+    const stdDevs = divTeams.map((t) => t.gapStdDev);
+    const stdDevRange = Math.max(...stdDevs) - Math.min(...stdDevs);
+    if (stdDevRange > MAX_STDDEV_RANGE) {
       const divName = divTeams[0]?.divisionName || divId;
+      // Mark the teams with higher std dev as not passed
+      const minStdDev = Math.min(...stdDevs);
+      for (const t of divTeams) {
+        if (t.gapStdDev > minStdDev + MAX_STDDEV_RANGE) {
+          t.passed = false;
+        }
+      }
       imbalancedDivisions.push(divName);
     }
   }
 
-  // Check for teams with large gaps
-  const teamsWithLargeGaps = teamReports.filter((r) => r.maxDaysBetweenPractices > MAX_GAP_DAYS);
-
-  const totalBackToBack = teamReports.reduce((sum, r) => sum + r.backToBackCount, 0);
   const teamsWithGaps = teamReports.filter((r) => r.practiceGaps.length > 0);
   const overallAvg =
     teamsWithGaps.length > 0
       ? teamsWithGaps.reduce((sum, r) => sum + r.averageDaysBetweenPractices, 0) / teamsWithGaps.length
       : 0;
+  const overallStdDev =
+    teamsWithGaps.length > 0
+      ? teamsWithGaps.reduce((sum, r) => sum + r.gapStdDev, 0) / teamsWithGaps.length
+      : 0;
 
-  // Overall pass if: no imbalanced divisions AND no teams with large gaps
-  const allPassed = imbalancedDivisions.length === 0 && teamsWithLargeGaps.length === 0;
+  // Overall pass if no imbalanced divisions
+  const allPassed = imbalancedDivisions.length === 0;
 
   // Build summary
-  const issues: string[] = [];
-  if (imbalancedDivisions.length > 0) {
-    issues.push(`BTB imbalance in: ${imbalancedDivisions.join(', ')}`);
-  }
-  if (teamsWithLargeGaps.length > 0) {
-    issues.push(`${teamsWithLargeGaps.length} teams with gaps > ${MAX_GAP_DAYS} days`);
-  }
+  const summary = allPassed
+    ? `Practice spacing OK (avg: ${Math.round(overallAvg * 10) / 10} days, consistency σ: ${Math.round(overallStdDev * 100) / 100})`
+    : `Spacing consistency imbalance in: ${imbalancedDivisions.join(', ')}`;
 
   return {
     passed: allPassed,
-    summary: allPassed
-      ? `Practice spacing OK (avg: ${Math.round(overallAvg * 10) / 10} days, ${totalBackToBack} BTBs balanced)`
-      : issues.join('; '),
+    summary,
     teamReports,
     overallAverageDaysBetweenPractices: Math.round(overallAvg * 10) / 10,
   };
