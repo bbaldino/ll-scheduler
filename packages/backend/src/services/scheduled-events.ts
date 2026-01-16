@@ -23,8 +23,6 @@ interface ScheduledEventRow {
   home_team_id: string | null;
   away_team_id: string | null;
   team_id: string | null;
-  team1_id: string | null;
-  team2_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -45,8 +43,6 @@ function rowToScheduledEvent(row: ScheduledEventRow): ScheduledEvent {
     homeTeamId: row.home_team_id || undefined,
     awayTeamId: row.away_team_id || undefined,
     teamId: row.team_id || undefined,
-    team1Id: row.team1_id || undefined,
-    team2Id: row.team2_id || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -84,8 +80,8 @@ export async function listScheduledEvents(
     params.push(query.cageId);
   }
   if (query.teamId) {
-    conditions.push('(team_id = ? OR home_team_id = ? OR away_team_id = ? OR team1_id = ? OR team2_id = ?)');
-    params.push(query.teamId, query.teamId, query.teamId, query.teamId, query.teamId);
+    conditions.push('(team_id = ? OR home_team_id = ? OR away_team_id = ?)');
+    params.push(query.teamId, query.teamId, query.teamId);
   }
   if (query.startDate) {
     conditions.push('date >= ?');
@@ -143,8 +139,6 @@ export async function createScheduledEvent(
     input.homeTeamId || null,
     input.awayTeamId || null,
     input.teamId || null,
-    input.team1Id || null,
-    input.team2Id || null,
     now,
     now
   ];
@@ -154,8 +148,8 @@ export async function createScheduledEvent(
       `INSERT INTO scheduled_events (
         id, season_id, division_id, event_type, date, start_time, end_time,
         status, notes, field_id, cage_id, home_team_id, away_team_id, team_id,
-        team1_id, team2_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(...bindValues)
     .run();
@@ -192,8 +186,8 @@ export async function createScheduledEventsBulk(
         `INSERT INTO scheduled_events (
           id, season_id, division_id, event_type, date, start_time, end_time,
           status, notes, field_id, cage_id, home_team_id, away_team_id, team_id,
-          team1_id, team2_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
@@ -210,8 +204,6 @@ export async function createScheduledEventsBulk(
         input.homeTeamId || null,
         input.awayTeamId || null,
         input.teamId || null,
-        input.team1Id || null,
-        input.team2Id || null,
         now,
         now
       );
@@ -279,14 +271,6 @@ export async function updateScheduledEvent(
     updates.push('team_id = ?');
     values.push(input.teamId || null);
   }
-  if (input.team1Id !== undefined) {
-    updates.push('team1_id = ?');
-    values.push(input.team1Id || null);
-  }
-  if (input.team2Id !== undefined) {
-    updates.push('team2_id = ?');
-    values.push(input.team2Id || null);
-  }
 
   if (updates.length > 0) {
     updates.push('updated_at = ?');
@@ -332,9 +316,9 @@ export async function deleteScheduledEventsBulk(
 
   if (params.teamIds && params.teamIds.length > 0) {
     const placeholders = params.teamIds.map(() => '?').join(', ');
-    conditions.push(`(team_id IN (${placeholders}) OR home_team_id IN (${placeholders}) OR away_team_id IN (${placeholders}) OR team1_id IN (${placeholders}) OR team2_id IN (${placeholders}))`);
-    // Need to add teamIds five times for the five IN clauses
-    queryParams.push(...params.teamIds, ...params.teamIds, ...params.teamIds, ...params.teamIds, ...params.teamIds);
+    conditions.push(`(team_id IN (${placeholders}) OR home_team_id IN (${placeholders}) OR away_team_id IN (${placeholders}))`);
+    // Need to add teamIds three times for the three IN clauses
+    queryParams.push(...params.teamIds, ...params.teamIds, ...params.teamIds);
   }
 
   if (params.eventTypes && params.eventTypes.length > 0) {

@@ -17,7 +17,6 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   game: 'Game',
   practice: 'Practice',
   cage: 'Cage',
-  paired_practice: 'Paired Practice',
 };
 
 interface SeasonMilestones {
@@ -112,8 +111,6 @@ export default function CalendarView({
         homeTeamId: event.homeTeamId,
         awayTeamId: event.awayTeamId,
         teamId: event.teamId,
-        team1Id: event.team1Id,
-        team2Id: event.team2Id,
       });
     }
     onEventClick?.(event);
@@ -345,12 +342,6 @@ export default function CalendarView({
       const team = getTeamName(event.teamId);
       const field = getFieldName(event.fieldId);
       return `${time}: ${team} Practice @ ${field} (${division})`;
-    } else if (event.eventType === 'paired_practice') {
-      const team1 = getTeamName(event.team1Id);
-      const team2 = getTeamName(event.team2Id);
-      const field = getFieldName(event.fieldId);
-      const cage = getCageName(event.cageId);
-      return `${time}: Paired Practice - ${team1} (field) / ${team2} (cage) @ ${field}+${cage} (${division})`;
     } else {
       const team = getTeamName(event.teamId);
       const cage = getCageName(event.cageId);
@@ -614,7 +605,7 @@ export default function CalendarView({
                           }}
                           title={formatEventSummary(event)}
                         >
-                          {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : event.eventType === 'paired_practice' ? '🔄' : '🏏'}
+                          {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
                         </div>
                       ))}
                     </div>
@@ -723,13 +714,6 @@ export default function CalendarView({
                             <div className={styles.eventLocation}>@ {getCageName(event.cageId)}</div>
                           </>
                         )}
-                        {event.eventType === 'paired_practice' && (
-                          <>
-                            <div>{getTeamName(event.team1Id)} (F)</div>
-                            <div>{getTeamName(event.team2Id)} (C)</div>
-                            <div className={styles.eventLocation}>@ {getFieldName(event.fieldId)}</div>
-                          </>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -780,7 +764,7 @@ export default function CalendarView({
                   {event.startTime} - {event.endTime}
                 </div>
                 <div className={styles.eventType}>
-                  {event.eventType === 'game' ? 'Game' : event.eventType === 'practice' ? 'Practice' : event.eventType === 'paired_practice' ? 'Paired Practice' : 'Cage Time'}
+                  {event.eventType === 'game' ? 'Game' : event.eventType === 'practice' ? 'Practice' : 'Cage Time'}
                 </div>
                 {event.eventType === 'game' && (
                   <div className={styles.eventTeams}>
@@ -790,13 +774,8 @@ export default function CalendarView({
                 {(event.eventType === 'practice' || event.eventType === 'cage') && (
                   <div className={styles.eventTeams}>{getTeamName(event.teamId)}</div>
                 )}
-                {event.eventType === 'paired_practice' && (
-                  <div className={styles.eventTeams}>
-                    {getTeamName(event.team1Id)} (Field) / {getTeamName(event.team2Id)} (Cage)
-                  </div>
-                )}
                 <div className={styles.eventLocation}>
-                  {event.eventType === 'cage' ? getCageName(event.cageId) : event.eventType === 'paired_practice' ? `${getFieldName(event.fieldId)} + ${getCageName(event.cageId)}` : getFieldName(event.fieldId)}
+                  {event.eventType === 'cage' ? getCageName(event.cageId) : getFieldName(event.fieldId)}
                 </div>
                 <div className={styles.eventDivision}>
                   {getDivisionName(event.divisionId)}
@@ -969,77 +948,6 @@ export default function CalendarView({
                     </select>
                   </div>
                 </div>
-              )}
-
-              {/* Paired practice fields */}
-              {editingEvent.eventType === 'paired_practice' && (
-                <>
-                  <div className={styles.formRow}>
-                    <div className={styles.formGroup}>
-                      <label>Team 1 (Field first half)</label>
-                      <span className={styles.teamDisplay}>
-                        {getTeamName(editFormData.team1Id || editingEvent.team1Id)}
-                      </span>
-                    </div>
-                    <div className={styles.formGroup}>
-                      <label>Team 2 (Cage first half)</label>
-                      <span className={styles.teamDisplay}>
-                        {getTeamName(editFormData.team2Id || editingEvent.team2Id)}
-                      </span>
-                    </div>
-                    <div className={styles.formGroup}>
-                      <button
-                        type="button"
-                        className={styles.swapButton}
-                        onClick={() => {
-                          const currentTeam1 = editFormData.team1Id || editingEvent.team1Id;
-                          const currentTeam2 = editFormData.team2Id || editingEvent.team2Id;
-                          setEditFormData({
-                            ...editFormData,
-                            team1Id: currentTeam2,
-                            team2Id: currentTeam1,
-                          });
-                        }}
-                      >
-                        ⇄ Swap Teams
-                      </button>
-                    </div>
-                  </div>
-                  <div className={styles.formRow}>
-                    <div className={styles.formGroup}>
-                      <label>Field</label>
-                      <select
-                        value={editFormData.fieldId || editingEvent.fieldId || ''}
-                        onChange={(e) =>
-                          setEditFormData({ ...editFormData, fieldId: e.target.value })
-                        }
-                      >
-                        <option value="">Select Field</option>
-                        {seasonFields.map((sf) => (
-                          <option key={sf.id} value={sf.fieldId}>
-                            {sf.field?.name || sf.fieldId}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className={styles.formGroup}>
-                      <label>Cage</label>
-                      <select
-                        value={editFormData.cageId || editingEvent.cageId || ''}
-                        onChange={(e) =>
-                          setEditFormData({ ...editFormData, cageId: e.target.value })
-                        }
-                      >
-                        <option value="">Select Cage</option>
-                        {seasonCages.map((sc) => (
-                          <option key={sc.id} value={sc.cageId}>
-                            {sc.cage?.name || sc.cageId}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </>
               )}
 
               {/* Home/Away swap for games */}

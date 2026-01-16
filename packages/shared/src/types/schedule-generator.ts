@@ -35,7 +35,7 @@ export interface GenerateScheduleResult {
 export interface SchedulingLogEntry {
   timestamp: string;
   level: 'info' | 'warning' | 'error' | 'debug';
-  category: 'game' | 'practice' | 'cage' | 'paired_practice' | 'resource' | 'general';
+  category: 'game' | 'practice' | 'cage' | 'resource' | 'general';
   message: string;
   /** Human-readable summary explaining the situation in plain language */
   summary?: string;
@@ -179,8 +179,6 @@ export interface ScheduledEventDraft {
   homeTeamId?: string;
   awayTeamId?: string;
   teamId?: string;
-  team1Id?: string; // For paired_practice events
-  team2Id?: string; // For paired_practice events
 }
 
 /**
@@ -356,10 +354,9 @@ export interface TeamSchedulingState {
   weekdayGamesByDayOfWeek: Map<number, number>;
   // Practice-specific tracking for back-to-back balancing
   backToBackPracticesCount: number; // Count of practices scheduled 1 day after previous practice
-  // Practice gap tracking for balance - uses ONLY regular practices (not paired_practice)
-  // This ensures gap balancing focuses on weekday practice distribution
-  regularPracticeDates: string[]; // Sorted list of regular (non-paired) practice dates
-  maxPracticeGapSoFar: number; // Largest gap between consecutive REGULAR practices so far
+  // Practice gap tracking for balance - includes all practice events
+  regularPracticeDates: string[]; // Sorted list of practice dates
+  maxPracticeGapSoFar: number; // Largest gap between consecutive practices so far
 }
 
 /**

@@ -48,4 +48,4 @@ export interface UpdateSeasonInput {
   status?: SeasonStatus;
 }
 
-export type EventType = 'game' | 'practice' | 'cage' | 'paired_practice';
+export type EventType = 'game' | 'practice' | 'cage';

@@ -506,13 +506,8 @@ export function updateTeamStateAfterScheduling(
         teamState.weekdayGamesByDayOfWeek.set(gameDayOfWeek, currentCount + 1);
       }
       break;
-    case 'practice':
-    case 'paired_practice': {
+    case 'practice': {
       teamState.practicesScheduled++;
-      if (event.eventType === 'paired_practice') {
-        // Paired practice also counts as a cage session
-        teamState.cagesScheduled++;
-      }
 
       // Track back-to-back practices (within 1 day of any existing practice)
       // Practices are in fieldDatesUsed but not in gameDates
@@ -527,28 +522,23 @@ export function updateTeamStateAfterScheduling(
         teamState.backToBackPracticesCount++;
       }
 
-      // Track REGULAR practices separately for gap balancing
-      // We only want to balance gaps between weekday practices, not Sunday paired practices
-      if (event.eventType === 'practice') {
-        teamState.regularPracticeDates.push(newPracticeDate);
-        teamState.regularPracticeDates.sort();
+      // Track all practices for gap balancing
+      teamState.regularPracticeDates.push(newPracticeDate);
+      teamState.regularPracticeDates.sort();
 
-        // Update maxPracticeGapSoFar using ONLY regular practices
-        // This ensures teams that miss weekday practices get priority, even if they have
-        // Sunday paired practices keeping their "all practice" gaps small
-        if (teamState.regularPracticeDates.length >= 2) {
-          let maxGap = 0;
-          for (let i = 1; i < teamState.regularPracticeDates.length; i++) {
-            const gap = calculateDaysBetween(
-              teamState.regularPracticeDates[i - 1],
-              teamState.regularPracticeDates[i]
-            );
-            if (gap > maxGap) {
-              maxGap = gap;
-            }
+      // Update maxPracticeGapSoFar
+      if (teamState.regularPracticeDates.length >= 2) {
+        let maxGap = 0;
+        for (let i = 1; i < teamState.regularPracticeDates.length; i++) {
+          const gap = calculateDaysBetween(
+            teamState.regularPracticeDates[i - 1],
+            teamState.regularPracticeDates[i]
+          );
+          if (gap > maxGap) {
+            maxGap = gap;
           }
-          teamState.maxPracticeGapSoFar = maxGap;
         }
+        teamState.maxPracticeGapSoFar = maxGap;
       }
       break;
     }
@@ -576,11 +566,6 @@ export function updateTeamStateAfterScheduling(
     case 'cage':
       weekEvents.cages++;
       break;
-    case 'paired_practice':
-      // Paired practice counts toward both practices and cages quotas
-      weekEvents.practices++;
-      weekEvents.cages++;
-      break;
   }
 
   // Update day of week usage
@@ -591,10 +576,6 @@ export function updateTeamStateAfterScheduling(
   // Update dates used - track field and cage dates separately
   // Games and practices use fields, cages use cages
   if (event.eventType === 'cage') {
-    teamState.cageDatesUsed.add(event.date);
-  } else if (event.eventType === 'paired_practice') {
-    // Paired practice uses both field and cage
-    teamState.fieldDatesUsed.add(event.date);
     teamState.cageDatesUsed.add(event.date);
   } else {
     teamState.fieldDatesUsed.add(event.date);
@@ -1071,9 +1052,6 @@ export function teamNeedsEventInWeek(
       return weekEvents.practices < config.practicesPerWeek;
     case 'cage':
       return weekEvents.cages < (config.cageSessionsPerWeek || 0);
-    case 'paired_practice':
-      // Paired practice is scheduled separately, not checked via this function
-      return false;
   }
 }
 

@@ -285,8 +285,6 @@ export class ScheduleGenerator {
         homeTeamId: event.homeTeamId,
         awayTeamId: event.awayTeamId,
         teamId: event.teamId,
-        team1Id: event.team1Id,
-        team2Id: event.team2Id,
       };
 
       // Add to scheduled events
@@ -310,17 +308,6 @@ export class ScheduleGenerator {
         }
         if (awayState) {
           updateTeamStateAfterScheduling(awayState, draft, weekNumber, false, event.homeTeamId);
-        }
-      } else if (event.eventType === 'paired_practice' && event.team1Id && event.team2Id) {
-        // Paired practice: update states for both teams
-        const team1State = this.teamSchedulingStates.get(event.team1Id);
-        const team2State = this.teamSchedulingStates.get(event.team2Id);
-
-        if (team1State) {
-          updateTeamStateAfterScheduling(team1State, draft, weekNumber);
-        }
-        if (team2State) {
-          updateTeamStateAfterScheduling(team2State, draft, weekNumber);
         }
       } else if (event.teamId) {
         const teamState = this.teamSchedulingStates.get(event.teamId);
@@ -587,14 +574,16 @@ export class ScheduleGenerator {
       this.rebalanceScheduledHomeAway();
       console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
 
-      // Step 4c: Schedule Sunday paired practices (before regular practices)
+      // Step 4c: Schedule Sunday combo practices (before regular practices)
       verboseLog('\n' + '-'.repeat(80));
-      verboseLog('SCHEDULING SUNDAY PAIRED PRACTICES');
+      verboseLog('SCHEDULING SUNDAY COMBO PRACTICES');
       verboseLog('-'.repeat(80));
       stepStart = Date.now();
+      const eventsBeforeCombo = this.scheduledEvents.length;
       await this.scheduleSundayPairedPractices();
       console.log(`  scheduleSundayPairedPractices: ${Date.now() - stepStart}ms`);
-      verboseLog(`✓ Paired practices scheduled: ${this.scheduledEvents.filter(e => e.eventType === 'paired_practice').length}`);
+      const comboEventsScheduled = this.scheduledEvents.length - eventsBeforeCombo;
+      verboseLog(`✓ Sunday combo events scheduled: ${comboEventsScheduled}`);
 
       // Step 5: Schedule practices
       verboseLog('\n' + '-'.repeat(80));
@@ -2839,16 +2828,17 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Schedule Sunday paired practices for divisions that have it enabled.
-   * Each paired practice involves 2 teams sharing a field + cage for a time block,
-   * rotating between field and cage during the session.
+   * Schedule Sunday combo practices (field + cage sessions)
+   * For each pairing, creates separate practice and cage events:
+   * - Team A: practice (field) first half, cage second half
+   * - Team B: cage first half, practice (field) second half
    */
   private async scheduleSundayPairedPractices(): Promise<void> {
-    verboseLog('\n--- Scheduling Sunday Paired Practices ---');
-    this.log('info', 'paired_practice', 'Starting Sunday paired practice scheduling');
+    verboseLog('\n--- Scheduling Sunday Combo Practices ---');
+    this.log('info', 'practice', 'Starting Sunday combo practice scheduling');
 
     // Find divisions with Sunday paired practice enabled
-    const divisionsWithPairedPractice: Array<{
+    const divisionsWithComboPractice: Array<{
       divisionId: string;
       config: DivisionConfig;
       teams: Team[];
@@ -2858,13 +2848,13 @@ export class ScheduleGenerator {
       if (config.sundayPairedPracticeEnabled) {
         const divisionTeams = this.teams.filter((t) => t.divisionId === divisionId);
         if (divisionTeams.length >= 2) {
-          divisionsWithPairedPractice.push({
+          divisionsWithComboPractice.push({
             divisionId,
             config,
             teams: divisionTeams,
           });
           const divName = this.divisionNames.get(divisionId) || divisionId;
-          this.log('info', 'paired_practice', `Division ${divName} has Sunday paired practice enabled`, {
+          this.log('info', 'practice', `Division ${divName} has Sunday combo practice enabled`, {
             teamCount: divisionTeams.length,
             durationHours: config.sundayPairedPracticeDurationHours,
             fieldId: config.sundayPairedPracticeFieldId,
@@ -2874,8 +2864,8 @@ export class ScheduleGenerator {
       }
     }
 
-    if (divisionsWithPairedPractice.length === 0) {
-      verboseLog('No divisions have Sunday paired practice enabled');
+    if (divisionsWithComboPractice.length === 0) {
+      verboseLog('No divisions have Sunday combo practice enabled');
       return;
     }
 
@@ -2893,13 +2883,16 @@ export class ScheduleGenerator {
       }
     }
 
-    verboseLog(`Found ${sundays.length} Sundays in season for paired practices`);
+    verboseLog(`Found ${sundays.length} Sundays in season for combo practices`);
+
+    let totalPractices = 0;
+    let totalCages = 0;
 
     // Schedule for each Sunday and each division
     for (const sunday of sundays) {
       const weekNumber = getWeekNumberForDate(sunday, this.weekDefinitions);
 
-      for (const { divisionId, config, teams } of divisionsWithPairedPractice) {
+      for (const { divisionId, config, teams } of divisionsWithComboPractice) {
         const divName = this.divisionNames.get(divisionId) || divisionId;
 
         // Check division-level blackout
@@ -2931,10 +2924,11 @@ export class ScheduleGenerator {
         // Get field and cage IDs from config
         const fieldId = config.sundayPairedPracticeFieldId;
         const cageId = config.sundayPairedPracticeCageId;
-        const durationHours = config.sundayPairedPracticeDurationHours || 2;
+        const totalDurationHours = config.sundayPairedPracticeDurationHours || 2;
+        const halfDurationMinutes = (totalDurationHours * 60) / 2;
 
         if (!fieldId || !cageId) {
-          this.log('warning', 'paired_practice', `Division ${divName} missing field or cage config for paired practice`);
+          this.log('warning', 'practice', `Division ${divName} missing field or cage config for combo practice`);
           continue;
         }
 
@@ -2958,15 +2952,16 @@ export class ScheduleGenerator {
 
         // Calculate start times for each pair
         let currentStartMinutes = timeToMinutes(dayStart);
-        const durationMinutes = durationHours * 60;
+        const totalDurationMinutes = totalDurationHours * 60;
 
         for (const [team1Id, team2Id] of rotatedPairings) {
-          const startTime = minutesToTime(currentStartMinutes);
-          const endTime = minutesToTime(currentStartMinutes + durationMinutes);
+          const slotStartTime = minutesToTime(currentStartMinutes);
+          const midTime = minutesToTime(currentStartMinutes + halfDurationMinutes);
+          const slotEndTime = minutesToTime(currentStartMinutes + totalDurationMinutes);
 
           // Check if this time slot fits within the available window
-          if (currentStartMinutes + durationMinutes > timeToMinutes(dayEnd)) {
-            this.log('warning', 'paired_practice', `Insufficient time on ${sunday} for all paired practices in ${divName}`);
+          if (currentStartMinutes + totalDurationMinutes > timeToMinutes(dayEnd)) {
+            this.log('warning', 'practice', `Insufficient time on ${sunday} for all combo practices in ${divName}`);
             break;
           }
 
@@ -2978,73 +2973,109 @@ export class ScheduleGenerator {
             const eventStart = timeToMinutes(event.startTime);
             const eventEnd = timeToMinutes(event.endTime);
             const newStart = currentStartMinutes;
-            const newEnd = currentStartMinutes + durationMinutes;
+            const newEnd = currentStartMinutes + totalDurationMinutes;
             return newStart < eventEnd && newEnd > eventStart;
           });
 
           if (hasConflict) {
-            verboseLog(`  ${divName}: Time conflict at ${startTime} on ${sunday}, skipping`);
-            currentStartMinutes += durationMinutes;
+            verboseLog(`  ${divName}: Time conflict at ${slotStartTime} on ${sunday}, skipping`);
+            currentStartMinutes += totalDurationMinutes;
             continue;
           }
 
-          // Create the paired practice event
           const team1Name = teams.find((t) => t.id === team1Id)?.name || team1Id;
           const team2Name = teams.find((t) => t.id === team2Id)?.name || team2Id;
 
-          const event: ScheduledEventDraft = {
+          // Create 4 separate events:
+          // Team 1: practice (field) first half, cage second half
+          // Team 2: cage first half, practice (field) second half
+
+          const team1Practice: ScheduledEventDraft = {
             seasonId: this.season.id,
             divisionId,
-            eventType: 'paired_practice',
+            eventType: 'practice',
             date: sunday,
-            startTime,
-            endTime,
+            startTime: slotStartTime,
+            endTime: midTime,
             fieldId,
-            cageId,
-            team1Id,
-            team2Id,
+            teamId: team1Id,
           };
 
-          this.scheduledEvents.push(event);
+          const team1Cage: ScheduledEventDraft = {
+            seasonId: this.season.id,
+            divisionId,
+            eventType: 'cage',
+            date: sunday,
+            startTime: midTime,
+            endTime: slotEndTime,
+            cageId,
+            teamId: team1Id,
+          };
 
-          // Update team states for both teams
+          const team2Cage: ScheduledEventDraft = {
+            seasonId: this.season.id,
+            divisionId,
+            eventType: 'cage',
+            date: sunday,
+            startTime: slotStartTime,
+            endTime: midTime,
+            cageId,
+            teamId: team2Id,
+          };
+
+          const team2Practice: ScheduledEventDraft = {
+            seasonId: this.season.id,
+            divisionId,
+            eventType: 'practice',
+            date: sunday,
+            startTime: midTime,
+            endTime: slotEndTime,
+            fieldId,
+            teamId: team2Id,
+          };
+
+          // Add all 4 events
+          this.scheduledEvents.push(team1Practice, team1Cage, team2Cage, team2Practice);
+          totalPractices += 2;
+          totalCages += 2;
+
+          // Update team states for all 4 events
           const team1State = this.teamSchedulingStates.get(team1Id);
           const team2State = this.teamSchedulingStates.get(team2Id);
 
           if (team1State) {
-            updateTeamStateAfterScheduling(team1State, event, weekNumber);
+            updateTeamStateAfterScheduling(team1State, team1Practice, weekNumber);
+            updateTeamStateAfterScheduling(team1State, team1Cage, weekNumber);
           }
           if (team2State) {
-            updateTeamStateAfterScheduling(team2State, event, weekNumber);
+            updateTeamStateAfterScheduling(team2State, team2Cage, weekNumber);
+            updateTeamStateAfterScheduling(team2State, team2Practice, weekNumber);
           }
 
-          // Update scoring context resource usage for both field and cage
+          // Update scoring context resource usage
           if (this.scoringContext) {
-            const durationHours = (timeToMinutes(endTime) - timeToMinutes(startTime)) / 60;
-            if (fieldId) {
-              updateResourceUsage(this.scoringContext, fieldId, sunday, durationHours);
-            }
-            if (cageId) {
-              updateResourceUsage(this.scoringContext, cageId, sunday, durationHours);
-            }
+            const halfDurationHours = halfDurationMinutes / 60;
+            // Field is used for full duration (team1 first half, team2 second half)
+            updateResourceUsage(this.scoringContext, fieldId, sunday, totalDurationHours);
+            // Cage is used for full duration (team2 first half, team1 second half)
+            updateResourceUsage(this.scoringContext, cageId, sunday, totalDurationHours);
           }
 
-          verboseLog(`  ${divName}: Scheduled ${team1Name} + ${team2Name} at ${startTime}-${endTime} on ${sunday}`);
-          this.log('info', 'paired_practice', `Scheduled paired practice`, {
+          verboseLog(`  ${divName}: Scheduled ${team1Name} + ${team2Name} combo at ${slotStartTime}-${slotEndTime} on ${sunday}`);
+          this.log('info', 'practice', `Scheduled Sunday combo practice`, {
             division: divName,
             team1: team1Name,
             team2: team2Name,
             date: sunday,
-            time: `${startTime}-${endTime}`,
+            time: `${slotStartTime}-${slotEndTime}`,
           });
 
-          currentStartMinutes += durationMinutes;
+          currentStartMinutes += totalDurationMinutes;
         }
       }
     }
 
-    const totalPairedPractices = this.scheduledEvents.filter((e) => e.eventType === 'paired_practice').length;
-    this.log('info', 'paired_practice', `Completed Sunday paired practice scheduling: ${totalPairedPractices} events`);
+    this.log('info', 'practice', `Completed Sunday combo practice scheduling: ${totalPractices} practices, ${totalCages} cage sessions`);
   }
 
   /**
@@ -3090,14 +3121,26 @@ export class ScheduleGenerator {
           });
         })
         .sort((a, b) => {
-          // Max-gap balance approach: prioritize teams that would create a NEW max gap
-          // if they don't get a practice this week. This balances max gaps across teams.
+          // Balance approach: prioritize by practice deficit first, then by gap
+          // This ensures teams that are behind on total practices get priority
+
+          // Calculate practice deficit (negative means behind, positive means ahead)
+          // Use ratio to handle teams with different totalPracticesNeeded
+          const deficitA = a.practicesScheduled - (a.totalPracticesNeeded * (week.weekNumber + 1) / this.weekDefinitions.length);
+          const deficitB = b.practicesScheduled - (b.totalPracticesNeeded * (week.weekNumber + 1) / this.weekDefinitions.length);
+
+          // PRIMARY: teams more behind on total practices get priority (larger deficit = more behind)
+          // Use a threshold of 0.5 practices to avoid excessive tie-breaking on small differences
+          if (Math.abs(deficitA - deficitB) > 0.5) {
+            return deficitA - deficitB; // More negative (more behind) comes first
+          }
+
+          // SECONDARY: use gap-based approach for tie-breaking
           const weekStartDay = parseLocalDate(week.startDate).getTime();
           const dayMs = 24 * 60 * 60 * 1000;
 
-          // Find last REGULAR practice date for each team
-          // Only use regularPracticeDates (not paired practices) for gap balancing
-          const getLastRegularPracticeDay = (ts: TeamSchedulingState): number => {
+          // Find last practice date for each team
+          const getLastPracticeDay = (ts: TeamSchedulingState): number => {
             let lastDay = -Infinity;
             for (const dateStr of ts.regularPracticeDates) {
               const dayNum = parseLocalDate(dateStr).getTime();
@@ -3106,24 +3149,22 @@ export class ScheduleGenerator {
                 lastDay = dayNum;
               }
             }
-            // If no regular practices yet, treat as 4 weeks ago (larger default to prioritize)
+            // If no practices yet, treat as 4 weeks ago (larger default to prioritize)
             return lastDay === -Infinity ? weekStartDay - 28 * dayMs : lastDay;
           };
 
-          // Calculate potential gap from last practice to mid-week (gap being created NOW)
+          // Calculate potential gap from last practice to mid-week
           const midWeekDay = weekStartDay + 3 * dayMs;
-          const lastPracticeA = getLastRegularPracticeDay(a);
-          const lastPracticeB = getLastRegularPracticeDay(b);
+          const lastPracticeA = getLastPracticeDay(a);
+          const lastPracticeB = getLastPracticeDay(b);
           const potentialGapA = Math.round((midWeekDay - lastPracticeA) / dayMs);
           const potentialGapB = Math.round((midWeekDay - lastPracticeB) / dayMs);
 
-          // Calculate effective gap: the max of their worst past gap OR the gap being created now
-          // This ensures that even if a team had tight early practices, if they've been waiting
-          // a long time since their last practice, that current gap takes priority
+          // Calculate effective gap: max of worst past gap OR current gap
           const effectiveGapA = Math.max(a.maxPracticeGapSoFar, potentialGapA);
           const effectiveGapB = Math.max(b.maxPracticeGapSoFar, potentialGapB);
 
-          // PRIMARY: teams with LARGER effective gap get priority (they've been shortchanged)
+          // Teams with LARGER effective gap get priority
           if (effectiveGapA !== effectiveGapB) {
             return effectiveGapB - effectiveGapA;
           }
@@ -3132,8 +3173,7 @@ export class ScheduleGenerator {
           return a.teamName.localeCompare(b.teamName);
         });
 
-      // NO rotation - pure gap-based ordering achieves better gap balance
-      // (Simulation tests showed rotation overrides gap priority and hurts balance)
+      // Teams are already sorted by deficit-first, gap-second approach
       const rotatedByWeek = teamsNeedingPractices;
 
       if (rotatedByWeek.length === 0) {
@@ -3194,12 +3234,23 @@ export class ScheduleGenerator {
             });
           })
           .sort((a, b) => {
-            // Re-sort using max-gap balance approach (may have changed since last round)
+            // Re-sort: prioritize by practice deficit first, then by gap
+            // This ensures teams that are behind on total practices get priority
+
+            // Calculate practice deficit (negative means behind, positive means ahead)
+            const deficitA = a.practicesScheduled - (a.totalPracticesNeeded * (week.weekNumber + 1) / this.weekDefinitions.length);
+            const deficitB = b.practicesScheduled - (b.totalPracticesNeeded * (week.weekNumber + 1) / this.weekDefinitions.length);
+
+            // PRIMARY: teams more behind on total practices get priority
+            if (Math.abs(deficitA - deficitB) > 0.5) {
+              return deficitA - deficitB; // More negative (more behind) comes first
+            }
+
+            // SECONDARY: gap-based tie-breaking
             const weekStartDay = parseLocalDate(week.startDate).getTime();
             const dayMs = 24 * 60 * 60 * 1000;
 
-            // Find last REGULAR practice date for each team
-            const getLastRegularPracticeDay = (ts: TeamSchedulingState): number => {
+            const getLastPracticeDay = (ts: TeamSchedulingState): number => {
               let lastDay = -Infinity;
               for (const dateStr of ts.regularPracticeDates) {
                 const dayNum = parseLocalDate(dateStr).getTime();
@@ -3210,23 +3261,19 @@ export class ScheduleGenerator {
               return lastDay === -Infinity ? weekStartDay - 28 * dayMs : lastDay;
             };
 
-            // Calculate potential gap from last practice to mid-week
             const midWeekDay = weekStartDay + 3 * dayMs;
-            const lastPracticeA = getLastRegularPracticeDay(a);
-            const lastPracticeB = getLastRegularPracticeDay(b);
+            const lastPracticeA = getLastPracticeDay(a);
+            const lastPracticeB = getLastPracticeDay(b);
             const potentialGapA = Math.round((midWeekDay - lastPracticeA) / dayMs);
             const potentialGapB = Math.round((midWeekDay - lastPracticeB) / dayMs);
 
-            // Calculate effective gap: the max of their worst past gap OR the gap being created now
             const effectiveGapA = Math.max(a.maxPracticeGapSoFar, potentialGapA);
             const effectiveGapB = Math.max(b.maxPracticeGapSoFar, potentialGapB);
 
-            // PRIMARY: teams with LARGER effective gap get priority (they've been shortchanged)
             if (effectiveGapA !== effectiveGapB) {
               return effectiveGapB - effectiveGapA;
             }
 
-            // Final: sort by team name for deterministic ordering
             return a.teamName.localeCompare(b.teamName);
           });
 
@@ -3235,7 +3282,7 @@ export class ScheduleGenerator {
           break;
         }
 
-        // NO rotation - pure gap-based ordering achieves better balance
+        // Teams are already sorted by deficit-first, gap-second approach
         const rotatedStillNeed = stillNeedPractices;
 
         // Compute slot availability for scarcity calculation
@@ -4861,7 +4908,6 @@ export class ScheduleGenerator {
           game: newEvents.filter((e) => e.eventType === 'game').length,
           practice: newEvents.filter((e) => e.eventType === 'practice').length,
           cage: newEvents.filter((e) => e.eventType === 'cage').length,
-          paired_practice: newEvents.filter((e) => e.eventType === 'paired_practice').length,
         },
         eventsByDivision: this.calculateEventsByDivision(newEvents),
         averageEventsPerTeam: this.calculateAverageEventsPerTeam(newEvents),

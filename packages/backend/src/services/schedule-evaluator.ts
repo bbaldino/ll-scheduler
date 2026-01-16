@@ -255,14 +255,11 @@ function evaluateWeeklyRequirements(
     if (!division || !config) continue;
 
     // Filter events for this team
-    // Note: paired_practice events use team1Id/team2Id instead of teamId
     const teamEvents = events.filter(
       (e) =>
         e.teamId === team.id ||
         e.homeTeamId === team.id ||
-        e.awayTeamId === team.id ||
-        e.team1Id === team.id ||
-        e.team2Id === team.id
+        e.awayTeamId === team.id
     );
 
     const issues: string[] = [];
@@ -278,13 +275,8 @@ function evaluateWeeklyRequirements(
       );
 
       const gamesScheduled = weekEvents.filter((e) => e.eventType === 'game').length;
-      // paired_practice counts as both a practice AND a cage session
-      const practicesScheduled = weekEvents.filter(
-        (e) => e.eventType === 'practice' || e.eventType === 'paired_practice'
-      ).length;
-      const cagesScheduled = weekEvents.filter(
-        (e) => e.eventType === 'cage' || e.eventType === 'paired_practice'
-      ).length;
+      const practicesScheduled = weekEvents.filter((e) => e.eventType === 'practice').length;
+      const cagesScheduled = weekEvents.filter((e) => e.eventType === 'cage').length;
 
       // Determine which event types are allowed for this week based on season
       const allowedTypes = getAllowedEventTypesForWeek(week.start, week.end, season);
@@ -1231,10 +1223,8 @@ function evaluatePracticeSpacing(
   const MAX_BTB_RANGE = 2; // Max allowed difference in back-to-back count within a division
   const MAX_GAP_DAYS = 7; // Max allowed days between consecutive practices
 
-  // Filter to only practices (including paired_practice)
-  const practices = events.filter(
-    (e) => e.eventType === 'practice' || e.eventType === 'paired_practice'
-  );
+  // Filter to only practices
+  const practices = events.filter((e) => e.eventType === 'practice');
 
   for (const team of teams) {
     const division = divisionMap.get(team.divisionId);
@@ -1242,12 +1232,7 @@ function evaluatePracticeSpacing(
 
     // Get all practices for this team, sorted by date
     const teamPractices = practices
-      .filter(
-        (e) =>
-          e.teamId === team.id ||
-          e.team1Id === team.id ||
-          e.team2Id === team.id
-      )
+      .filter((e) => e.teamId === team.id)
       .sort((a, b) => a.date.localeCompare(b.date));
 
     if (teamPractices.length < 2) {

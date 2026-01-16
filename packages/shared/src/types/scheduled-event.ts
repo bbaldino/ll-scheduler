@@ -31,10 +31,6 @@ export interface ScheduledEvent {
 
   // Practice and cage-specific fields
   teamId?: string; // Single team for practices and cage sessions
-
-  // Paired practice fields (two teams share field + cage, rotating halves)
-  team1Id?: string; // First team in the pair
-  team2Id?: string; // Second team in the pair
 }
 
 /**
@@ -54,8 +50,6 @@ export interface CreateScheduledEventInput {
   homeTeamId?: string;
   awayTeamId?: string;
   teamId?: string;
-  team1Id?: string;
-  team2Id?: string;
 }
 
 /**
@@ -72,8 +66,6 @@ export interface UpdateScheduledEventInput {
   homeTeamId?: string;
   awayTeamId?: string;
   teamId?: string;
-  team1Id?: string;
-  team2Id?: string;
 }
 
 /**
