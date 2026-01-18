@@ -124,6 +124,12 @@ export default function SeasonsPage() {
 
   // Blackout dates editing state
   const [editingBlackoutsForSeasonId, setEditingBlackoutsForSeasonId] = useState<string | null>(null);
+  // State for the blackout being added/edited in the dialog (index: null = new, number = editing existing)
+  const [editingBlackout, setEditingBlackout] = useState<{
+    seasonId: string;
+    index: number | null;
+    data: SeasonBlackout;
+  } | null>(null);
 
   // Load divisions on mount
   useEffect(() => {
@@ -481,67 +487,84 @@ export default function SeasonsPage() {
     );
   };
 
-  // Season blackout division toggle
-  const toggleSeasonBlackoutDivision = (
-    season: Season,
-    index: number,
-    divisionId: string
-  ) => {
-    const blackouts = season.blackoutDates || [];
-    const blackout = blackouts[index];
-    if (!blackout) return;
-
-    const currentDivisionIds = blackout.divisionIds || [];
-    const newDivisionIds = currentDivisionIds.includes(divisionId)
-      ? currentDivisionIds.filter((id) => id !== divisionId)
-      : [...currentDivisionIds, divisionId];
-
-    // If all divisions are now selected, set to empty (meaning "all divisions")
-    const updated = blackouts.map((b, i) =>
-      i === index
-        ? { ...b, divisionIds: newDivisionIds.length > 0 ? newDivisionIds : undefined }
-        : b
-    );
-    handleUpdate(season, { blackoutDates: updated });
+  // Blackout dialog helpers
+  const startAddingBlackout = (season: Season) => {
+    setEditingBlackout({
+      seasonId: season.id,
+      index: null,
+      data: { date: season.startDate },
+    });
   };
 
-  // Set blackout to apply to all divisions or specific ones
-  const setSeasonBlackoutAllDivisions = (
-    season: Season,
-    index: number,
-    allDivisions: boolean
-  ) => {
-    const blackouts = season.blackoutDates || [];
-    const updated = blackouts.map((b, i) =>
-      i === index
-        ? { ...b, divisionIds: allDivisions ? undefined : [] }
-        : b
-    );
-    handleUpdate(season, { blackoutDates: updated });
+  const startEditingBlackoutItem = (seasonId: string, index: number, blackout: SeasonBlackout) => {
+    setEditingBlackout({
+      seasonId,
+      index,
+      data: { ...blackout },
+    });
   };
 
-  // Season blackout event type toggle
-  const toggleSeasonBlackoutEventType = (
-    season: Season,
-    index: number,
-    eventType: 'game' | 'practice' | 'cage'
-  ) => {
+  const cancelEditingBlackout = () => {
+    setEditingBlackout(null);
+  };
+
+  const saveEditingBlackout = async () => {
+    if (!editingBlackout) return;
+    const season = seasons.find((s) => s.id === editingBlackout.seasonId);
+    if (!season) return;
+
     const blackouts = season.blackoutDates || [];
-    const blackout = blackouts[index];
-    if (!blackout) return;
+    let updated: SeasonBlackout[];
 
-    const currentTypes = blackout.blockedEventTypes || [];
-    const newTypes = currentTypes.includes(eventType)
-      ? currentTypes.filter((t) => t !== eventType)
-      : [...currentTypes, eventType];
+    if (editingBlackout.index === null) {
+      // Adding new
+      updated = [...blackouts, editingBlackout.data].sort((a, b) => a.date.localeCompare(b.date));
+    } else {
+      // Editing existing
+      updated = blackouts.map((b, i) =>
+        i === editingBlackout.index ? editingBlackout.data : b
+      ).sort((a, b) => a.date.localeCompare(b.date));
+    }
 
-    // If no types are selected, remove the blockedEventTypes field (blocks all types)
-    const updated = blackouts.map((b, i) =>
-      i === index
-        ? { ...b, blockedEventTypes: newTypes.length > 0 ? newTypes : undefined }
-        : b
-    );
-    handleUpdate(season, { blackoutDates: updated });
+    await handleUpdate(season, { blackoutDates: updated });
+    setEditingBlackout(null);
+  };
+
+  const deleteBlackoutItem = async (season: Season, index: number) => {
+    const updated = (season.blackoutDates || []).filter((_, i) => i !== index);
+    await handleUpdate(season, { blackoutDates: updated });
+  };
+
+  const updateEditingBlackoutData = (updates: Partial<SeasonBlackout>) => {
+    if (!editingBlackout) return;
+    setEditingBlackout({
+      ...editingBlackout,
+      data: { ...editingBlackout.data, ...updates },
+    });
+  };
+
+  const toggleEditingBlackoutEventType = (eventType: EventType) => {
+    if (!editingBlackout) return;
+    const currentTypes = editingBlackout.data.blockedEventTypes;
+    if (currentTypes === undefined) {
+      // Currently "all types" - switching to specific, start with all three then remove the clicked one
+      const allTypes: EventType[] = ['game', 'practice', 'cage'];
+      updateEditingBlackoutData({ blockedEventTypes: allTypes.filter((t) => t !== eventType) });
+    } else {
+      const newTypes = currentTypes.includes(eventType)
+        ? currentTypes.filter((t) => t !== eventType)
+        : [...currentTypes, eventType];
+      updateEditingBlackoutData({ blockedEventTypes: newTypes.length > 0 ? newTypes : undefined });
+    }
+  };
+
+  const toggleEditingBlackoutDivision = (divisionId: string) => {
+    if (!editingBlackout) return;
+    const currentIds = editingBlackout.data.divisionIds || [];
+    const newIds = currentIds.includes(divisionId)
+      ? currentIds.filter((id) => id !== divisionId)
+      : [...currentIds, divisionId];
+    updateEditingBlackoutData({ divisionIds: newIds.length > 0 ? newIds : undefined });
   };
 
   return (
@@ -714,136 +737,182 @@ export default function SeasonsPage() {
                 </div>
                 {editingBlackoutsForSeasonId === season.id ? (
                   <>
-                    <p className={styles.helperText}>
-                      Block specific event types on specific dates or date ranges. If no event types are checked, all types are blocked.
-                    </p>
-                    <div className={styles.blackoutDatesList}>
-                      {(season.blackoutDates || [])
-                        .sort((a, b) => a.date.localeCompare(b.date))
-                        .map((blackout, index) => (
-                        <div key={`${blackout.date}-${index}`} className={styles.blackoutDateItem}>
-                          <div className={styles.blackoutDateRange}>
-                            <input
-                              type="date"
-                              value={blackout.date}
-                              min={season.startDate}
-                              max={blackout.endDate || season.endDate}
-                              onChange={(e) => {
-                                const updated = (season.blackoutDates || []).map((b, i) =>
-                                  i === index ? { ...b, date: e.target.value } : b
-                                );
-                                handleUpdate(season, { blackoutDates: updated });
-                              }}
-                              className={styles.blackoutDateInput}
-                            />
-                            {blackout.endDate ? (
-                              <>
-                                <span className={styles.blackoutDateSeparator}>to</span>
-                                <input
-                                  type="date"
-                                  value={blackout.endDate}
-                                  min={blackout.date}
-                                  max={season.endDate}
-                                  onChange={(e) => {
-                                    const updated = (season.blackoutDates || []).map((b, i) =>
-                                      i === index ? { ...b, endDate: e.target.value || undefined } : b
-                                    );
-                                    handleUpdate(season, { blackoutDates: updated });
-                                  }}
-                                  className={styles.blackoutDateInput}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = (season.blackoutDates || []).map((b, i) =>
-                                      i === index ? { ...b, endDate: undefined } : b
-                                    );
-                                    handleUpdate(season, { blackoutDates: updated });
-                                  }}
-                                  className={styles.clearEndDateBtn}
-                                  title="Remove end date"
-                                >
-                                  ×
-                                </button>
-                              </>
-                            ) : (
+                    {/* List of existing blackouts with Edit/Delete buttons */}
+                    <div className={styles.blackoutDatesEditList}>
+                      {(season.blackoutDates || []).length === 0 ? (
+                        <span className={styles.noBlackouts}>None configured</span>
+                      ) : (
+                        (season.blackoutDates || [])
+                          .sort((a, b) => a.date.localeCompare(b.date))
+                          .map((blackout, index) => {
+                            const startDate = new Date(blackout.date + 'T00:00:00');
+                            const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            let dateStr = startStr;
+                            if (blackout.endDate) {
+                              const endDate = new Date(blackout.endDate + 'T00:00:00');
+                              const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                              dateStr = `${startStr} - ${endStr}`;
+                            }
+                            const eventTypes = !blackout.blockedEventTypes || blackout.blockedEventTypes.length === 0 || blackout.blockedEventTypes.length === 3
+                              ? 'All'
+                              : blackout.blockedEventTypes.map(t => t.charAt(0).toUpperCase()).join('');
+                            const divisionInfo = blackout.divisionIds
+                              ? blackout.divisionIds.map(id => divisions.find(d => d.id === id)?.name).filter(Boolean).join(', ')
+                              : 'All divisions';
+                            const isCurrentlyEditing = editingBlackout?.seasonId === season.id && editingBlackout?.index === index;
+                            return (
+                              <div key={`${blackout.date}-${index}`} className={`${styles.blackoutEditListItem} ${isCurrentlyEditing ? styles.blackoutEditListItemActive : ''}`}>
+                                <div className={styles.blackoutEditListInfo}>
+                                  <span className={styles.blackoutReadOnlyDate}>{dateStr}</span>
+                                  {blackout.reason && <span className={styles.blackoutReadOnlyReason}>{blackout.reason}</span>}
+                                  <span className={styles.blackoutReadOnlyMeta}>({eventTypes}) {divisionInfo}</span>
+                                </div>
+                                <div className={styles.blackoutEditListActions}>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingBlackoutItem(season.id, index, blackout)}
+                                    className={styles.blackoutEditBtn}
+                                    disabled={editingBlackout !== null}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteBlackoutItem(season, index)}
+                                    className={styles.blackoutDeleteBtn}
+                                    disabled={editingBlackout !== null}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
+
+                    {/* Add button (when not currently editing) */}
+                    {editingBlackout === null && (
+                      <div className={styles.addBlackoutDate}>
+                        <button
+                          type="button"
+                          onClick={() => startAddingBlackout(season)}
+                          className={styles.addBlackoutBtn}
+                        >
+                          + Add Blackout Date
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Edit/Add form at the bottom */}
+                    {editingBlackout?.seasonId === season.id && (
+                      <div className={styles.blackoutEditForm}>
+                        <h4>{editingBlackout.index === null ? 'Add Blackout Date' : 'Edit Blackout Date'}</h4>
+                        <div className={styles.blackoutEditFormRow}>
+                          <label>Date:</label>
+                          <input
+                            type="date"
+                            value={editingBlackout.data.date}
+                            min={season.startDate}
+                            max={editingBlackout.data.endDate || season.endDate}
+                            onChange={(e) => updateEditingBlackoutData({ date: e.target.value })}
+                            className={styles.blackoutDateInput}
+                          />
+                          {editingBlackout.data.endDate ? (
+                            <>
+                              <span className={styles.blackoutDateSeparator}>to</span>
+                              <input
+                                type="date"
+                                value={editingBlackout.data.endDate}
+                                min={editingBlackout.data.date}
+                                max={season.endDate}
+                                onChange={(e) => updateEditingBlackoutData({ endDate: e.target.value || undefined })}
+                                className={styles.blackoutDateInput}
+                              />
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const updated = (season.blackoutDates || []).map((b, i) =>
-                                    i === index ? { ...b, endDate: b.date } : b
-                                  );
-                                  handleUpdate(season, { blackoutDates: updated });
-                                }}
-                                className={styles.addEndDateBtn}
+                                onClick={() => updateEditingBlackoutData({ endDate: undefined })}
+                                className={styles.clearEndDateBtn}
+                                title="Remove end date"
                               >
-                                + Range
+                                ×
                               </button>
-                            )}
-                          </div>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => updateEditingBlackoutData({ endDate: editingBlackout.data.date })}
+                              className={styles.addEndDateBtn}
+                            >
+                              + Range
+                            </button>
+                          )}
+                        </div>
+                        <div className={styles.blackoutEditFormRow}>
+                          <label>Event Types:</label>
                           <div className={styles.seasonBlackoutTypes}>
                             <label className={styles.seasonBlackoutTypeLabel}>
                               <input
                                 type="checkbox"
-                                checked={blackout.blockedEventTypes === undefined}
+                                checked={editingBlackout.data.blockedEventTypes === undefined}
                                 onChange={(e) => {
                                   const allEventTypes: EventType[] = ['game', 'practice', 'cage'];
-                                  const updated = (season.blackoutDates || []).map((b, i) =>
-                                    i === index ? { ...b, blockedEventTypes: e.target.checked ? undefined : allEventTypes } : b
-                                  );
-                                  handleUpdate(season, { blackoutDates: updated });
+                                  updateEditingBlackoutData({ blockedEventTypes: e.target.checked ? undefined : allEventTypes });
                                 }}
                               />
                               All event types
                             </label>
-                            {blackout.blockedEventTypes !== undefined && (
+                            {editingBlackout.data.blockedEventTypes !== undefined && (
                               <>
                                 <span className={styles.divisionSeparator}>|</span>
                                 <label className={styles.seasonBlackoutTypeLabel}>
                                   <input
                                     type="checkbox"
-                                    checked={blackout.blockedEventTypes.includes('game')}
-                                    onChange={() => toggleSeasonBlackoutEventType(season, index, 'game')}
+                                    checked={editingBlackout.data.blockedEventTypes.includes('game')}
+                                    onChange={() => toggleEditingBlackoutEventType('game')}
                                   />
                                   Game
                                 </label>
                                 <label className={styles.seasonBlackoutTypeLabel}>
                                   <input
                                     type="checkbox"
-                                    checked={blackout.blockedEventTypes.includes('practice')}
-                                    onChange={() => toggleSeasonBlackoutEventType(season, index, 'practice')}
+                                    checked={editingBlackout.data.blockedEventTypes.includes('practice')}
+                                    onChange={() => toggleEditingBlackoutEventType('practice')}
                                   />
                                   Practice
                                 </label>
                                 <label className={styles.seasonBlackoutTypeLabel}>
                                   <input
                                     type="checkbox"
-                                    checked={blackout.blockedEventTypes.includes('cage')}
-                                    onChange={() => toggleSeasonBlackoutEventType(season, index, 'cage')}
+                                    checked={editingBlackout.data.blockedEventTypes.includes('cage')}
+                                    onChange={() => toggleEditingBlackoutEventType('cage')}
                                   />
                                   Cage
                                 </label>
                               </>
                             )}
                           </div>
+                        </div>
+                        <div className={styles.blackoutEditFormRow}>
+                          <label>Divisions:</label>
                           <div className={styles.seasonBlackoutDivisions}>
                             <label className={styles.seasonBlackoutDivisionLabel}>
                               <input
                                 type="checkbox"
-                                checked={blackout.divisionIds === undefined}
-                                onChange={(e) => setSeasonBlackoutAllDivisions(season, index, e.target.checked)}
+                                checked={editingBlackout.data.divisionIds === undefined}
+                                onChange={(e) => updateEditingBlackoutData({ divisionIds: e.target.checked ? undefined : [] })}
                               />
                               All Divisions
                             </label>
-                            {blackout.divisionIds !== undefined && (
+                            {editingBlackout.data.divisionIds !== undefined && (
                               <>
                                 <span className={styles.divisionSeparator}>|</span>
                                 {divisions.map((division) => (
                                   <label key={division.id} className={styles.seasonBlackoutDivisionLabel}>
                                     <input
                                       type="checkbox"
-                                      checked={blackout.divisionIds?.includes(division.id) || false}
-                                      onChange={() => toggleSeasonBlackoutDivision(season, index, division.id)}
+                                      checked={editingBlackout.data.divisionIds?.includes(division.id) || false}
+                                      onChange={() => toggleEditingBlackoutDivision(division.id)}
                                     />
                                     {division.name}
                                   </label>
@@ -851,46 +920,27 @@ export default function SeasonsPage() {
                               </>
                             )}
                           </div>
+                        </div>
+                        <div className={styles.blackoutEditFormRow}>
+                          <label>Reason:</label>
                           <input
                             type="text"
-                            placeholder="Reason (optional)"
-                            defaultValue={blackout.reason || ''}
-                            onBlur={(e) => {
-                              const newReason = e.target.value || undefined;
-                              if (newReason !== blackout.reason) {
-                                const updated = (season.blackoutDates || []).map((b, i) =>
-                                  i === index ? { ...b, reason: newReason } : b
-                                );
-                                handleUpdate(season, { blackoutDates: updated });
-                              }
-                            }}
-                            className={styles.seasonBlackoutReason}
+                            placeholder="Optional description"
+                            value={editingBlackout.data.reason || ''}
+                            onChange={(e) => updateEditingBlackoutData({ reason: e.target.value || undefined })}
+                            className={styles.blackoutReasonInput}
                           />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (season.blackoutDates || []).filter((_, i) => i !== index);
-                              handleUpdate(season, { blackoutDates: updated });
-                            }}
-                            className={styles.removeBlackoutBtn}
-                          >
-                            ×
+                        </div>
+                        <div className={styles.blackoutEditFormActions}>
+                          <button type="button" onClick={saveEditingBlackout} className={styles.blackoutSaveBtn}>
+                            {editingBlackout.index === null ? 'Add' : 'Save'}
+                          </button>
+                          <button type="button" onClick={cancelEditingBlackout} className={styles.blackoutCancelBtn}>
+                            Cancel
                           </button>
                         </div>
-                      ))}
-                    </div>
-                    <div className={styles.addBlackoutDate}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newBlackout: SeasonBlackout = { date: season.startDate };
-                          handleUpdate(season, { blackoutDates: [...(season.blackoutDates || []), newBlackout] });
-                        }}
-                        className={styles.addBlackoutBtn}
-                      >
-                        + Add Blackout Date
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className={styles.blackoutDatesReadOnly}>

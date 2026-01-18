@@ -1286,3 +1286,165 @@
 .cancelConfirmBtn:hover {
   background-color: #e0e0e0;
 }
+
+/* Blackout Edit Dialog UI */
+.blackoutDatesEditList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.blackoutEditListItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.blackoutEditListItem:hover {
+  background-color: #fafafa;
+}
+
+.blackoutEditListItemActive {
+  background-color: #e3f2fd;
+  border-color: #90caf9;
+}
+
+.blackoutEditListItemActive:hover {
+  background-color: #e3f2fd;
+}
+
+.blackoutEditListInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.blackoutEditListActions {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+}
+
+.blackoutEditBtn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85em;
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #1565c0;
+}
+
+.blackoutEditBtn:hover {
+  background-color: #bbdefb;
+}
+
+.blackoutDeleteBtn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85em;
+  background-color: #fff;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #c62828;
+}
+
+.blackoutDeleteBtn:hover {
+  background-color: #ffebee;
+}
+
+.blackoutEditForm {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.blackoutEditFormTitle {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95em;
+  font-weight: 600;
+  color: #333;
+}
+
+.blackoutEditFormRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.blackoutEditFormRow > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85em;
+  font-weight: 500;
+  color: #555;
+}
+
+.blackoutEditFormRow input[type="date"] {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.blackoutReasonInput {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+  min-width: 150px;
+}
+
+.blackoutEditFormActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #ddd;
+}
+
+.blackoutSaveBtn {
+  padding: 0.4rem 1rem;
+  background-color: #4caf50;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9em;
+}
+
+.blackoutSaveBtn:hover:not(:disabled) {
+  background-color: #388e3c;
+}
+
+.blackoutSaveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.blackoutCancelBtn {
+  padding: 0.4rem 1rem;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.blackoutCancelBtn:hover {
+  background-color: #f0f0f0;
+}
