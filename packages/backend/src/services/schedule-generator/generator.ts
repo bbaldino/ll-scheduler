@@ -846,6 +846,30 @@ export class ScheduleGenerator {
           (a) => a.seasonFieldId === seasonField.id && a.dayOfWeek === dayOfWeek
         );
 
+        // Check for "added" overrides on this date (adds availability on days without regular availability)
+        const addedOverride = this.fieldOverrides.find(
+          (o) => o.seasonFieldId === seasonField.id && o.date === date && o.overrideType === 'added'
+        );
+
+        // If there's no regular availability but there's an "added" override, use the override
+        if (availability.length === 0 && addedOverride && addedOverride.startTime && addedOverride.endTime) {
+          const duration = calculateDuration(addedOverride.startTime, addedOverride.endTime);
+          targetSlots.push({
+            resourceType: 'field',
+            resourceId: seasonField.fieldId,
+            resourceName: seasonField.field?.name || seasonField.fieldId,
+            slot: {
+              date,
+              dayOfWeek,
+              startTime: addedOverride.startTime,
+              endTime: addedOverride.endTime,
+              duration,
+            },
+            singleEventOnly: addedOverride.singleEventOnly,
+          });
+          continue;
+        }
+
         for (const avail of availability) {
           const override = this.fieldOverrides.find(
             (o) => o.seasonFieldId === seasonField.id && o.date === date
@@ -916,6 +940,30 @@ export class ScheduleGenerator {
         const availability = this.cageAvailability.filter(
           (a) => a.seasonCageId === seasonCage.id && a.dayOfWeek === dayOfWeek
         );
+
+        // Check for "added" overrides on this date (adds availability on days without regular availability)
+        const addedOverride = this.cageOverrides.find(
+          (o) => o.seasonCageId === seasonCage.id && o.date === date && o.overrideType === 'added'
+        );
+
+        // If there's no regular availability but there's an "added" override, use the override
+        if (availability.length === 0 && addedOverride && addedOverride.startTime && addedOverride.endTime) {
+          const duration = calculateDuration(addedOverride.startTime, addedOverride.endTime);
+          this.cageSlots.push({
+            resourceType: 'cage',
+            resourceId: seasonCage.cageId,
+            resourceName: seasonCage.cage?.name || seasonCage.cageId,
+            slot: {
+              date,
+              dayOfWeek,
+              startTime: addedOverride.startTime,
+              endTime: addedOverride.endTime,
+              duration,
+            },
+            singleEventOnly: addedOverride.singleEventOnly,
+          });
+          continue;
+        }
 
         for (const avail of availability) {
           const override = this.cageOverrides.find(
