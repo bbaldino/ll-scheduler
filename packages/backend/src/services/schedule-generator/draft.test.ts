@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateRoundRobinMatchups } from './draft.js';
+import { generateRoundRobinMatchups, rebalanceMatchupsHomeAway } from './draft.js';
 
 describe('generateRoundRobinMatchups - detailed example', () => {
   it('6 teams with 2 games per matchup - shows full breakdown', () => {
@@ -508,6 +508,110 @@ describe('generateRoundRobinMatchups', () => {
   });
 
   describe('home/away balance with partial cycles', () => {
+    // This is the real-world scenario: 6 teams, 18 games each
+    // This requires partial cycles (18 rounds = 3.6 cycles of 5 rounds each)
+    it('6 teams with 18 games each (maxRounds=18) should have balanced home/away after rebalancing', () => {
+      const teamIds = ['team1', 'team2', 'team3', 'team4', 'team5', 'team6'];
+
+      // 18 games per team with 5 opponents = need ceil(18/5) = 4 cycles
+      // But we only want 18 rounds total (maxRounds=18)
+      const rounds = generateRoundRobinMatchups(teamIds, 4, 18);
+      const allMatchups = rounds.flatMap(r => r.matchups);
+
+      console.log('\n=== 6 Teams, 18 Games Each (maxRounds=18) ===\n');
+      console.log('Total rounds:', rounds.length);
+      console.log('Total matchups:', allMatchups.length);
+
+      // Show BEFORE rebalancing
+      console.log('\n--- BEFORE Rebalancing ---');
+      const beforeHome = new Map<string, number>();
+      const beforeAway = new Map<string, number>();
+      for (const m of allMatchups) {
+        beforeHome.set(m.homeTeamId, (beforeHome.get(m.homeTeamId) || 0) + 1);
+        beforeAway.set(m.awayTeamId, (beforeAway.get(m.awayTeamId) || 0) + 1);
+      }
+      for (const id of teamIds) {
+        const home = beforeHome.get(id) || 0;
+        const away = beforeAway.get(id) || 0;
+        const diff = Math.abs(home - away);
+        console.log(`  ${id}: ${home} home, ${away} away (diff: ${diff})`);
+      }
+
+      // Apply rebalancing (this is what the real generator does)
+      const rebalanceResult = rebalanceMatchupsHomeAway(allMatchups, teamIds);
+      console.log(`\nRebalancing: ${rebalanceResult.phase1Swaps} Phase 1 swaps, ${rebalanceResult.phase2Swaps} Phase 2 swaps`);
+
+      // Show AFTER rebalancing
+      console.log('\n--- AFTER Rebalancing ---');
+      const pairingKey = (a: string, b: string) => a < b ? `${a}-${b}` : `${b}-${a}`;
+      const pairingData = new Map<string, { total: number; homeCount: Map<string, number> }>();
+      for (const m of allMatchups) {
+        const key = pairingKey(m.homeTeamId, m.awayTeamId);
+        if (!pairingData.has(key)) {
+          pairingData.set(key, { total: 0, homeCount: new Map() });
+        }
+        const data = pairingData.get(key)!;
+        data.total++;
+        data.homeCount.set(m.homeTeamId, (data.homeCount.get(m.homeTeamId) || 0) + 1);
+      }
+
+      // Log per-pairing breakdown
+      console.log('\nPer-pairing breakdown:');
+      let pairingIssues = 0;
+      for (const [pairing, data] of pairingData) {
+        const [t1, t2] = pairing.split('-');
+        const t1Home = data.homeCount.get(t1) || 0;
+        const t2Home = data.homeCount.get(t2) || 0;
+        const diff = Math.abs(t1Home - t2Home);
+        const status = diff <= 1 ? '✓' : '⚠';
+        if (diff > 1) pairingIssues++;
+        console.log(`  ${pairing}: ${data.total} games, ${t1} home ${t1Home}x, ${t2} home ${t2Home}x ${status}`);
+      }
+
+      // Log per-team totals from rebalance result
+      console.log('\nPer-team totals (18 games each, ideal is 9/9):');
+      let teamIssues = 0;
+      for (const id of teamIds) {
+        const balance = rebalanceResult.finalBalance.get(id)!;
+        const total = balance.home + balance.away;
+        const diff = Math.abs(balance.home - balance.away);
+        const status = diff <= 1 ? '✓' : '⚠';
+        if (diff > 1) teamIssues++;
+        console.log(`  ${id}: ${total} games (${balance.home} home, ${balance.away} away, diff: ${diff}) ${status}`);
+      }
+
+      console.log('\nSummary:');
+      console.log(`  Pairing issues (diff > 1): ${pairingIssues}`);
+      console.log(`  Team issues (diff > 1): ${teamIssues}`);
+
+      // ASSERTIONS
+
+      // Total matchups should be 54 (18 games × 6 teams / 2)
+      expect(allMatchups.length).toBe(54);
+
+      // Each team should play 18 games
+      for (const id of teamIds) {
+        const balance = rebalanceResult.finalBalance.get(id)!;
+        expect(balance.home + balance.away).toBe(18);
+      }
+
+      // Per-pairing balance: diff <= 1 for each pairing
+      for (const [, data] of pairingData) {
+        const counts = Array.from(data.homeCount.values());
+        if (counts.length === 2) {
+          const diff = Math.abs(counts[0] - counts[1]);
+          expect(diff).toBeLessThanOrEqual(1);
+        }
+      }
+
+      // Overall team balance: each team should have |home - away| <= 1
+      for (const id of teamIds) {
+        const balance = rebalanceResult.finalBalance.get(id)!;
+        const diff = Math.abs(balance.home - balance.away);
+        expect(diff).toBeLessThanOrEqual(1);
+      }
+    });
+
     // This simulates what happens when we use only some rounds from a larger generation
     it('maintains per-pairing balance even when taking subset of rounds', () => {
       const teamIds = ['team1', 'team2', 'team3', 'team4', 'team5', 'team6'];

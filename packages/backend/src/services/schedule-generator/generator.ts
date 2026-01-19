@@ -76,6 +76,7 @@ import {
   assignMatchupsToWeeks,
   generateTeamPairingsForWeek,
   calculateDaysBetween,
+  rebalanceMatchupsHomeAway,
 } from './draft.js';
 
 /**
@@ -1293,32 +1294,22 @@ export class ScheduleGenerator {
       verboseLog(`  Round-robin cycles to generate: ${minCycles}`);
 
       // Phase 1: Generate round-robin matchups
-      const teamIds = divisionTeams.map(t => t.id);
-      const rounds = generateRoundRobinMatchups(teamIds, minCycles);
-
       // Each round-robin round has every team playing exactly once.
       // With per-week overrides, we need variable rounds per week.
       const matchupsPerRound = numTeams / 2; // For even teams
       const totalRoundsNeeded = totalGamesPerTeam; // Total rounds = total games per team
 
-      verboseLog(`  Rounds generated: ${rounds.length}`);
       verboseLog(`  Matchups per round: ${matchupsPerRound}`);
       verboseLog(`  Total rounds needed: ${totalRoundsNeeded}`);
 
-      // Take only the rounds we need
-      // Note: This may cause home/away imbalance if we're not using complete cycles
-      const roundsToUse = rounds.slice(0, totalRoundsNeeded);
+      // Generate exactly the rounds we need - home/away is balanced internally
+      const teamIds = divisionTeams.map(t => t.id);
+      const rounds = generateRoundRobinMatchups(teamIds, minCycles, totalRoundsNeeded);
 
-      // Check if we're cutting mid-cycle (which could cause imbalance)
-      const roundsPerCycle = numTeams - 1; // For even teams
-      const completeCycles = Math.floor(roundsToUse.length / roundsPerCycle);
-      const extraRounds = roundsToUse.length % roundsPerCycle;
-      if (extraRounds > 0) {
-        verboseLog(`  ⚠️ Using ${completeCycles} complete cycles + ${extraRounds} extra rounds (may cause home/away imbalance)`);
-      }
+      verboseLog(`  Rounds generated: ${rounds.length}`);
 
-      if (roundsToUse.length < totalRoundsNeeded) {
-        console.warn(`  ⚠️ Not enough rounds: have ${roundsToUse.length}, need ${totalRoundsNeeded}`);
+      if (rounds.length < totalRoundsNeeded) {
+        console.warn(`  ⚠️ Not enough rounds: have ${rounds.length}, need ${totalRoundsNeeded}`);
         this.log('warning', 'game', `Not enough round-robin rounds for ${divisionName}`, {
           divisionId,
           roundsGenerated: rounds.length,
@@ -1334,8 +1325,8 @@ export class ScheduleGenerator {
       for (let weekIdx = 0; weekIdx < gameWeeks.length; weekIdx++) {
         const gamesThisWeek = gamesPerWeekByWeek[weekIdx];
         // Assign gamesThisWeek rounds to this week
-        for (let r = 0; r < gamesThisWeek && roundIndex < roundsToUse.length; r++) {
-          const round = roundsToUse[roundIndex++];
+        for (let r = 0; r < gamesThisWeek && roundIndex < rounds.length; r++) {
+          const round = rounds[roundIndex++];
           for (const m of round.matchups) {
             matchups.push({
               homeTeamId: m.homeTeamId,
@@ -1349,8 +1340,9 @@ export class ScheduleGenerator {
 
       verboseLog(`  Total matchups assigned: ${matchups.length}`);
 
-      // Home/away is already assigned by generateRoundRobinMatchups
-      // which balances within each pairing and uses overall balance as tiebreaker
+      // Rebalance home/away for matchups to ensure all teams have balanced assignments
+      const rebalanceResult = rebalanceMatchupsHomeAway(matchups, teamIds);
+      verboseLog(`  Rebalancing: ${rebalanceResult.phase1Swaps} Phase 1 swaps, ${rebalanceResult.phase2Swaps} Phase 2 swaps`);
 
       // Log the distribution
       const weekCounts = new Map<number, number>();
@@ -1405,7 +1397,7 @@ export class ScheduleGenerator {
         teamCount: divisionTeams.length,
         roundRobinCycles: minCycles,
         totalRounds: rounds.length,
-        roundsUsed: roundsToUse.length,
+        roundsUsed: rounds.length,
         totalMatchups: matchups.length,
         totalMatchupsNeeded,
         weekDistribution,
@@ -2640,7 +2632,10 @@ export class ScheduleGenerator {
       verboseLog(`  Found ${initialPairingIssues} imbalanced pairings, rebalancing...`);
     }
 
-    // Rebalance each pairing (Phase 1 - only if there are issues)
+    // Rebalance each pairing (Phase 1 - only fix actual problems)
+    // Only swap if:
+    // 1. The pairing itself is imbalanced (diff > 1), OR
+    // 2. One team has overall imbalance AND swapping would help without hurting the other team
     let swapsMade = 0;
     for (const [key, games] of gamesByPair) {
       const [teamA, teamB] = key.split('|');
@@ -2650,28 +2645,45 @@ export class ScheduleGenerator {
       const teamAHome = teamAGames.length;
       const teamBHome = teamBGames.length;
       const totalGames = games.length;
-      const idealEach = Math.floor(totalGames / 2);
+      const pairingDiff = Math.abs(teamAHome - teamBHome);
 
-      // How many games should each team be home for?
-      // For even total: each gets totalGames/2
-      // For odd total: one gets ceil, other gets floor - decide by overall balance
+      // Get current overall imbalances
+      const teamAOverallHome = teamHomeCount.get(teamA) || 0;
+      const teamBOverallHome = teamHomeCount.get(teamB) || 0;
+      const teamAOverallAway = teamAwayCount.get(teamA) || 0;
+      const teamBOverallAway = teamAwayCount.get(teamB) || 0;
+      const teamAImbalance = teamAOverallHome - teamAOverallAway;
+      const teamBImbalance = teamBOverallHome - teamBOverallAway;
+
+      // Skip if pairing is already balanced AND both teams have acceptable overall balance
+      if (pairingDiff <= 1 && Math.abs(teamAImbalance) <= 1 && Math.abs(teamBImbalance) <= 1) {
+        continue; // Nothing to fix here
+      }
+
+      // Calculate targets - only for pairings that need fixing
+      const idealEach = Math.floor(totalGames / 2);
       let targetAHome = idealEach;
       let targetBHome = idealEach;
 
       if (totalGames % 2 === 1) {
-        // Give the extra home game to the team with fewer overall home games
-        const teamAOverallHome = teamHomeCount.get(teamA) || 0;
-        const teamBOverallHome = teamHomeCount.get(teamB) || 0;
-        const teamAOverallAway = teamAwayCount.get(teamA) || 0;
-        const teamBOverallAway = teamAwayCount.get(teamB) || 0;
-
-        const teamAImbalance = teamAOverallHome - teamAOverallAway;
-        const teamBImbalance = teamBOverallHome - teamBOverallAway;
-
-        if (teamAImbalance <= teamBImbalance) {
+        // Give the extra home game to the team with worse imbalance (fewer home games)
+        if (teamAImbalance < teamBImbalance) {
           targetAHome = idealEach + 1;
-        } else {
+        } else if (teamBImbalance < teamAImbalance) {
           targetBHome = idealEach + 1;
+        } else {
+          // Both have same imbalance - keep current distribution if pairing is balanced
+          if (pairingDiff <= 1) {
+            // Keep whoever currently has the extra
+            if (teamAHome > teamBHome) {
+              targetAHome = idealEach + 1;
+            } else {
+              targetBHome = idealEach + 1;
+            }
+          } else {
+            // Pairing is imbalanced - give extra to alphabetically first (deterministic)
+            targetAHome = idealEach + 1;
+          }
         }
       }
 
@@ -2817,40 +2829,42 @@ export class ScheduleGenerator {
             const opponentState = this.teamSchedulingStates.get(opponentId);
             const opponentName = opponentState?.teamName || opponentId;
 
-            // Check if swapping would help both teams or at least not hurt opponent
-            if (opponentImbalance < 0) {
-              // Opponent has too many away games, swap would help both!
+            // Check that per-pairing balance isn't broken by this swap
+            const pairKey = getPairingKey(teamId, opponentId);
+            const pairGames = gamesByPair.get(pairKey) || [];
+            const teamHomesInPair = pairGames.filter(g => g.homeTeamId === teamId).length;
+            const opponentHomesInPair = pairGames.filter(g => g.homeTeamId === opponentId).length;
 
-              // Check that per-pairing balance isn't broken by this swap
-              const pairKey = getPairingKey(teamId, opponentId);
-              const pairGames = gamesByPair.get(pairKey) || [];
-              const teamHomesInPair = pairGames.filter(g => g.homeTeamId === teamId).length;
-              const opponentHomesInPair = pairGames.filter(g => g.homeTeamId === opponentId).length;
+            // After swap: teamHomesInPair - 1, opponentHomesInPair + 1
+            const newPairDiff = Math.abs((teamHomesInPair - 1) - (opponentHomesInPair + 1));
 
-              // After swap: teamHomesInPair - 1, opponentHomesInPair + 1
-              const newDiff = Math.abs((teamHomesInPair - 1) - (opponentHomesInPair + 1));
+            // Check if swap would make opponent's overall imbalance unacceptable
+            // After swap, opponent gains 1 home and loses 1 away, so imbalance increases by 2
+            const opponentNewImbalance = opponentImbalance + 2;
 
-              console.log(`      vs ${opponentName}: oppImbalance=${opponentImbalance}, pairBalance=${teamHomesInPair}-${opponentHomesInPair}, newDiff=${newDiff}`);
+            console.log(`      vs ${opponentName}: oppImbalance=${opponentImbalance}->${opponentNewImbalance}, pairBalance=${teamHomesInPair}-${opponentHomesInPair}, newPairDiff=${newPairDiff}`);
 
-              if (newDiff <= 1) {
-                // Safe to swap
-                const temp = game.homeTeamId;
-                game.homeTeamId = game.awayTeamId;
-                game.awayTeamId = temp;
+            // Allow swap if:
+            // 1. Per-pairing balance stays acceptable (diff <= 1)
+            // 2. Opponent's new imbalance is acceptable (within ±1)
+            if (newPairDiff <= 1 && Math.abs(opponentNewImbalance) <= 1) {
+              // Safe to swap
+              const temp = game.homeTeamId;
+              game.homeTeamId = game.awayTeamId;
+              game.awayTeamId = temp;
 
-                // Update counts
-                teamHomeCount.set(teamId, (teamHomeCount.get(teamId) || 0) - 1);
-                teamAwayCount.set(teamId, (teamAwayCount.get(teamId) || 0) + 1);
-                teamHomeCount.set(opponentId, (teamHomeCount.get(opponentId) || 0) + 1);
-                teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) - 1);
+              // Update counts
+              teamHomeCount.set(teamId, (teamHomeCount.get(teamId) || 0) - 1);
+              teamAwayCount.set(teamId, (teamAwayCount.get(teamId) || 0) + 1);
+              teamHomeCount.set(opponentId, (teamHomeCount.get(opponentId) || 0) + 1);
+              teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) - 1);
 
-                overallSwaps++;
-                verboseLog(`    Swapped game: ${teamName} was home, now away (vs ${opponentId})`);
+              overallSwaps++;
+              verboseLog(`    Swapped game: ${teamName} was home, now away (vs ${opponentName})`);
 
-                // Check if this team is now balanced
-                if (Math.abs(getTeamImbalance(teamId)) <= 1) {
-                  break;
-                }
+              // Check if this team is now balanced
+              if (Math.abs(getTeamImbalance(teamId)) <= 1) {
+                break;
               }
             }
           }
@@ -2863,39 +2877,45 @@ export class ScheduleGenerator {
 
             const opponentId = game.homeTeamId;
             const opponentImbalance = getTeamImbalance(opponentId);
+            const opponentState = this.teamSchedulingStates.get(opponentId);
+            const opponentName = opponentState?.teamName || opponentId;
 
-            // Check if swapping would help both teams or at least not hurt opponent
-            if (opponentImbalance > 0) {
-              // Opponent has too many home games, swap would help both!
+            // Check that per-pairing balance isn't broken by this swap
+            const pairKey = getPairingKey(teamId, opponentId);
+            const pairGames = gamesByPair.get(pairKey) || [];
+            const teamHomesInPair = pairGames.filter(g => g.homeTeamId === teamId).length;
+            const opponentHomesInPair = pairGames.filter(g => g.homeTeamId === opponentId).length;
 
-              // Check that per-pairing balance isn't broken by this swap
-              const pairKey = getPairingKey(teamId, opponentId);
-              const pairGames = gamesByPair.get(pairKey) || [];
-              const teamHomesInPair = pairGames.filter(g => g.homeTeamId === teamId).length;
-              const opponentHomesInPair = pairGames.filter(g => g.homeTeamId === opponentId).length;
+            // After swap: teamHomesInPair + 1, opponentHomesInPair - 1
+            const newPairDiff = Math.abs((teamHomesInPair + 1) - (opponentHomesInPair - 1));
 
-              // After swap: teamHomesInPair + 1, opponentHomesInPair - 1
-              const newDiff = Math.abs((teamHomesInPair + 1) - (opponentHomesInPair - 1));
+            // Check if swap would make opponent's overall imbalance unacceptable
+            // After swap, opponent loses 1 home and gains 1 away, so imbalance decreases by 2
+            const opponentNewImbalance = opponentImbalance - 2;
 
-              if (newDiff <= 1) {
-                // Safe to swap
-                const temp = game.homeTeamId;
-                game.homeTeamId = game.awayTeamId;
-                game.awayTeamId = temp;
+            console.log(`      vs ${opponentName}: oppImbalance=${opponentImbalance}->${opponentNewImbalance}, pairBalance=${teamHomesInPair}-${opponentHomesInPair}, newPairDiff=${newPairDiff}`);
 
-                // Update counts
-                teamHomeCount.set(teamId, (teamHomeCount.get(teamId) || 0) + 1);
-                teamAwayCount.set(teamId, (teamAwayCount.get(teamId) || 0) - 1);
-                teamHomeCount.set(opponentId, (teamHomeCount.get(opponentId) || 0) - 1);
-                teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) + 1);
+            // Allow swap if:
+            // 1. Per-pairing balance stays acceptable (diff <= 1)
+            // 2. Opponent's new imbalance is acceptable (within ±1)
+            if (newPairDiff <= 1 && Math.abs(opponentNewImbalance) <= 1) {
+              // Safe to swap
+              const temp = game.homeTeamId;
+              game.homeTeamId = game.awayTeamId;
+              game.awayTeamId = temp;
 
-                overallSwaps++;
-                verboseLog(`    Swapped game: ${teamName} was away, now home (vs ${opponentId})`);
+              // Update counts
+              teamHomeCount.set(teamId, (teamHomeCount.get(teamId) || 0) + 1);
+              teamAwayCount.set(teamId, (teamAwayCount.get(teamId) || 0) - 1);
+              teamHomeCount.set(opponentId, (teamHomeCount.get(opponentId) || 0) - 1);
+              teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) + 1);
 
-                // Check if this team is now balanced
-                if (Math.abs(getTeamImbalance(teamId)) <= 1) {
-                  break;
-                }
+              overallSwaps++;
+              verboseLog(`    Swapped game: ${teamName} was away, now home (vs ${opponentName})`);
+
+              // Check if this team is now balanced
+              if (Math.abs(getTeamImbalance(teamId)) <= 1) {
+                break;
               }
             }
           }
