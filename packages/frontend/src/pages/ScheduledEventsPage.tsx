@@ -17,6 +17,7 @@ import { fetchTeams } from '../api/teams';
 import { fetchSeasonFields } from '../api/fields';
 import { fetchSeasonCages } from '../api/batting-cages';
 import { evaluateSchedule } from '../api/schedule-generator';
+import { fetchAvailableSlots } from '../api/available-slots';
 import type {
   ScheduledEvent,
   CreateScheduledEventInput,
@@ -28,6 +29,7 @@ import type {
   EventType,
   EventStatus,
   ScheduleEvaluationResult,
+  AvailableSlot,
 } from '@ll-scheduler/shared';
 import styles from './ScheduledEventsPage.module.css';
 
@@ -73,6 +75,11 @@ export default function ScheduledEventsPage() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
 
+  // Available slots state
+  const [showAvailableSlots, setShowAvailableSlots] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
+  const [loadingAvailableSlots, setLoadingAvailableSlots] = useState(false);
+
   const [formData, setFormData] = useState<CreateScheduledEventInput>({
     seasonId: '',
     divisionId: '',
@@ -103,6 +110,34 @@ export default function ScheduledEventsPage() {
       loadEvents();
     }
   }, [currentSeason, filterDivision, filterType]);
+
+  // Fetch available slots when checkbox is enabled
+  useEffect(() => {
+    if (!showAvailableSlots || viewMode !== 'calendar' || !currentSeason) {
+      setAvailableSlots([]);
+      return;
+    }
+
+    const loadAvailableSlots = async () => {
+      setLoadingAvailableSlots(true);
+      try {
+        const response = await fetchAvailableSlots({
+          seasonId: currentSeason.id,
+          startDate: currentSeason.startDate,
+          endDate: currentSeason.endDate,
+          divisionId: filterDivision || undefined,
+        });
+        setAvailableSlots([...response.fieldSlots, ...response.cageSlots]);
+      } catch (error) {
+        console.error('Failed to fetch available slots:', error);
+        setAvailableSlots([]);
+      } finally {
+        setLoadingAvailableSlots(false);
+      }
+    };
+
+    loadAvailableSlots();
+  }, [showAvailableSlots, viewMode, currentSeason, filterDivision]);
 
   const loadData = async () => {
     if (!currentSeason) return;
@@ -542,6 +577,17 @@ export default function ScheduledEventsPage() {
             Clear Filters
           </button>
         )}
+        {viewMode === 'calendar' && (
+          <label className={styles.availableSlotsCheckbox}>
+            <input
+              type="checkbox"
+              checked={showAvailableSlots}
+              onChange={(e) => setShowAvailableSlots(e.target.checked)}
+            />
+            Show available slots
+            {loadingAvailableSlots && <span className={styles.loadingIndicator}> (loading...)</span>}
+          </label>
+        )}
       </div>
 
       {isCreating && viewMode === 'list' && (
@@ -870,6 +916,7 @@ export default function ScheduledEventsPage() {
               endDate: currentSeason.endDate,
             } : undefined}
             blackoutDates={calendarBlackoutDates}
+            availableSlots={showAvailableSlots ? availableSlots : undefined}
             onEventCreate={async (input) => {
               await createScheduledEvent(input);
               await loadEvents();

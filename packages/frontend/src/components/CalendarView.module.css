@@ -337,6 +337,7 @@
   padding: 4px;
   border-radius: 4px;
   cursor: pointer;
+  z-index: 1;
   font-size: 0.75rem;
   overflow: hidden;
   box-sizing: border-box;
@@ -418,6 +419,7 @@
   border-radius: 4px;
   cursor: pointer;
   box-sizing: border-box;
+  z-index: 1;
 }
 
 .dayEventItem.game {
@@ -755,4 +757,118 @@
 .endDateInput:disabled {
   background: #f5f5f5;
   color: #999;
+}
+
+/* Unused/Available Slots */
+.unusedSlot {
+  border: 1px dashed #ccc;
+  background: rgba(200, 200, 200, 0.1);
+  border-radius: 3px;
+  padding: 2px 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.unusedSlotLabel {
+  font-size: 0.65rem;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unusedSlotTime {
+  font-size: 0.6rem;
+  color: #888;
+  white-space: nowrap;
+}
+
+/* Field unused slots - blue tint (matches practice color #2196f3) */
+.unusedField {
+  border-color: #64b5f6;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(33, 150, 243, 0.2),
+    rgba(33, 150, 243, 0.2) 5px,
+    rgba(33, 150, 243, 0.08) 5px,
+    rgba(33, 150, 243, 0.08) 10px
+  );
+}
+
+.unusedField .unusedSlotLabel {
+  color: #1565c0;
+}
+
+.unusedField .unusedSlotTime {
+  color: #1976d2;
+}
+
+/* Cage unused slots - orange tint (matches cage color #ff9800) */
+.unusedCage {
+  border-color: #ffb74d;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 152, 0, 0.2),
+    rgba(255, 152, 0, 0.2) 5px,
+    rgba(255, 152, 0, 0.08) 5px,
+    rgba(255, 152, 0, 0.08) 10px
+  );
+}
+
+.unusedCage .unusedSlotLabel {
+  color: #e65100;
+}
+
+.unusedCage .unusedSlotTime {
+  color: #f57c00;
+}
+
+/* Month view available slots section */
+.availableSlotsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+}
+
+.availableSlotItem {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  padding: 1px 3px;
+  border-radius: 2px;
+  border: 1px dashed;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.availableSlotTime {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.availableSlotName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
+/* Field available slots - blue (matches practice color #2196f3) */
+.availableField {
+  background: rgba(33, 150, 243, 0.15);
+  border-color: #64b5f6;
+  color: #1565c0;
+}
+
+/* Cage available slots - orange (matches cage color #ff9800) */
+.availableCage {
+  background: rgba(255, 152, 0, 0.15);
+  border-color: #ffb74d;
+  color: #e65100;
 }

@@ -8,6 +8,7 @@ import type {
   UpdateScheduledEventInput,
   CreateScheduledEventInput,
   EventType,
+  AvailableSlot,
 } from '@ll-scheduler/shared';
 import styles from './CalendarView.module.css';
 
@@ -42,6 +43,7 @@ interface CalendarViewProps {
   initialDate?: string; // ISO date string to start the calendar on
   seasonMilestones?: SeasonMilestones; // Key season dates to annotate
   blackoutDates?: CalendarBlackout[]; // Blackout dates to display
+  availableSlots?: AvailableSlot[]; // Available resource slots to show unused time
   onEventClick?: (event: ScheduledEvent) => void;
   onEventCreate?: (input: CreateScheduledEventInput) => Promise<void>;
   onEventCreateBulk?: (inputs: CreateScheduledEventInput[]) => Promise<{ createdCount: number }>;
@@ -65,6 +67,7 @@ export default function CalendarView({
   initialDate,
   seasonMilestones,
   blackoutDates,
+  availableSlots,
   onEventClick,
   onEventCreate,
   onEventCreateBulk,
@@ -399,6 +402,109 @@ export default function CalendarView({
     return blackoutDates.filter((b) => b.date === dateStr);
   };
 
+  // Calculate unused slots for a date by subtracting scheduled events from available slots
+  interface UnusedSlot {
+    resourceType: 'field' | 'cage';
+    resourceId: string;
+    resourceName: string;
+    startTime: string;
+    endTime: string;
+  }
+
+  const getUnusedSlotsForDate = (dateStr: string): UnusedSlot[] => {
+    if (!availableSlots) {
+      return [];
+    }
+
+    const slotsForDate = availableSlots.filter((s) => s.date === dateStr);
+    const eventsForDate = events.filter((e) => e.date === dateStr);
+    const unusedSlots: UnusedSlot[] = [];
+
+    for (const slot of slotsForDate) {
+      // Get events that overlap with this slot's resource
+      const overlappingEvents = eventsForDate.filter((e) =>
+        (slot.resourceType === 'field' && e.fieldId === slot.resourceId) ||
+        (slot.resourceType === 'cage' && e.cageId === slot.resourceId)
+      );
+
+      if (overlappingEvents.length === 0) {
+        // No events, entire slot is unused
+        unusedSlots.push({
+          resourceType: slot.resourceType,
+          resourceId: slot.resourceId,
+          resourceName: slot.resourceName,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+      } else {
+        // Subtract event time ranges from slot time range
+        const remaining = subtractTimeRanges(
+          { start: slot.startTime, end: slot.endTime },
+          overlappingEvents.map((e) => ({ start: e.startTime, end: e.endTime }))
+        );
+
+        for (const window of remaining) {
+          unusedSlots.push({
+            resourceType: slot.resourceType,
+            resourceId: slot.resourceId,
+            resourceName: slot.resourceName,
+            startTime: window.start,
+            endTime: window.end,
+          });
+        }
+      }
+    }
+
+    return unusedSlots;
+  };
+
+  // Subtract multiple time ranges from a slot, returning remaining windows
+  const subtractTimeRanges = (
+    slot: { start: string; end: string },
+    ranges: Array<{ start: string; end: string }>
+  ): Array<{ start: string; end: string }> => {
+    if (ranges.length === 0) {
+      return [slot];
+    }
+
+    // Sort ranges by start time
+    const sortedRanges = [...ranges].sort((a, b) =>
+      a.start.localeCompare(b.start)
+    );
+
+    const result: Array<{ start: string; end: string }> = [];
+    let currentStart = slot.start;
+
+    for (const range of sortedRanges) {
+      // If range starts after our current window ends, we're done with it
+      if (range.start >= slot.end) break;
+
+      // If range ends before our current window starts, skip it
+      if (range.end <= currentStart) continue;
+
+      // If there's a gap before this range, add it as unused
+      if (range.start > currentStart) {
+        result.push({
+          start: currentStart,
+          end: range.start < slot.end ? range.start : slot.end,
+        });
+      }
+
+      // Move current start past this range
+      currentStart = range.end > currentStart ? range.end : currentStart;
+    }
+
+    // If there's remaining time after all ranges, add it
+    if (currentStart < slot.end) {
+      result.push({
+        start: currentStart,
+        end: slot.end,
+      });
+    }
+
+    return result;
+  };
+
   // Week view helpers - starts on Monday
   const getWeekDates = (date: Date) => {
     const week: Date[] = [];
@@ -615,6 +721,24 @@ export default function CalendarView({
                         </div>
                       ))}
                     </div>
+                    {(() => {
+                      const unusedSlots = getUnusedSlotsForDate(dateStr);
+                      if (unusedSlots.length === 0) return null;
+                      return (
+                        <div className={styles.availableSlotsSection}>
+                          {unusedSlots.map((slot, idx) => (
+                            <div
+                              key={`avail-${slot.resourceId}-${idx}`}
+                              className={`${styles.availableSlotItem} ${styles[`available${slot.resourceType.charAt(0).toUpperCase() + slot.resourceType.slice(1)}`]}`}
+                              title={`${slot.resourceName}: ${slot.startTime} - ${slot.endTime}`}
+                            >
+                              <span className={styles.availableSlotTime}>{slot.startTime}</span>
+                              <span className={styles.availableSlotName}>{slot.resourceName}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </>
                 )}
               </div>
@@ -690,6 +814,33 @@ export default function CalendarView({
                   {timeSlots.map((slot) => (
                     <div key={slot} className={styles.weekTimeSlotLine}></div>
                   ))}
+                  {/* Unused slots rendered behind events */}
+                  {getUnusedSlotsForDate(dateStr).map((slot, idx) => {
+                    const startMinutes = timeToMinutes(slot.startTime);
+                    const endMinutes = timeToMinutes(slot.endTime);
+                    const startFromBase = startMinutes - START_HOUR * 60;
+                    const duration = endMinutes - startMinutes;
+                    const top = (startFromBase / 60) * HOUR_HEIGHT;
+                    const height = (duration / 60) * HOUR_HEIGHT;
+
+                    return (
+                      <div
+                        key={`unused-${slot.resourceId}-${idx}`}
+                        className={`${styles.unusedSlot} ${styles[`unused${slot.resourceType.charAt(0).toUpperCase() + slot.resourceType.slice(1)}`]}`}
+                        title={`${slot.resourceName} available: ${slot.startTime} - ${slot.endTime}`}
+                        style={{
+                          position: 'absolute',
+                          top: `${top}px`,
+                          height: `${Math.max(height, 15)}px`,
+                          left: '2px',
+                          right: '2px',
+                          zIndex: 0,
+                        }}
+                      >
+                        <span className={styles.unusedSlotLabel}>{slot.resourceName}</span>
+                      </div>
+                    );
+                  })}
                   {/* Events positioned absolutely */}
                   {layoutInfo.map(({ event, column, totalColumns, top, height }) => (
                     <div
@@ -757,6 +908,34 @@ export default function CalendarView({
             {timeSlots.map((slot) => (
               <div key={slot} className={styles.dayTimeSlotLine}></div>
             ))}
+            {/* Unused slots rendered behind events */}
+            {getUnusedSlotsForDate(dateStr).map((slot, idx) => {
+              const startMinutes = timeToMinutes(slot.startTime);
+              const endMinutes = timeToMinutes(slot.endTime);
+              const startFromBase = startMinutes - START_HOUR * 60;
+              const duration = endMinutes - startMinutes;
+              const topPos = (startFromBase / 60) * HOUR_HEIGHT;
+              const heightVal = (duration / 60) * HOUR_HEIGHT;
+
+              return (
+                <div
+                  key={`unused-${slot.resourceId}-${idx}`}
+                  className={`${styles.unusedSlot} ${styles[`unused${slot.resourceType.charAt(0).toUpperCase() + slot.resourceType.slice(1)}`]}`}
+                  title={`${slot.resourceName} available: ${slot.startTime} - ${slot.endTime}`}
+                  style={{
+                    position: 'absolute',
+                    top: `${topPos}px`,
+                    height: `${Math.max(heightVal, 20)}px`,
+                    left: '4px',
+                    right: '4px',
+                    zIndex: 0,
+                  }}
+                >
+                  <span className={styles.unusedSlotLabel}>{slot.resourceName}</span>
+                  <span className={styles.unusedSlotTime}>{slot.startTime} - {slot.endTime}</span>
+                </div>
+              );
+            })}
             {/* Events positioned absolutely */}
             {layoutInfo.map(({ event, column, totalColumns, top, height }) => (
               <div
