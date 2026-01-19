@@ -3293,8 +3293,8 @@ export class ScheduleGenerator {
             return effectiveGapB - effectiveGapA;
           }
 
-          // Final: sort by team name for deterministic ordering
-          return a.teamName.localeCompare(b.teamName);
+          // Use teamId for deterministic but unbiased ordering (teamIds are random)
+          return a.teamId.localeCompare(b.teamId);
         });
 
       // Rotate the sorted order based on week number to ensure fairness
@@ -3442,7 +3442,8 @@ export class ScheduleGenerator {
               return effectiveGapB - effectiveGapA;
             }
 
-            return a.teamName.localeCompare(b.teamName);
+            // Use teamId for deterministic but unbiased ordering (teamIds are random)
+            return a.teamId.localeCompare(b.teamId);
           });
 
         if (stillNeedPractices.length === 0) {
@@ -3450,8 +3451,8 @@ export class ScheduleGenerator {
           break;
         }
 
-        // Teams are already sorted by deficit-first, gap-second approach
-        const rotatedStillNeed = stillNeedPractices;
+        // Rotate by round number to ensure fairness among teams with similar priority
+        const rotatedStillNeed = rotateArray(stillNeedPractices, round);
 
         // Compute slot availability for scarcity calculation
         this.computeTeamSlotAvailability(rotatedStillNeed, practiceFieldSlots, week);
