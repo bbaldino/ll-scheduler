@@ -407,14 +407,14 @@ describe('interleaved scheduling primary field distribution', () => {
 
     // Create 4 teams per division (needed for 2 games per week)
     const teams = [
-      { id: 'teamA1', name: 'A Team 1', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamA2', name: 'A Team 2', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamA3', name: 'A Team 3', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamA4', name: 'A Team 4', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamT1', name: 'Tball Team 1', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamT2', name: 'Tball Team 2', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamT3', name: 'Tball Team 3', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-      { id: 'teamT4', name: 'Tball Team 4', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA1', name: 'A Team 1', divisionId: 'divA', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA2', name: 'A Team 2', divisionId: 'divA', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA3', name: 'A Team 3', divisionId: 'divA', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA4', name: 'A Team 4', divisionId: 'divA', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT1', name: 'Tball Team 1', divisionId: 'divTball', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT2', name: 'Tball Team 2', divisionId: 'divTball', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT3', name: 'Tball Team 3', divisionId: 'divTball', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT4', name: 'Tball Team 4', divisionId: 'divTball', seasonId: 'season1', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     ];
 
     // Season fields - both compatible with both divisions
@@ -484,6 +484,7 @@ describe('interleaved scheduling primary field distribution', () => {
         dayOfWeek: 6,
         startTime: '08:00',
         endTime: '16:00',
+        singleEventOnly: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
