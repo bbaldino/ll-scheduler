@@ -8,6 +8,7 @@ import type {
   FieldDateOverride,
   CageDateOverride,
   Season,
+  ScheduledEvent,
 } from '@ll-scheduler/shared';
 import { listSeasonFields } from './season-fields.js';
 import { listSeasonCages } from './season-cages.js';
@@ -16,6 +17,7 @@ import { listCageAvailabilitiesForSeason } from './cage-availabilities.js';
 import { listFieldDateOverridesForSeason } from './field-date-overrides.js';
 import { listCageDateOverridesForSeason } from './cage-date-overrides.js';
 import { getSeasonById } from './seasons.js';
+import { listScheduledEvents } from './scheduled-events.js';
 import {
   getDateRange,
   getDayOfWeek,
@@ -43,6 +45,7 @@ export async function getAvailableSlots(
     cageAvailabilities,
     fieldOverrides,
     cageOverrides,
+    scheduledEvents,
   ] = await Promise.all([
     getSeasonById(db, seasonId),
     listSeasonFields(db, seasonId),
@@ -51,6 +54,9 @@ export async function getAvailableSlots(
     listCageAvailabilitiesForSeason(db, seasonId),
     listFieldDateOverridesForSeason(db, seasonId),
     listCageDateOverridesForSeason(db, seasonId),
+    // Fetch ALL scheduled events for the season (not filtered by division)
+    // to correctly show resource availability across all divisions
+    listScheduledEvents(db, { seasonId, startDate, endDate }),
   ]);
 
   if (!season) {
@@ -73,24 +79,26 @@ export async function getAvailableSlots(
   // Get all dates in the range
   const dates = getDateRange(startDate, endDate);
 
-  // Build field slots
+  // Build field slots (subtracting scheduled events)
   const fieldSlots = buildFieldSlots(
     dates,
     filteredFields,
     fieldAvailabilities,
     fieldOverrides,
     season,
-    divisionId
+    divisionId,
+    scheduledEvents
   );
 
-  // Build cage slots
+  // Build cage slots (subtracting scheduled events)
   const cageSlots = buildCageSlots(
     dates,
     filteredCages,
     cageAvailabilities,
     cageOverrides,
     season,
-    divisionId
+    divisionId,
+    scheduledEvents
   );
 
   return { fieldSlots, cageSlots };
@@ -192,6 +200,50 @@ function applyBlackoutToTimeWindow(
 }
 
 /**
+ * Subtract scheduled events from a time window, returning remaining available windows.
+ * This handles multiple overlapping events correctly.
+ */
+function subtractEventsFromTimeWindow(
+  windowStart: string,
+  windowEnd: string,
+  events: Array<{ startTime: string; endTime: string }>
+): Array<{ startTime: string; endTime: string }> {
+  if (events.length === 0) {
+    return [{ startTime: windowStart, endTime: windowEnd }];
+  }
+
+  // Sort events by start time
+  const sortedEvents = [...events].sort((a, b) =>
+    timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
+  );
+
+  let currentWindows = [{ startTime: windowStart, endTime: windowEnd }];
+
+  for (const event of sortedEvents) {
+    const newWindows: Array<{ startTime: string; endTime: string }> = [];
+
+    for (const window of currentWindows) {
+      // Apply each event as a "blackout" to split the window
+      const remaining = applyBlackoutToTimeWindow(
+        window.startTime,
+        window.endTime,
+        event.startTime,
+        event.endTime
+      );
+      newWindows.push(...remaining);
+    }
+
+    currentWindows = newWindows;
+  }
+
+  // Filter out any tiny windows (less than 30 minutes)
+  return currentWindows.filter((w) => {
+    const duration = timeToMinutes(w.endTime) - timeToMinutes(w.startTime);
+    return duration >= 30;
+  });
+}
+
+/**
  * Build available field slots for given dates
  */
 function buildFieldSlots(
@@ -200,7 +252,8 @@ function buildFieldSlots(
   availabilities: FieldAvailability[],
   overrides: FieldDateOverride[],
   season: Season,
-  divisionId?: string
+  divisionId: string | undefined,
+  scheduledEvents: ScheduledEvent[]
 ): AvailableSlot[] {
   const slots: AvailableSlot[] = [];
 
@@ -225,6 +278,11 @@ function buildFieldSlots(
           o.overrideType === 'added'
       );
 
+      // Get events scheduled on this field for this date
+      const fieldEventsOnDate = scheduledEvents.filter(
+        (e) => e.fieldId === seasonField.fieldId && e.date === date
+      );
+
       // If no regular availability but there's an "added" override, use the override
       if (
         fieldAvailabilities.length === 0 &&
@@ -232,14 +290,22 @@ function buildFieldSlots(
         addedOverride.startTime &&
         addedOverride.endTime
       ) {
-        slots.push({
-          resourceType: 'field',
-          resourceId: seasonField.fieldId,
-          resourceName: seasonField.field?.name || seasonField.fieldId,
-          date,
-          startTime: addedOverride.startTime,
-          endTime: addedOverride.endTime,
-        });
+        // Subtract scheduled events from the available window
+        const remainingWindows = subtractEventsFromTimeWindow(
+          addedOverride.startTime,
+          addedOverride.endTime,
+          fieldEventsOnDate.map((e) => ({ startTime: e.startTime, endTime: e.endTime }))
+        );
+        for (const window of remainingWindows) {
+          slots.push({
+            resourceType: 'field',
+            resourceId: seasonField.fieldId,
+            resourceName: seasonField.field?.name || seasonField.fieldId,
+            date,
+            startTime: window.startTime,
+            endTime: window.endTime,
+          });
+        }
         continue;
       }
 
@@ -250,22 +316,30 @@ function buildFieldSlots(
 
         // Handle blackout overrides
         if (override?.overrideType === 'blackout') {
-          const remainingWindows = applyBlackoutToTimeWindow(
+          const blackoutWindows = applyBlackoutToTimeWindow(
             avail.startTime,
             avail.endTime,
             override.startTime,
             override.endTime
           );
 
-          for (const window of remainingWindows) {
-            slots.push({
-              resourceType: 'field',
-              resourceId: seasonField.fieldId,
-              resourceName: seasonField.field?.name || seasonField.fieldId,
-              date,
-              startTime: window.startTime,
-              endTime: window.endTime,
-            });
+          // Subtract scheduled events from each remaining window
+          for (const window of blackoutWindows) {
+            const remainingWindows = subtractEventsFromTimeWindow(
+              window.startTime,
+              window.endTime,
+              fieldEventsOnDate.map((e) => ({ startTime: e.startTime, endTime: e.endTime }))
+            );
+            for (const remaining of remainingWindows) {
+              slots.push({
+                resourceType: 'field',
+                resourceId: seasonField.fieldId,
+                resourceName: seasonField.field?.name || seasonField.fieldId,
+                date,
+                startTime: remaining.startTime,
+                endTime: remaining.endTime,
+              });
+            }
           }
           continue;
         }
@@ -274,14 +348,22 @@ function buildFieldSlots(
         const startTime = override?.startTime || avail.startTime;
         const endTime = override?.endTime || avail.endTime;
 
-        slots.push({
-          resourceType: 'field',
-          resourceId: seasonField.fieldId,
-          resourceName: seasonField.field?.name || seasonField.fieldId,
-          date,
+        // Subtract scheduled events from the available window
+        const remainingWindows = subtractEventsFromTimeWindow(
           startTime,
           endTime,
-        });
+          fieldEventsOnDate.map((e) => ({ startTime: e.startTime, endTime: e.endTime }))
+        );
+        for (const window of remainingWindows) {
+          slots.push({
+            resourceType: 'field',
+            resourceId: seasonField.fieldId,
+            resourceName: seasonField.field?.name || seasonField.fieldId,
+            date,
+            startTime: window.startTime,
+            endTime: window.endTime,
+          });
+        }
       }
     }
   }
@@ -298,7 +380,8 @@ function buildCageSlots(
   availabilities: CageAvailability[],
   overrides: CageDateOverride[],
   season: Season,
-  divisionId?: string
+  divisionId: string | undefined,
+  scheduledEvents: ScheduledEvent[]
 ): AvailableSlot[] {
   const slots: AvailableSlot[] = [];
 
@@ -323,6 +406,11 @@ function buildCageSlots(
           o.overrideType === 'added'
       );
 
+      // Get events scheduled on this cage for this date
+      const cageEventsOnDate = scheduledEvents.filter(
+        (e) => e.cageId === seasonCage.cageId && e.date === date
+      );
+
       // If no regular availability but there's an "added" override, use the override
       if (
         cageAvailabilities.length === 0 &&
@@ -330,14 +418,22 @@ function buildCageSlots(
         addedOverride.startTime &&
         addedOverride.endTime
       ) {
-        slots.push({
-          resourceType: 'cage',
-          resourceId: seasonCage.cageId,
-          resourceName: seasonCage.cage?.name || seasonCage.cageId,
-          date,
-          startTime: addedOverride.startTime,
-          endTime: addedOverride.endTime,
-        });
+        // Subtract scheduled events from the available window
+        const remainingWindows = subtractEventsFromTimeWindow(
+          addedOverride.startTime,
+          addedOverride.endTime,
+          cageEventsOnDate.map((e) => ({ startTime: e.startTime, endTime: e.endTime }))
+        );
+        for (const window of remainingWindows) {
+          slots.push({
+            resourceType: 'cage',
+            resourceId: seasonCage.cageId,
+            resourceName: seasonCage.cage?.name || seasonCage.cageId,
+            date,
+            startTime: window.startTime,
+            endTime: window.endTime,
+          });
+        }
         continue;
       }
 
@@ -348,22 +444,30 @@ function buildCageSlots(
 
         // Handle blackout overrides
         if (override?.overrideType === 'blackout') {
-          const remainingWindows = applyBlackoutToTimeWindow(
+          const blackoutWindows = applyBlackoutToTimeWindow(
             avail.startTime,
             avail.endTime,
             override.startTime,
             override.endTime
           );
 
-          for (const window of remainingWindows) {
-            slots.push({
-              resourceType: 'cage',
-              resourceId: seasonCage.cageId,
-              resourceName: seasonCage.cage?.name || seasonCage.cageId,
-              date,
-              startTime: window.startTime,
-              endTime: window.endTime,
-            });
+          // Subtract scheduled events from each remaining window
+          for (const window of blackoutWindows) {
+            const remainingWindows = subtractEventsFromTimeWindow(
+              window.startTime,
+              window.endTime,
+              cageEventsOnDate.map((e) => ({ startTime: e.startTime, endTime: e.endTime }))
+            );
+            for (const remaining of remainingWindows) {
+              slots.push({
+                resourceType: 'cage',
+                resourceId: seasonCage.cageId,
+                resourceName: seasonCage.cage?.name || seasonCage.cageId,
+                date,
+                startTime: remaining.startTime,
+                endTime: remaining.endTime,
+              });
+            }
           }
           continue;
         }
@@ -372,14 +476,22 @@ function buildCageSlots(
         const startTime = override?.startTime || avail.startTime;
         const endTime = override?.endTime || avail.endTime;
 
-        slots.push({
-          resourceType: 'cage',
-          resourceId: seasonCage.cageId,
-          resourceName: seasonCage.cage?.name || seasonCage.cageId,
-          date,
+        // Subtract scheduled events from the available window
+        const remainingWindows = subtractEventsFromTimeWindow(
           startTime,
           endTime,
-        });
+          cageEventsOnDate.map((e) => ({ startTime: e.startTime, endTime: e.endTime }))
+        );
+        for (const window of remainingWindows) {
+          slots.push({
+            resourceType: 'cage',
+            resourceId: seasonCage.cageId,
+            resourceName: seasonCage.cage?.name || seasonCage.cageId,
+            date,
+            startTime: window.startTime,
+            endTime: window.endTime,
+          });
+        }
       }
     }
   }
