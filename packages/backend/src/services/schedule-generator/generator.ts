@@ -3305,6 +3305,48 @@ export class ScheduleGenerator {
         continue;
       }
 
+      // Log detailed team processing order for debugging
+      this.log('info', 'practice', `Week ${week.weekNumber + 1} team processing order`, {
+        weekNumber: week.weekNumber + 1,
+        weekStart: week.startDate,
+        weekEnd: week.endDate,
+        teamOrder: rotatedByWeek.map((ts, index) => {
+          const weekStartDay = parseLocalDate(week.startDate).getTime();
+          const dayMs = 24 * 60 * 60 * 1000;
+          const midWeekDay = weekStartDay + 3 * dayMs;
+
+          // Find last regular practice date
+          let lastPracticeDate = 'none';
+          let lastPracticeDay = -Infinity;
+          for (const dateStr of ts.regularPracticeDates) {
+            const dayNum = parseLocalDate(dateStr).getTime();
+            if (dayNum < weekStartDay && dayNum > lastPracticeDay) {
+              lastPracticeDay = dayNum;
+              lastPracticeDate = dateStr;
+            }
+          }
+
+          const potentialGap = lastPracticeDay === -Infinity
+            ? 28
+            : Math.round((midWeekDay - lastPracticeDay) / dayMs);
+          const effectiveGap = Math.max(ts.maxPracticeGapSoFar, potentialGap);
+          const deficit = ts.practicesScheduled - (ts.totalPracticesNeeded * (week.weekNumber + 1) / this.weekDefinitions.length);
+
+          return {
+            order: index + 1,
+            team: ts.teamName,
+            division: ts.divisionName,
+            practicesScheduled: ts.practicesScheduled,
+            totalNeeded: ts.totalPracticesNeeded,
+            deficit: deficit.toFixed(2),
+            lastPractice: lastPracticeDate,
+            potentialGap,
+            maxGapSoFar: ts.maxPracticeGapSoFar,
+            effectiveGap,
+          };
+        }),
+      });
+
       // Check capacity: count total practice slots needed vs available
       let totalPracticesNeeded = 0;
       for (const ts of teamsNeedingPractices) {
@@ -3521,6 +3563,49 @@ export class ScheduleGenerator {
           if (!bestCandidate) {
             verboseLog(`    ${teamState.teamName}: No valid candidate found`);
             continue;
+          }
+
+          // Log detailed candidate analysis for A and Tball divisions (debug gap issues)
+          if ((teamState.divisionName === 'A' || teamState.divisionName === 'Tball') && this.scoringContext) {
+            // Score all candidates to get the breakdown by date
+            const scoredCandidates = candidates.map(c =>
+              calculatePlacementScore(c, teamState, this.scoringContext!, this.scoringWeights)
+            );
+
+            // Group by date and find best per date
+            const byDate = new Map<string, typeof scoredCandidates[0]>();
+            for (const sc of scoredCandidates) {
+              const existing = byDate.get(sc.date);
+              if (!existing || sc.score > existing.score) {
+                byDate.set(sc.date, sc);
+              }
+            }
+
+            // Sort dates and get top 5 date candidates
+            const topByDate = Array.from(byDate.entries())
+              .sort((a, b) => b[1].score - a[1].score)
+              .slice(0, 7)
+              .map(([date, sc]) => ({
+                date,
+                dayOfWeek: ScheduleGenerator.DAY_NAMES[sc.dayOfWeek],
+                resource: sc.resourceName,
+                score: sc.score.toFixed(1),
+                largeGapPenalty: sc.scoreBreakdown?.largeGapPenalty?.toFixed(1),
+                practiceSpacing: sc.scoreBreakdown?.practiceSpacing?.toFixed(1),
+                daySpread: sc.scoreBreakdown?.daySpread?.toFixed(1),
+                earliestTime: sc.scoreBreakdown?.earliestTime?.toFixed(1),
+                resourceUtilization: sc.scoreBreakdown?.resourceUtilization?.toFixed(1),
+              }));
+
+            this.log('info', 'practice', `Candidate analysis for ${teamState.teamName} (${teamState.divisionName})`, {
+              team: teamState.teamName,
+              division: teamState.divisionName,
+              totalCandidates: candidates.length,
+              uniqueDates: byDate.size,
+              selectedDate: bestCandidate.date,
+              selectedScore: bestCandidate.score.toFixed(1),
+              topCandidatesByDate: topByDate,
+            });
           }
 
           // Convert to event draft and add to scheduled events
