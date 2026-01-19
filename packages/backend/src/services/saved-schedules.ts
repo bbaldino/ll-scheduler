@@ -1,6 +1,7 @@
 import type {
   SavedSchedule,
   CreateSavedScheduleInput,
+  UpdateSavedScheduleInput,
   RestoreScheduleResult,
   ScheduledEvent,
 } from '@ll-scheduler/shared';
@@ -143,6 +144,80 @@ export async function saveSchedule(
   }
 
   return savedSchedule;
+}
+
+/**
+ * Update an existing saved schedule by re-capturing the current events
+ */
+export async function updateSavedSchedule(
+  db: D1Database,
+  id: string,
+  input: UpdateSavedScheduleInput
+): Promise<SavedSchedule | null> {
+  // Get the existing saved schedule
+  const existing = await db
+    .prepare('SELECT * FROM saved_schedules WHERE id = ?')
+    .bind(id)
+    .first<SavedScheduleRow>();
+
+  if (!existing) {
+    return null;
+  }
+
+  const seasonId = existing.season_id;
+  const now = new Date().toISOString();
+
+  // Get all current events for this season
+  const events = await listScheduledEvents(db, { seasonId });
+
+  // Delete all existing saved events for this schedule
+  await db
+    .prepare('DELETE FROM saved_schedule_events WHERE saved_schedule_id = ?')
+    .bind(id)
+    .run();
+
+  // Update the saved schedule record
+  await db
+    .prepare(
+      `UPDATE saved_schedules SET name = ?, description = ?, event_count = ?, updated_at = ? WHERE id = ?`
+    )
+    .bind(input.name, input.description || null, events.length, now, id)
+    .run();
+
+  // Re-save events to saved_schedule_events in batches
+  for (let i = 0; i < events.length; i += BATCH_SIZE) {
+    const batch = events.slice(i, i + BATCH_SIZE);
+    const statements = batch.map((event) =>
+      db
+        .prepare(
+          `INSERT INTO saved_schedule_events
+           (id, saved_schedule_id, original_event_id, division_id, event_type, date, start_time, end_time,
+            field_id, cage_id, home_team_id, away_team_id, team_id, status, notes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          generateId(),
+          id,
+          event.id,
+          event.divisionId,
+          event.eventType,
+          event.date,
+          event.startTime,
+          event.endTime,
+          event.fieldId || null,
+          event.cageId || null,
+          event.homeTeamId || null,
+          event.awayTeamId || null,
+          event.teamId || null,
+          event.status,
+          event.notes || null,
+          now
+        )
+    );
+    await db.batch(statements);
+  }
+
+  return getSavedScheduleById(db, id);
 }
 
 /**

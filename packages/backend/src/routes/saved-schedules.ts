@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../index.js';
-import type { CreateSavedScheduleInput } from '@ll-scheduler/shared';
+import type { CreateSavedScheduleInput, UpdateSavedScheduleInput } from '@ll-scheduler/shared';
 import {
   listSavedSchedules,
   getSavedScheduleById,
   saveSchedule,
+  updateSavedSchedule,
   restoreSchedule,
   deleteSavedSchedule,
 } from '../services/saved-schedules.js';
@@ -68,6 +69,27 @@ router.post('/:id/restore', async (c) => {
     }
     throw error;
   }
+});
+
+// PUT /api/saved-schedules/:id - Update a saved schedule (overwrites with current events)
+router.put('/:id', async (c) => {
+  const id = c.req.param('id');
+  const input: UpdateSavedScheduleInput = await c.req.json();
+
+  if (!input.name || input.name.trim() === '') {
+    return c.json({ error: 'name is required' }, 400);
+  }
+
+  const schedule = await updateSavedSchedule(c.env.DB, id, {
+    name: input.name.trim(),
+    description: input.description?.trim(),
+  });
+
+  if (!schedule) {
+    return c.json({ error: 'Saved schedule not found' }, 404);
+  }
+
+  return c.json(schedule);
 });
 
 // DELETE /api/saved-schedules/:id - Delete a saved schedule

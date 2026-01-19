@@ -1,6 +1,7 @@
 import type {
   SavedSchedule,
   CreateSavedScheduleInput,
+  UpdateSavedScheduleInput,
   RestoreScheduleResult,
 } from '@ll-scheduler/shared';
 import { API_BASE } from './config';
@@ -38,6 +39,24 @@ export async function saveSchedule(input: CreateSavedScheduleInput): Promise<Sav
   });
   if (!response.ok) {
     throw new Error('Failed to save schedule');
+  }
+  return response.json();
+}
+
+/**
+ * Update an existing saved schedule (overwrites with current events)
+ */
+export async function updateSavedSchedule(
+  id: string,
+  input: UpdateSavedScheduleInput
+): Promise<SavedSchedule> {
+  const response = await fetch(`${API_BASE}/saved-schedules/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update saved schedule');
   }
   return response.json();
 }

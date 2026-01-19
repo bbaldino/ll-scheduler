@@ -21,6 +21,14 @@ export interface CreateSavedScheduleInput {
 }
 
 /**
+ * Input for updating an existing saved schedule
+ */
+export interface UpdateSavedScheduleInput {
+  name: string;
+  description?: string;
+}
+
+/**
  * Result of restoring a saved schedule
  */
 export interface RestoreScheduleResult {

@@ -15,7 +15,8 @@
   background: white;
   border-radius: 8px;
   width: 90%;
-  max-width: 500px;
+  max-width: 550px;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
@@ -57,6 +58,8 @@
 
 .content {
   padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .formGroup {
@@ -153,4 +156,104 @@
 .saveButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Existing schedules section */
+.loadingSchedules {
+  padding: 1rem;
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.existingSchedules {
+  margin-bottom: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.existingSchedulesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #555;
+}
+
+.clearSelectionButton {
+  background: none;
+  border: none;
+  color: #2196f3;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.clearSelectionButton:hover {
+  text-decoration: underline;
+}
+
+.scheduleList {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.scheduleItem {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.scheduleItem:last-child {
+  border-bottom: none;
+}
+
+.scheduleItem:hover {
+  background: #f9f9f9;
+}
+
+.scheduleItem.selected {
+  background: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.scheduleItemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.scheduleItemName {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.scheduleItemEvents {
+  font-size: 0.8rem;
+  color: #666;
+  background: #e8e8e8;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.scheduleItemDescription {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scheduleItemDate {
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 0.2rem;
 }
