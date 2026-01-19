@@ -2740,12 +2740,14 @@ export class ScheduleGenerator {
             // Try to schedule the next matchup from this division's queue
             const matchup = queue[0]; // Peek at first matchup
 
-            // Find field slots for this week and day
+            // Find field slots for this week and day ON THE PRIMARY FIELD ONLY
+            // This ensures fair distribution of the shared primary field between competing divisions
             const totalGameSlotHours = divData.config.gameDurationHours + (divData.config.gameArriveBeforeHours || 0);
 
             const daySlots = this.gameFieldSlots.filter((rs) =>
               weekDatesSet.has(rs.slot.date) &&
               rs.slot.dayOfWeek === dayOfWeek &&
+              rs.resourceId === group.primaryFieldId && // ONLY the competition group's primary field
               this.isFieldCompatibleWithDivision(rs.resourceId, divisionId) &&
               !this.isDateBlockedForDivision(rs.slot.date, 'game', divisionId)
             );

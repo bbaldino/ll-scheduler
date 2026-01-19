@@ -345,3 +345,195 @@ describe('canUseRequiredDaySlot', () => {
     expect(canUseRequiredDaySlot('divA', 6, 1, tracker)).toBe(true);
   });
 });
+
+describe('interleaved scheduling primary field distribution', () => {
+  it('distributes games on primary field between competing divisions when secondary fields are available', async () => {
+    // Import ScheduleGenerator for this test
+    const { ScheduleGenerator } = await import('./generator.js');
+
+    // Setup: Two divisions (A and Tball) both prefer 'primaryField' but are also compatible with 'secondaryField'
+    const season = {
+      id: 'season1',
+      name: 'Test Season',
+      startDate: '2026-03-01',
+      endDate: '2026-03-31',
+      gamesStartDate: '2026-03-01',
+      status: 'draft' as const,
+      blackoutDates: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const divisions = [
+      { id: 'divA', name: 'A', schedulingOrder: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'divTball', name: 'Tball', schedulingOrder: 2, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    ];
+
+    // Both divisions prefer primaryField first, then secondaryField
+    const divisionConfigs = [
+      {
+        id: 'config-divA',
+        divisionId: 'divA',
+        seasonId: 'season1',
+        practicesPerWeek: 0,
+        practiceDurationHours: 0,
+        gamesPerWeek: 2,
+        gameDurationHours: 1.5,
+        gameArriveBeforeHours: 0.5,
+        cageSessionsPerWeek: 0, // No cage sessions
+        cageSessionDurationHours: 0,
+        fieldPreferences: ['primaryField', 'secondaryField'], // Primary field first
+        gameDayPreferences: [{ dayOfWeek: 6, priority: 'required' as const }], // Saturday required
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'config-divTball',
+        divisionId: 'divTball',
+        seasonId: 'season1',
+        practicesPerWeek: 0,
+        practiceDurationHours: 0,
+        gamesPerWeek: 2,
+        gameDurationHours: 1.5,
+        gameArriveBeforeHours: 0.5,
+        cageSessionsPerWeek: 0, // No cage sessions
+        cageSessionDurationHours: 0,
+        fieldPreferences: ['primaryField', 'secondaryField'], // Same primary field
+        gameDayPreferences: [{ dayOfWeek: 6, priority: 'required' as const }], // Saturday required
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    // Create 4 teams per division (needed for 2 games per week)
+    const teams = [
+      { id: 'teamA1', name: 'A Team 1', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA2', name: 'A Team 2', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA3', name: 'A Team 3', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamA4', name: 'A Team 4', divisionId: 'divA', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT1', name: 'Tball Team 1', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT2', name: 'Tball Team 2', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT3', name: 'Tball Team 3', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      { id: 'teamT4', name: 'Tball Team 4', divisionId: 'divTball', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    ];
+
+    // Season fields - both compatible with both divisions
+    const seasonFields = [
+      {
+        id: 'sf-primary',
+        seasonId: 'season1',
+        fieldId: 'primaryField',
+        fieldName: 'Primary Field',
+        divisionCompatibility: [], // Empty = all divisions
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'sf-secondary',
+        seasonId: 'season1',
+        fieldId: 'secondaryField',
+        fieldName: 'Secondary Field',
+        divisionCompatibility: [], // Empty = all divisions
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    // Field availability: Both fields available all day Saturday with enough slots for 4 games each
+    // 8 hours availability / 2 hour game slots = 4 games per field
+    const fieldAvailability = [
+      {
+        id: 'avail-primary-sat',
+        seasonFieldId: 'sf-primary',
+        dayOfWeek: 6,
+        startTime: '08:00',
+        endTime: '16:00', // 8 hours = 4 game slots
+        singleEventOnly: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'avail-secondary-sat',
+        seasonFieldId: 'sf-secondary',
+        dayOfWeek: 6,
+        startTime: '08:00',
+        endTime: '16:00', // 8 hours = 4 game slots
+        singleEventOnly: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    // Minimal cage setup (required by validator even if not used)
+    const seasonCages = [
+      {
+        id: 'sc-cage1',
+        seasonId: 'season1',
+        cageId: 'cage1',
+        cageName: 'Cage 1',
+        divisionCompatibility: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    const cageAvailability = [
+      {
+        id: 'avail-cage1-sat',
+        seasonCageId: 'sc-cage1',
+        dayOfWeek: 6,
+        startTime: '08:00',
+        endTime: '16:00',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    // Create generator (uses DEFAULT_SCORING_WEIGHTS by default)
+    const generator = new ScheduleGenerator(
+      season,
+      divisions,
+      divisionConfigs,
+      teams,
+      seasonFields,
+      seasonCages,
+      fieldAvailability,
+      cageAvailability,
+      [], // No field overrides
+      []  // No cage overrides
+    );
+
+    // Generate schedule
+    const result = await generator.generate();
+
+    // Debug: log any errors if generation failed
+    if (!result.success) {
+      console.log('Generation failed:', result.message);
+      console.log('Errors:', JSON.stringify(result.errors, null, 2));
+    }
+
+    expect(result.success).toBe(true);
+
+    // Get scheduled events
+    const events = generator.getScheduledEvents();
+    const games = events.filter(e => e.eventType === 'game');
+
+    // Get games on the primary field for each division
+    const divAGamesOnPrimary = games.filter(g => g.divisionId === 'divA' && g.fieldId === 'primaryField');
+    const divTballGamesOnPrimary = games.filter(g => g.divisionId === 'divTball' && g.fieldId === 'primaryField');
+
+    // THE KEY ASSERTION: Both divisions should have games on the primary field
+    // Before the fix, one division would get all primary field slots and the other would get none
+    expect(divAGamesOnPrimary.length).toBeGreaterThan(0);
+    expect(divTballGamesOnPrimary.length).toBeGreaterThan(0);
+
+    // Additional check: the distribution should be roughly equal (within 1-2 games)
+    // With 4 total slots on primary field and equal preference weights, each should get ~2
+    const diff = Math.abs(divAGamesOnPrimary.length - divTballGamesOnPrimary.length);
+    expect(diff).toBeLessThanOrEqual(2);
+
+    // Log for debugging
+    console.log(`A games on primary: ${divAGamesOnPrimary.length}`);
+    console.log(`Tball games on primary: ${divTballGamesOnPrimary.length}`);
+  });
+});
