@@ -252,7 +252,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   homeAwayBalance: 70,
   matchupHomeAwayBalance: 150, // Strong preference for balanced home/away within each matchup
   dayGap: 100,
-  timeAdjacency: 150, // Strong preference for packing events together
+  timeAdjacency: 0, // TODO: Consider removing this entirely if earliestTime is sufficient. Was 150 but caused issues where games were scheduled later to be adjacent to manually-added events instead of using earliest available slot.
   earliestTime: 200, // Strong preference for earlier game times
   fieldPreference: 300, // Strong preference for division's preferred fields
 
