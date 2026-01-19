@@ -79,6 +79,7 @@ export default function ScheduledEventsPage() {
   const [showAvailableSlots, setShowAvailableSlots] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [loadingAvailableSlots, setLoadingAvailableSlots] = useState(false);
+  const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
 
   const [formData, setFormData] = useState<CreateScheduledEventInput>({
     seasonId: '',
@@ -102,6 +103,9 @@ export default function ScheduledEventsPage() {
   useEffect(() => {
     if (currentSeason) {
       loadData();
+      // Increment refresh key to force available slots to refetch
+      // This ensures blackout changes are reflected when navigating to this page
+      setSlotsRefreshKey((k) => k + 1);
     }
   }, [currentSeason]);
 
@@ -137,7 +141,7 @@ export default function ScheduledEventsPage() {
     };
 
     loadAvailableSlots();
-  }, [showAvailableSlots, viewMode, currentSeason, filterDivision]);
+  }, [showAvailableSlots, viewMode, currentSeason, filterDivision, slotsRefreshKey]);
 
   const loadData = async () => {
     if (!currentSeason) return;
@@ -394,6 +398,23 @@ export default function ScheduledEventsPage() {
 
     return result;
   }, [events, filterTeam, filterField, filterCage]);
+
+  // Filter available slots by field/cage selection
+  const filteredAvailableSlots = useMemo(() => {
+    let result = availableSlots;
+
+    if (filterField) {
+      // When field filter is set, only show available slots for that field
+      result = result.filter((slot) => slot.resourceType === 'field' && slot.resourceId === filterField);
+    }
+
+    if (filterCage) {
+      // When cage filter is set, only show available slots for that cage
+      result = result.filter((slot) => slot.resourceType === 'cage' && slot.resourceId === filterCage);
+    }
+
+    return result;
+  }, [availableSlots, filterField, filterCage]);
 
   // Helper to expand a date range into individual dates
   const expandDateRange = (startDate: string, endDate?: string): string[] => {
@@ -916,7 +937,7 @@ export default function ScheduledEventsPage() {
               endDate: currentSeason.endDate,
             } : undefined}
             blackoutDates={calendarBlackoutDates}
-            availableSlots={showAvailableSlots ? availableSlots : undefined}
+            availableSlots={showAvailableSlots ? filteredAvailableSlots : undefined}
             onEventCreate={async (input) => {
               await createScheduledEvent(input);
               await loadEvents();

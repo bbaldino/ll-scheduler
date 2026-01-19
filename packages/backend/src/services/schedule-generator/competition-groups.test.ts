@@ -18,11 +18,13 @@ describe('getPreferenceWeight', () => {
 });
 
 describe('buildCompetitionGroups', () => {
-  // Helper to create test data
+  // Helper to create test data with minimal required fields
   const createDivision = (id: string): Division => ({
     id,
     name: `Division ${id}`,
-    organizationId: 'org1',
+    schedulingOrder: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
 
   const createDivisionConfig = (
@@ -30,6 +32,11 @@ describe('buildCompetitionGroups', () => {
     dayPrefs: Array<{ day: number; priority: 'required' | 'preferred' | 'acceptable' | 'avoid' }>,
     fieldPrefs: string[] = ['field1']
   ): DivisionConfig => ({
+    id: `config-${id}`,
+    divisionId: id,
+    seasonId: 'season1',
+    practicesPerWeek: 2,
+    practiceDurationHours: 1.5,
     gamesPerWeek: 2,
     gameDurationHours: 1.5,
     gameArriveBeforeHours: 0.5,
@@ -38,13 +45,16 @@ describe('buildCompetitionGroups', () => {
       dayOfWeek: p.day,
       priority: p.priority,
     })),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
 
   const createSeasonField = (id: string, fieldId: string): SeasonField => ({
     id,
     seasonId: 'season1',
     fieldId,
-    divisionId: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
 
   const createFieldAvailability = (
@@ -58,6 +68,9 @@ describe('buildCompetitionGroups', () => {
     dayOfWeek,
     startTime: start,
     endTime: end,
+    singleEventOnly: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
 
   it('creates competition group when two divisions share primary field on same day', () => {
