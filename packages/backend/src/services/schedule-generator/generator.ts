@@ -780,6 +780,15 @@ export class ScheduleGenerator {
   }
 
   /**
+   * Check if a specific week has an explicit override (vs using the default gamesPerWeek)
+   */
+  private hasGameWeekOverride(divisionId: string, weekNumber: number): boolean {
+    const config = this.divisionConfigs.get(divisionId);
+    if (!config) return false;
+    return config.gameWeekOverrides?.some(o => o.weekNumber === weekNumber) ?? false;
+  }
+
+  /**
    * Calculate total games per team for a division across all game weeks
    * Accounts for per-week overrides and maxGamesPerSeason cap
    */
@@ -2243,22 +2252,38 @@ export class ScheduleGenerator {
           failureReason = 'target_week_not_found';
         } else {
           // Check if either team has already met their games-per-week quota for THIS week
-          // Spillover games don't count against the quota - they're "extra" games from previous weeks
           const homeWeekEvents = homeTeamState.eventsPerWeek.get(week.weekNumber);
           const awayWeekEvents = awayTeamState.eventsPerWeek.get(week.weekNumber);
-          // Regular games = total games - spillover games (spillover games don't count against quota)
-          const homeRegularGamesThisWeek = (homeWeekEvents?.games || 0) - (homeWeekEvents?.spilloverGames || 0);
-          const awayRegularGamesThisWeek = (awayWeekEvents?.games || 0) - (awayWeekEvents?.spilloverGames || 0);
+          const homeTotalGamesThisWeek = homeWeekEvents?.games || 0;
+          const awayTotalGamesThisWeek = awayWeekEvents?.games || 0;
+          // Regular games = total games - spillover games
+          const homeRegularGamesThisWeek = homeTotalGamesThisWeek - (homeWeekEvents?.spilloverGames || 0);
+          const awayRegularGamesThisWeek = awayTotalGamesThisWeek - (awayWeekEvents?.spilloverGames || 0);
           // Use current week (weekNum) for quota lookup, not original target week
           const gamesPerWeekQuota = this.getGamesPerWeekForDivision(division.divisionId, weekNum + 1);
           const isSpillover = matchup.originalWeek !== undefined && matchup.originalWeek !== weekNum;
-          // For regular games, enforce quota strictly. For spillover games, allow them as "extra"
-          // (spillover games themselves don't count against quota, so we just check regular games)
-          if (!isSpillover && homeRegularGamesThisWeek >= gamesPerWeekQuota) {
-            failureReason = `${homeTeam.name} already at quota (${homeRegularGamesThisWeek}/${gamesPerWeekQuota})`;
-          } else if (!isSpillover && awayRegularGamesThisWeek >= gamesPerWeekQuota) {
-            failureReason = `${awayTeam.name} already at quota (${awayRegularGamesThisWeek}/${gamesPerWeekQuota})`;
-          } else {
+          const hasOverride = this.hasGameWeekOverride(division.divisionId, weekNum + 1);
+
+          // Quota enforcement rules:
+          // - Weeks WITH override: override is a hard cap on ALL games (regular + spillover)
+          // - Weeks WITHOUT override (default): spillover games don't count against quota
+          if (hasOverride) {
+            // Override weeks: enforce quota as hard cap on ALL games
+            if (homeTotalGamesThisWeek >= gamesPerWeekQuota) {
+              failureReason = `${homeTeam.name} at override cap (${homeTotalGamesThisWeek}/${gamesPerWeekQuota} games in week ${weekNum + 1})`;
+            } else if (awayTotalGamesThisWeek >= gamesPerWeekQuota) {
+              failureReason = `${awayTeam.name} at override cap (${awayTotalGamesThisWeek}/${gamesPerWeekQuota} games in week ${weekNum + 1})`;
+            }
+          } else if (!isSpillover) {
+            // Non-override weeks: only regular games count against quota (spillover are "extra")
+            if (homeRegularGamesThisWeek >= gamesPerWeekQuota) {
+              failureReason = `${homeTeam.name} already at quota (${homeRegularGamesThisWeek}/${gamesPerWeekQuota})`;
+            } else if (awayRegularGamesThisWeek >= gamesPerWeekQuota) {
+              failureReason = `${awayTeam.name} already at quota (${awayRegularGamesThisWeek}/${gamesPerWeekQuota})`;
+            }
+          }
+
+          if (!failureReason) {
             // Use pre-filtered field slots for this week (not target week)
             const currentWeekFieldSlots = fieldSlotsByWeek.get(weekNum) || [];
 
