@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { useSeason } from '../contexts/SeasonContext';
 import CalendarView from '../components/CalendarView';
 import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
@@ -523,28 +522,27 @@ export default function ScheduledEventsPage() {
             <button
               className={viewMode === 'list' ? styles.active : ''}
               onClick={() => setViewMode('list')}
+              title="View events as a list grouped by date"
             >
-              List View
+              List
             </button>
             <button
               className={viewMode === 'calendar' ? styles.active : ''}
               onClick={() => setViewMode('calendar')}
+              title="View events on a calendar"
             >
-              Calendar View
+              Calendar
             </button>
           </div>
-          <Link to="/generation-logs" className={styles.linkButton}>
-            View Generation Logs
-          </Link>
-          <button onClick={handleEvaluate} disabled={isEvaluating}>
-            {isEvaluating ? 'Evaluating...' : 'Evaluate Schedule'}
+          <button onClick={handleEvaluate} disabled={isEvaluating} title="Evaluate schedule for conflicts and balance issues">
+            {isEvaluating ? 'Evaluating...' : 'Evaluate'}
           </button>
-          <button onClick={() => setShowSaveModal(true)}>Save Schedule</button>
-          <button onClick={() => setShowRestoreModal(true)}>Manage Saved</button>
-          <button onClick={handleExportTeamSnap}>Export to TeamSnap</button>
-          <button onClick={handleExportTeamSnapBulk}>Export All Teams (ZIP)</button>
+          <button onClick={() => setShowSaveModal(true)} title="Save current schedule">Save</button>
+          <button onClick={() => setShowRestoreModal(true)} title="Load or manage saved schedules">Load</button>
+          <button onClick={handleExportTeamSnap} title="Export filtered events to TeamSnap CSV format">Export CSV</button>
+          <button onClick={handleExportTeamSnapBulk} title="Export all teams as separate CSVs in a ZIP file">Export ZIP</button>
           {viewMode === 'list' && (
-            <button onClick={() => setIsCreating(true)}>Create Event</button>
+            <button onClick={() => setIsCreating(true)} title="Create a new event">Create</button>
           )}
         </div>
       </div>
@@ -622,14 +620,15 @@ export default function ScheduledEventsPage() {
               ))}
           </select>
         </div>
-        {(filterTeam || filterField || filterCage) && (
+        {(filterDivision || filterType || filterTeam || filterField || filterCage) && (
           <button
             className={styles.clearFilterButton}
             onClick={() => {
+              setFilterDivision('');
+              setFilterType('');
               setFilterTeam('');
               setFilterField('');
               setFilterCage('');
-              setFilterDivision('');
             }}
           >
             Clear Filters
