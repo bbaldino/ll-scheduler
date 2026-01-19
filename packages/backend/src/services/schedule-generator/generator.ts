@@ -165,21 +165,32 @@ function findRequiredDayOptimalMatchups<T extends GameMatchup>(
 }
 
 /**
- * Competition group for required-day slot balancing.
- * Represents divisions that share the same primary field for a required day.
+ * Preference weight for budget allocation.
+ * Higher weight = more slots allocated.
  */
-interface CompetitionGroup {
+export type PreferenceWeight = {
+  divisionId: string;
+  priority: 'required' | 'preferred' | 'acceptable';
+  weight: number; // required=3, preferred=2, acceptable=1
+};
+
+/**
+ * Competition group for shared-field slot balancing.
+ * Represents divisions that share the same primary field for a game day.
+ */
+export interface CompetitionGroup {
   dayOfWeek: number;           // 0=Sunday, 6=Saturday
   divisionIds: string[];       // Divisions competing for this field on this day
   primaryFieldId: string;      // The shared primary field
   slotsPerWeek: number;        // Game slots available per week on this field for this day
+  divisionPreferences: PreferenceWeight[]; // Per-division preference weights (sorted by weight desc)
 }
 
 /**
  * Tracks required-day slot budgets and usage across divisions.
  * Ensures fair distribution of Saturday (or other required day) games per week.
  */
-interface RequiredDayBudgetTracker {
+export interface RequiredDayBudgetTracker {
   // Maps "divisionId|dayOfWeek|weekNum" -> budget (max slots allowed for that week)
   budgets: Map<string, number>;
   // Maps "divisionId|dayOfWeek|weekNum" -> usage (slots actually used that week)
@@ -234,11 +245,30 @@ function findPrimaryFieldForDay(
 }
 
 /**
- * Build competition groups for required-day slot balancing.
- * Groups divisions that share the same primary field for each required day.
+ * Convert preference priority to numeric weight for budget allocation.
+ */
+export function getPreferenceWeight(priority: 'required' | 'preferred' | 'acceptable' | 'avoid'): number {
+  switch (priority) {
+    case 'required':
+      return 3;
+    case 'preferred':
+      return 2;
+    case 'acceptable':
+      return 1;
+    case 'avoid':
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Build competition groups for shared-field slot balancing.
+ * Groups divisions that share the same primary field for game days.
+ * Includes preference weights for budget allocation (higher preference = more slots).
  * Calculates actual game capacity based on availability window duration and game duration.
  */
-function buildCompetitionGroups(
+export function buildCompetitionGroups(
   divisions: Division[],
   divisionConfigs: Map<string, DivisionConfig>,
   fieldAvailabilities: FieldAvailability[],
@@ -247,33 +277,30 @@ function buildCompetitionGroups(
 ): CompetitionGroup[] {
   const groups: CompetitionGroup[] = [];
 
-  // Collect all required days across all divisions
-  const allRequiredDays = new Set<number>();
+  // Collect all game days with preferences (required, preferred, or acceptable) across all divisions
+  const allGameDays = new Set<number>();
   for (const [_divId, config] of divisionConfigs) {
-    const requiredDays = (config.gameDayPreferences || [])
-      .filter((p) => p.priority === 'required')
+    const gameDays = (config.gameDayPreferences || [])
+      .filter((p) => p.priority === 'required' || p.priority === 'preferred' || p.priority === 'acceptable')
       .map((p) => p.dayOfWeek);
-    for (const day of requiredDays) {
-      allRequiredDays.add(day);
+    for (const day of gameDays) {
+      allGameDays.add(day);
     }
   }
 
-  // For each required day, group divisions by their primary field
-  for (const dayOfWeek of allRequiredDays) {
-    // Map: primaryFieldId -> divisions using that as primary for this day
-    const fieldToDivisions = new Map<string, string[]>();
+  // For each game day, group divisions by their primary field
+  for (const dayOfWeek of allGameDays) {
+    // Map: primaryFieldId -> { divisionId, preference }
+    const fieldToDivisions = new Map<string, PreferenceWeight[]>();
 
     for (const division of divisions) {
       const config = divisionConfigs.get(division.id);
       if (!config) continue;
 
-      // Check if this division has this day as required
-      const divisionRequiredDays = (config.gameDayPreferences || [])
-        .filter((p) => p.priority === 'required')
-        .map((p) => p.dayOfWeek);
-
-      if (!divisionRequiredDays.includes(dayOfWeek)) {
-        continue; // This division doesn't need this day
+      // Find preference for this day (if any)
+      const dayPref = (config.gameDayPreferences || []).find((p) => p.dayOfWeek === dayOfWeek);
+      if (!dayPref || dayPref.priority === 'avoid') {
+        continue; // This division doesn't want games on this day
       }
 
       // Find primary field for this day
@@ -287,14 +314,20 @@ function buildCompetitionGroups(
 
       if (primaryField) {
         const existing = fieldToDivisions.get(primaryField) || [];
-        existing.push(division.id);
+        existing.push({
+          divisionId: division.id,
+          priority: dayPref.priority as 'required' | 'preferred' | 'acceptable',
+          weight: getPreferenceWeight(dayPref.priority),
+        });
         fieldToDivisions.set(primaryField, existing);
       }
     }
 
     // Create competition groups for fields with multiple divisions
-    for (const [fieldId, divisionIds] of fieldToDivisions) {
-      if (divisionIds.length > 1) {
+    for (const [fieldId, divisionPrefs] of fieldToDivisions) {
+      if (divisionPrefs.length > 1) {
+        const divisionIds = divisionPrefs.map((p) => p.divisionId);
+
         // Calculate game capacity for this field on this day
         // Use the average game slot duration among competing divisions
         let totalGameSlotHours = 0;
@@ -331,11 +364,15 @@ function buildCompetitionGroups(
         // Calculate how many games can fit per week
         const slotsPerWeek = Math.floor(totalAvailableHoursPerWeek / avgGameSlotHours);
 
+        // Sort by weight descending so higher preference divisions are processed first
+        divisionPrefs.sort((a, b) => b.weight - a.weight);
+
         groups.push({
           dayOfWeek,
           divisionIds,
           primaryFieldId: fieldId,
           slotsPerWeek,
+          divisionPreferences: divisionPrefs,
         });
       }
     }
@@ -345,9 +382,9 @@ function buildCompetitionGroups(
 }
 
 /**
- * Initialize the required-day budget tracker with competition groups and per-week budgets.
+ * Initialize the required-day budget tracker with competition groups and preference-weighted per-week budgets.
  */
-function initializeRequiredDayBudgetTracker(
+export function initializeRequiredDayBudgetTracker(
   competitionGroups: CompetitionGroup[],
   divisionNames: Map<string, string>,
   numWeeks: number
@@ -363,30 +400,59 @@ function initializeRequiredDayBudgetTracker(
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   for (const group of competitionGroups) {
-    const numDivisions = group.divisionIds.length;
-    // Use ceil to ensure at least 1 slot per division when there's any capacity
-    // This means the total might exceed available slots, but that's okay -
-    // divisions will naturally stop when slots run out
-    const budgetPerDivisionPerWeek = group.slotsPerWeek > 0
-      ? Math.max(1, Math.floor(group.slotsPerWeek / numDivisions))
-      : 0;
+    // Calculate total weight for proportional budget allocation
+    const totalWeight = group.divisionPreferences.reduce((sum, p) => sum + p.weight, 0);
 
-    // Log the competition group
-    const divisionNameList = group.divisionIds.map((id) => divisionNames.get(id) || id).join(', ');
+    if (totalWeight === 0 || group.slotsPerWeek === 0) {
+      continue; // No budget to allocate
+    }
+
+    // Calculate per-division budgets based on preference weights
+    const divisionBudgets = new Map<string, number>();
+    let allocatedTotal = 0;
+
+    for (const pref of group.divisionPreferences) {
+      // Proportional allocation: (weight / totalWeight) * slotsPerWeek
+      // Use floor to avoid over-allocation, then redistribute remainder
+      const rawBudget = (pref.weight / totalWeight) * group.slotsPerWeek;
+      const budget = Math.max(1, Math.floor(rawBudget)); // At least 1 slot if in group
+      divisionBudgets.set(pref.divisionId, budget);
+      allocatedTotal += budget;
+    }
+
+    // If we under-allocated due to rounding, give extra slots to highest-preference divisions
+    let remaining = group.slotsPerWeek - allocatedTotal;
+    for (const pref of group.divisionPreferences) {
+      if (remaining <= 0) break;
+      const current = divisionBudgets.get(pref.divisionId) || 0;
+      divisionBudgets.set(pref.divisionId, current + 1);
+      remaining--;
+    }
+
+    // Log the competition group with weighted allocations
+    const allocationDetails = group.divisionPreferences
+      .map((p) => {
+        const name = divisionNames.get(p.divisionId) || p.divisionId;
+        const budget = divisionBudgets.get(p.divisionId) || 0;
+        return `${name}(${p.priority})=${budget}`;
+      })
+      .join(', ');
     console.log(
-      `[RequiredDayBudget] Competition group for ${dayNames[group.dayOfWeek]}: ` +
-        `${divisionNameList} sharing field (${group.slotsPerWeek} slots/week → ${budgetPerDivisionPerWeek} each/week)`
+      `[CompetitionGroup] ${dayNames[group.dayOfWeek]}: ` +
+        `${group.slotsPerWeek} slots/week → ${allocationDetails}`
     );
 
-    for (const divisionId of group.divisionIds) {
+    for (const pref of group.divisionPreferences) {
+      const budgetPerWeek = divisionBudgets.get(pref.divisionId) || 0;
+
       // Mark this division as in competition for this day
-      const dayKey = `${divisionId}|${group.dayOfWeek}`;
+      const dayKey = `${pref.divisionId}|${group.dayOfWeek}`;
       tracker.divisionDayInCompetition.add(dayKey);
 
       // Initialize per-week budgets and usage
       for (let weekNum = 0; weekNum < numWeeks; weekNum++) {
-        const key = `${divisionId}|${group.dayOfWeek}|${weekNum}`;
-        tracker.budgets.set(key, budgetPerDivisionPerWeek);
+        const key = `${pref.divisionId}|${group.dayOfWeek}|${weekNum}`;
+        tracker.budgets.set(key, budgetPerWeek);
         tracker.usage.set(key, 0);
       }
     }
@@ -399,7 +465,7 @@ function initializeRequiredDayBudgetTracker(
  * Check if a division can use a required-day slot for a specific week (hasn't exhausted budget).
  * Returns true if no budget restriction applies or if budget is available.
  */
-function canUseRequiredDaySlot(
+export function canUseRequiredDaySlot(
   divisionId: string,
   dayOfWeek: number,
   weekNum: number,
@@ -1784,7 +1850,16 @@ export class ScheduleGenerator {
       gameWeeks.length
     );
 
-    let totalScheduled = 0;
+    // Pre-pass: Schedule competition group games in interleaved fashion
+    // This ensures divisions sharing a primary field get alternating time slots
+    const scheduledInPrePass = this.scheduleCompetitionGroupGamesInterleaved(
+      competitionGroups,
+      requiredDayBudgetTracker,
+      divisionMatchupsList,
+      gameWeeks
+    );
+
+    let totalScheduled = scheduledInPrePass.size;
     let failedToSchedule = 0;
 
     for (let divisionIndex = 0; divisionIndex < divisionMatchupsList.length; divisionIndex++) {
@@ -2141,6 +2216,12 @@ export class ScheduleGenerator {
 
         // Process each matchup in sorted order
         for (const matchup of sortedMatchups) {
+        // Skip matchups already scheduled in the interleaved pre-pass
+        const matchupKey = ScheduleGenerator.createMatchupKey(matchup.homeTeamId, matchup.awayTeamId, matchup.targetWeek);
+        if (scheduledInPrePass.has(matchupKey)) {
+          continue;
+        }
+
         const homeTeam = teamLookup.get(matchup.homeTeamId);
         const awayTeam = teamLookup.get(matchup.awayTeamId);
         const homeTeamState = this.teamSchedulingStates.get(matchup.homeTeamId);
@@ -2564,6 +2645,200 @@ export class ScheduleGenerator {
 
     // Analyze game day preference compliance for each division
     this.analyzeGameDayPreferenceCompliance(divisionMatchupsList, gameWeeks);
+  }
+
+  /**
+   * Create a unique key for a matchup (used to track scheduled matchups).
+   */
+  private static createMatchupKey(homeTeamId: string, awayTeamId: string, targetWeek: number): string {
+    return `${homeTeamId}|${awayTeamId}|${targetWeek}`;
+  }
+
+  /**
+   * Schedule competition group games in an interleaved fashion.
+   * This ensures divisions sharing a primary field get interleaved time slots
+   * rather than one division taking all early slots.
+   *
+   * Returns a Set of matchup keys that were scheduled in the pre-pass.
+   */
+  private scheduleCompetitionGroupGamesInterleaved(
+    competitionGroups: CompetitionGroup[],
+    requiredDayBudgetTracker: RequiredDayBudgetTracker,
+    divisionMatchupsList: Array<{
+      divisionId: string;
+      divisionName: string;
+      teams: Team[];
+      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number };
+      matchups: Array<GameMatchup & { targetWeek: number }>;
+    }>,
+    gameWeeks: WeekDefinition[]
+  ): Set<string> {
+    const scheduledMatchupKeys = new Set<string>();
+
+    if (competitionGroups.length === 0) {
+      return scheduledMatchupKeys;
+    }
+
+    console.log(`\n[Interleaved] Starting interleaved scheduling for ${competitionGroups.length} competition groups`);
+
+    // Build lookup: divisionId -> division data
+    const divisionLookup = new Map<string, typeof divisionMatchupsList[0]>();
+    for (const div of divisionMatchupsList) {
+      divisionLookup.set(div.divisionId, div);
+    }
+
+    // Process each week
+    for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
+      const week = gameWeeks[weekNum];
+      const weekDatesSet = new Set(week.dates);
+
+      // Process each competition group
+      for (const group of competitionGroups) {
+        const dayOfWeek = group.dayOfWeek;
+        const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
+
+        // Collect matchups from each division for this day/week, organized by division
+        // Order divisions by preference (already sorted in group.divisionPreferences)
+        const divisionMatchupQueues = new Map<string, Array<GameMatchup & { targetWeek: number }>>();
+
+        for (const pref of group.divisionPreferences) {
+          const divData = divisionLookup.get(pref.divisionId);
+          if (!divData) continue;
+
+          // Get matchups for this week that haven't been scheduled yet
+          const weekMatchups = divData.matchups.filter((m) => {
+            const key = ScheduleGenerator.createMatchupKey(m.homeTeamId, m.awayTeamId, m.targetWeek);
+            return m.targetWeek === weekNum && !scheduledMatchupKeys.has(key);
+          });
+
+          divisionMatchupQueues.set(pref.divisionId, [...weekMatchups]); // Copy so we can mutate
+        }
+
+        // Round-robin through divisions, scheduling one matchup at a time
+        let scheduledThisGroup = 0;
+        let continueScheduling = true;
+
+        while (continueScheduling) {
+          continueScheduling = false;
+
+          // Go through divisions in preference order
+          for (const pref of group.divisionPreferences) {
+            const divisionId = pref.divisionId;
+            const divData = divisionLookup.get(divisionId);
+            if (!divData) continue;
+
+            // Check if this division has budget for this day/week
+            if (!canUseRequiredDaySlot(divisionId, dayOfWeek, weekNum, requiredDayBudgetTracker)) {
+              continue; // Budget exhausted for this division
+            }
+
+            const queue = divisionMatchupQueues.get(divisionId);
+            if (!queue || queue.length === 0) {
+              continue; // No more matchups for this division
+            }
+
+            // Try to schedule the next matchup from this division's queue
+            const matchup = queue[0]; // Peek at first matchup
+
+            // Find field slots for this week and day
+            const totalGameSlotHours = divData.config.gameDurationHours + (divData.config.gameArriveBeforeHours || 0);
+
+            const daySlots = this.gameFieldSlots.filter((rs) =>
+              weekDatesSet.has(rs.slot.date) &&
+              rs.slot.dayOfWeek === dayOfWeek &&
+              this.isFieldCompatibleWithDivision(rs.resourceId, divisionId) &&
+              !this.isDateBlockedForDivision(rs.slot.date, 'game', divisionId)
+            );
+
+            if (daySlots.length === 0) {
+              queue.shift(); // Remove this matchup, can't schedule on this day
+              continue;
+            }
+
+            // Generate candidates for this game on competition group day only
+            const candidates = generateCandidatesForGame(
+              matchup,
+              daySlots,
+              week,
+              totalGameSlotHours,
+              this.season.id,
+              this.scoringContext!
+            );
+
+            if (candidates.length === 0) {
+              queue.shift(); // Remove this matchup, no valid slots
+              continue;
+            }
+
+            // Score and pick best candidate
+            const homeTeamState = this.teamSchedulingStates.get(matchup.homeTeamId);
+            if (!homeTeamState) {
+              queue.shift();
+              continue;
+            }
+
+            const scoredCandidates = candidates.map((c) =>
+              calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+            );
+            scoredCandidates.sort((a, b) => b.score - a.score);
+            const bestCandidate = scoredCandidates[0];
+
+            // Check for hard constraint violations
+            if (!bestCandidate || bestCandidate.score <= -500000) {
+              queue.shift(); // Remove this matchup, has constraint violation
+              continue;
+            }
+
+            // Schedule the game
+            const awayTeamState = this.teamSchedulingStates.get(matchup.awayTeamId);
+            if (!awayTeamState) {
+              queue.shift();
+              continue;
+            }
+
+            const eventDraft = candidateToEventDraft(bestCandidate, divisionId);
+            this.scheduledEvents.push(eventDraft);
+            addEventToContext(this.scoringContext!, eventDraft);
+
+            // Update team states
+            updateTeamStateAfterScheduling(homeTeamState, eventDraft, week.weekNumber, true, awayTeamState.teamId, false);
+            updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId, false);
+
+            // Update resource usage
+            updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, totalGameSlotHours);
+
+            // Record budget usage
+            recordRequiredDayUsage(divisionId, dayOfWeek, weekNum, requiredDayBudgetTracker, this.divisionNames);
+
+            // Mark matchup as scheduled
+            const matchupKey = ScheduleGenerator.createMatchupKey(matchup.homeTeamId, matchup.awayTeamId, matchup.targetWeek);
+            scheduledMatchupKeys.add(matchupKey);
+
+            // Remove from queue
+            queue.shift();
+
+            // Log
+            const divName = this.divisionNames.get(divisionId) || divisionId;
+            const homeTeam = divData.teams.find((t) => t.id === matchup.homeTeamId);
+            const awayTeam = divData.teams.find((t) => t.id === matchup.awayTeamId);
+            console.log(
+              `[Interleaved] ${divName}: ${homeTeam?.name || matchup.homeTeamId} vs ${awayTeam?.name || matchup.awayTeamId} ` +
+              `→ ${bestCandidate.date} ${bestCandidate.startTime} @ ${bestCandidate.resourceName}`
+            );
+
+            scheduledThisGroup++;
+            continueScheduling = true; // Keep going, we scheduled something
+          }
+        }
+
+        if (scheduledThisGroup > 0) {
+          console.log(`[Interleaved] Week ${weekNum + 1} ${dayName}: scheduled ${scheduledThisGroup} games for competition group`);
+        }
+      }
+    }
+
+    console.log(`[Interleaved] Pre-pass complete. Scheduled ${scheduledMatchupKeys.size} games in interleaved fashion.\n`);
+    return scheduledMatchupKeys;
   }
 
   /**
