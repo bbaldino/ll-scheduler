@@ -18,11 +18,13 @@ import { fetchSeasonFields } from '../api/fields';
 import { fetchSeasonCages } from '../api/batting-cages';
 import { evaluateSchedule } from '../api/schedule-generator';
 import { fetchAvailableSlots } from '../api/available-slots';
+import { fetchDivisionConfigs } from '../api/division-configs';
 import type {
   ScheduledEvent,
   CreateScheduledEventInput,
   UpdateScheduledEventInput,
   Division,
+  DivisionConfig,
   Team,
   SeasonField,
   SeasonCage,
@@ -50,6 +52,7 @@ export default function ScheduledEventsPage() {
   const { currentSeason } = useSeason();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
+  const [divisionConfigs, setDivisionConfigs] = useState<DivisionConfig[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [seasonFields, setSeasonFields] = useState<SeasonField[]>([]);
   const [seasonCages, setSeasonCages] = useState<SeasonCage[]>([]);
@@ -146,13 +149,15 @@ export default function ScheduledEventsPage() {
   const loadData = async () => {
     if (!currentSeason) return;
     try {
-      const [divisionsData, teamsData, fieldsData, cagesData] = await Promise.all([
+      const [divisionsData, divisionConfigsData, teamsData, fieldsData, cagesData] = await Promise.all([
         fetchDivisions(),
+        fetchDivisionConfigs(currentSeason.id),
         fetchTeams(currentSeason.id),
         fetchSeasonFields(currentSeason.id),
         fetchSeasonCages(currentSeason.id),
       ]);
       setDivisions(divisionsData);
+      setDivisionConfigs(divisionConfigsData);
       setTeams(teamsData);
       setSeasonFields(fieldsData);
       setSeasonCages(cagesData);
@@ -929,6 +934,7 @@ export default function ScheduledEventsPage() {
             seasonFields={seasonFields}
             seasonCages={seasonCages}
             divisions={divisions}
+            divisionConfigs={divisionConfigs}
             seasonId={currentSeason?.id}
             initialDate={currentSeason?.startDate}
             seasonMilestones={currentSeason ? {

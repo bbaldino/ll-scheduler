@@ -5,6 +5,7 @@ import type {
   SeasonField,
   SeasonCage,
   Division,
+  DivisionConfig,
   UpdateScheduledEventInput,
   CreateScheduledEventInput,
   EventType,
@@ -39,6 +40,7 @@ interface CalendarViewProps {
   seasonFields: SeasonField[];
   seasonCages: SeasonCage[];
   divisions: Division[];
+  divisionConfigs?: DivisionConfig[]; // For accessing division-specific settings like gameArriveBeforeHours
   seasonId?: string; // Required for creating events
   initialDate?: string; // ISO date string to start the calendar on
   seasonMilestones?: SeasonMilestones; // Key season dates to annotate
@@ -63,6 +65,7 @@ export default function CalendarView({
   seasonFields,
   seasonCages,
   divisions,
+  divisionConfigs,
   seasonId,
   initialDate,
   seasonMilestones,
@@ -330,6 +333,25 @@ export default function CalendarView({
 
   const getDivisionName = (divisionId: string) => {
     return divisions.find((d) => d.id === divisionId)?.name || 'Unknown Division';
+  };
+
+  const getDivisionConfig = (divisionId: string) => {
+    return divisionConfigs?.find((dc) => dc.divisionId === divisionId);
+  };
+
+  // For games, calculate the actual game start time (block start + arrive before time)
+  const getGameStartTime = (event: ScheduledEvent): string | null => {
+    if (event.eventType !== 'game') return null;
+    const config = getDivisionConfig(event.divisionId);
+    const arriveBeforeHours = config?.gameArriveBeforeHours || 0;
+    if (arriveBeforeHours === 0) return null; // No arrive-before time configured
+
+    // Parse start time and add arrive-before hours
+    const [hours, minutes] = event.startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + Math.round(arriveBeforeHours * 60);
+    const gameHours = Math.floor(totalMinutes / 60);
+    const gameMinutes = totalMinutes % 60;
+    return `${gameHours.toString().padStart(2, '0')}:${gameMinutes.toString().padStart(2, '0')}`;
   };
 
   const formatEventSummary = (event: ScheduledEvent) => {
@@ -1078,6 +1100,28 @@ export default function CalendarView({
                   />
                 </div>
               </div>
+
+              {/* Game time breakdown: arrival vs game start */}
+              {editingEvent.eventType === 'game' && (() => {
+                const gameStartTime = getGameStartTime(editingEvent);
+                if (!gameStartTime) return null;
+                return (
+                  <div className={styles.formRow}>
+                    <div className={styles.formGroup}>
+                      <label>Arrival Time</label>
+                      <span className={styles.teamDisplay}>
+                        {editFormData.startTime || editingEvent.startTime}
+                      </span>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Game Starts</label>
+                      <span className={styles.teamDisplay}>
+                        {gameStartTime}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Team display for practices */}
               {editingEvent.eventType === 'practice' && (
