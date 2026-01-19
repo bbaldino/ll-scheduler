@@ -50,6 +50,7 @@ export interface DivisionConfig {
   gamesPerWeek: number;
   gameDurationHours: number;
   gameArriveBeforeHours?: number; // Time before game start players should arrive
+  practiceArriveBeforeMinutes?: number; // Time before practice start players should arrive (in minutes)
   gameDayPreferences?: GameDayPreference[]; // Preferred days for game scheduling
   minConsecutiveDayGap?: number; // Minimum days between practices/games for a team
   cageSessionsPerWeek?: number; // Batting cage sessions per week (null = no cage time)
@@ -79,6 +80,7 @@ export interface CreateDivisionConfigInput {
   gamesPerWeek: number;
   gameDurationHours: number;
   gameArriveBeforeHours?: number;
+  practiceArriveBeforeMinutes?: number;
   gameDayPreferences?: GameDayPreference[];
   minConsecutiveDayGap?: number;
   cageSessionsPerWeek?: number;
@@ -99,6 +101,7 @@ export interface UpdateDivisionConfigInput {
   gamesPerWeek?: number;
   gameDurationHours?: number;
   gameArriveBeforeHours?: number;
+  practiceArriveBeforeMinutes?: number;
   gameDayPreferences?: GameDayPreference[];
   minConsecutiveDayGap?: number;
   cageSessionsPerWeek?: number;

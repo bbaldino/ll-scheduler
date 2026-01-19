@@ -89,6 +89,7 @@ export default function SeasonsPage() {
   const [configFormData, setConfigFormData] = useState<Partial<CreateDivisionConfigInput>>({
     practicesPerWeek: 1,
     practiceDurationHours: 1,
+    practiceArriveBeforeMinutes: 10,
     gamesPerWeek: undefined,
     gameDurationHours: undefined,
     gameArriveBeforeHours: undefined,
@@ -243,6 +244,7 @@ export default function SeasonsPage() {
       divisionId,
       practicesPerWeek: 1,
       practiceDurationHours: 1,
+      practiceArriveBeforeMinutes: 10,
       gamesPerWeek: 1,
       gameDurationHours: 2,
       gameArriveBeforeHours: 0,
@@ -259,6 +261,7 @@ export default function SeasonsPage() {
       divisionId: config.divisionId,
       practicesPerWeek: config.practicesPerWeek,
       practiceDurationHours: config.practiceDurationHours,
+      practiceArriveBeforeMinutes: config.practiceArriveBeforeMinutes,
       gamesPerWeek: config.gamesPerWeek,
       gameDurationHours: config.gameDurationHours,
       gameArriveBeforeHours: config.gameArriveBeforeHours,
@@ -302,6 +305,7 @@ export default function SeasonsPage() {
       await updateDivisionConfig(configId, {
         practicesPerWeek: configFormData.practicesPerWeek,
         practiceDurationHours: configFormData.practiceDurationHours,
+        practiceArriveBeforeMinutes: configFormData.practiceArriveBeforeMinutes,
         gamesPerWeek: configFormData.gamesPerWeek,
         gameDurationHours: configFormData.gameDurationHours,
         gameArriveBeforeHours: configFormData.gameArriveBeforeHours,
@@ -1311,6 +1315,22 @@ export default function SeasonsPage() {
                                       required
                                     />
                                   </div>
+                                  <div className={styles.formGroup}>
+                                    <label>Arrive Before (minutes)</label>
+                                    <select
+                                      value={configFormData.practiceArriveBeforeMinutes ?? 10}
+                                      onChange={(e) =>
+                                        setConfigFormData({
+                                          ...configFormData,
+                                          practiceArriveBeforeMinutes: parseInt(e.target.value),
+                                        })
+                                      }
+                                    >
+                                      {[0, 5, 10, 15, 20, 30, 45, 60].map((m) => (
+                                        <option key={m} value={m}>{m} min</option>
+                                      ))}
+                                    </select>
+                                  </div>
                                 </div>
                                 <div className={styles.formRow}>
                                   <div className={styles.formGroup}>
@@ -1712,12 +1732,15 @@ export default function SeasonsPage() {
                                 <div className={styles.configDetailRow}>
                                   <span>Practices: {existingConfig.practicesPerWeek}/week</span>
                                   <span>Duration: {existingConfig.practiceDurationHours}h</span>
+                                  {existingConfig.practiceArriveBeforeMinutes != null && existingConfig.practiceArriveBeforeMinutes > 0 && (
+                                    <span>Arrive: {existingConfig.practiceArriveBeforeMinutes}m before</span>
+                                  )}
                                 </div>
                                 <div className={styles.configDetailRow}>
                                   <span>Games: {existingConfig.gamesPerWeek}/week</span>
                                   <span>Duration: {Math.floor(existingConfig.gameDurationHours)}h {Math.round((existingConfig.gameDurationHours % 1) * 60)}m</span>
                                   {existingConfig.gameArriveBeforeHours ? (
-                                    <span>Arrive before: {Math.floor(existingConfig.gameArriveBeforeHours)}h {Math.round((existingConfig.gameArriveBeforeHours % 1) * 60)}m</span>
+                                    <span>Arrive: {Math.floor(existingConfig.gameArriveBeforeHours)}h {Math.round((existingConfig.gameArriveBeforeHours % 1) * 60)}m before</span>
                                   ) : null}
                                   {existingConfig.maxGamesPerSeason && (
                                     <span>Max/season: {existingConfig.maxGamesPerSeason}</span>

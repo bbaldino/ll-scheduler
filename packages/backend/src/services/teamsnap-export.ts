@@ -7,8 +7,10 @@ import type {
   Team,
   Field,
   BattingCage,
+  DivisionConfig,
 } from '@ll-scheduler/shared';
 import { listScheduledEvents } from './scheduled-events.js';
+import { listDivisionConfigsBySeasonId } from './division-configs.js';
 
 /**
  * Convert 24-hour time (HH:MM) to TeamSnap format (hh:mm:ss AM/PM)
@@ -41,10 +43,19 @@ function formatDateForTeamSnap(isoDate: string): string {
 }
 
 /**
- * Get arrival time in minutes based on event type
+ * Get arrival time in minutes based on event type and division config
  */
-function getArrivalTime(eventType: string): number {
-  return eventType === 'game' ? 60 : 10;
+function getArrivalTime(
+  eventType: string,
+  divisionConfig: DivisionConfig | undefined
+): number {
+  if (eventType === 'game') {
+    // Game arrival time is stored in hours, convert to minutes
+    return Math.round((divisionConfig?.gameArriveBeforeHours || 1) * 60);
+  } else {
+    // Practice/cage arrival time is stored in minutes
+    return divisionConfig?.practiceArriveBeforeMinutes ?? 10;
+  }
 }
 
 /**
@@ -127,11 +138,19 @@ export async function exportToTeamSnapFormat(
     cagesMap.set(c.id, c.name);
   }
 
+  // Fetch division configs for arrival times
+  const divisionConfigs = await listDivisionConfigsBySeasonId(db, seasonId);
+  const configsMap = new Map<string, DivisionConfig>();
+  for (const config of divisionConfigs) {
+    configsMap.set(config.divisionId, config);
+  }
+
   // Convert events to TeamSnap format
   const rows: TeamSnapExportRow[] = [];
 
   for (const event of events) {
     const divisionName = divisionsMap.get(event.divisionId) || 'Unknown Division';
+    const divisionConfig = configsMap.get(event.divisionId);
 
     // Determine home team, away team, and location
     let homeTeam = '';
@@ -156,7 +175,7 @@ export async function exportToTeamSnapFormat(
       date: formatDateForTeamSnap(event.date),
       startTime: formatTimeForTeamSnap(event.startTime),
       endTime: formatTimeForTeamSnap(event.endTime),
-      arrivalTime: getArrivalTime(event.eventType),
+      arrivalTime: getArrivalTime(event.eventType, divisionConfig),
       shortLabel: getShortLabel(event.eventType),
       eventType: getTeamSnapEventType(event.eventType),
       division: divisionName,
@@ -283,6 +302,13 @@ export async function exportToTeamSnapBulk(
     cagesMap.set(c.id, c.name);
   }
 
+  // Fetch division configs for arrival times
+  const divisionConfigs = await listDivisionConfigsBySeasonId(db, seasonId);
+  const configsMap = new Map<string, DivisionConfig>();
+  for (const config of divisionConfigs) {
+    configsMap.set(config.divisionId, config);
+  }
+
   // Group events by team
   // For each event, determine which team(s) it belongs to
   const eventsByTeam = new Map<string, typeof events>();
@@ -322,6 +348,7 @@ export async function exportToTeamSnapBulk(
 
     for (const event of teamEvents) {
       const eventDivisionName = divisionsMap.get(event.divisionId) || 'Unknown Division';
+      const divisionConfig = configsMap.get(event.divisionId);
 
       let homeTeam = '';
       let awayTeam = '';
@@ -345,7 +372,7 @@ export async function exportToTeamSnapBulk(
         date: formatDateForTeamSnap(event.date),
         startTime: formatTimeForTeamSnap(event.startTime),
         endTime: formatTimeForTeamSnap(event.endTime),
-        arrivalTime: getArrivalTime(event.eventType),
+        arrivalTime: getArrivalTime(event.eventType, divisionConfig),
         shortLabel: getShortLabel(event.eventType),
         eventType: getTeamSnapEventType(event.eventType),
         division: eventDivisionName,
