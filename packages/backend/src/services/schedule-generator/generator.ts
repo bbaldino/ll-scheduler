@@ -165,6 +165,359 @@ function findRequiredDayOptimalMatchups<T extends GameMatchup>(
 }
 
 /**
+ * Competition group for required-day slot balancing.
+ * Represents divisions that share the same primary field for a required day.
+ */
+interface CompetitionGroup {
+  dayOfWeek: number;           // 0=Sunday, 6=Saturday
+  divisionIds: string[];       // Divisions competing for this field on this day
+  primaryFieldId: string;      // The shared primary field
+  slotsPerWeek: number;        // Game slots available per week on this field for this day
+}
+
+/**
+ * Tracks required-day slot budgets and usage across divisions.
+ * Ensures fair distribution of Saturday (or other required day) games per week.
+ */
+interface RequiredDayBudgetTracker {
+  // Maps "divisionId|dayOfWeek|weekNum" -> budget (max slots allowed for that week)
+  budgets: Map<string, number>;
+  // Maps "divisionId|dayOfWeek|weekNum" -> usage (slots actually used that week)
+  usage: Map<string, number>;
+  // Competition groups (divisions sharing primary fields on required days)
+  competitionGroups: CompetitionGroup[];
+  // Lookup for quick "is this division in a competition group for this day?"
+  divisionDayInCompetition: Set<string>; // "divisionId|dayOfWeek"
+  // Number of weeks in the season (for per-week tracking)
+  numWeeks: number;
+}
+
+/**
+ * Find a division's primary field for a given day of week.
+ * The primary field is the first field in their preference order that has availability on that day.
+ */
+function findPrimaryFieldForDay(
+  divisionId: string,
+  dayOfWeek: number,
+  fieldPreferences: string[] | undefined,
+  fieldAvailabilities: FieldAvailability[],
+  seasonFields: SeasonField[]
+): string | null {
+  if (!fieldPreferences || fieldPreferences.length === 0) {
+    return null;
+  }
+
+  // Build lookup: fieldId -> seasonFieldIds
+  const fieldIdToSeasonFieldIds = new Map<string, string[]>();
+  for (const sf of seasonFields) {
+    const existing = fieldIdToSeasonFieldIds.get(sf.fieldId) || [];
+    existing.push(sf.id);
+    fieldIdToSeasonFieldIds.set(sf.fieldId, existing);
+  }
+
+  // Check each field in preference order
+  for (const fieldId of fieldPreferences) {
+    const seasonFieldIds = fieldIdToSeasonFieldIds.get(fieldId) || [];
+
+    // Check if any season field has availability on this day
+    for (const sfId of seasonFieldIds) {
+      const hasAvailability = fieldAvailabilities.some(
+        (fa) => fa.seasonFieldId === sfId && fa.dayOfWeek === dayOfWeek
+      );
+      if (hasAvailability) {
+        return fieldId;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Build competition groups for required-day slot balancing.
+ * Groups divisions that share the same primary field for each required day.
+ * Calculates actual game capacity based on availability window duration and game duration.
+ */
+function buildCompetitionGroups(
+  divisions: Division[],
+  divisionConfigs: Map<string, DivisionConfig>,
+  fieldAvailabilities: FieldAvailability[],
+  seasonFields: SeasonField[],
+  gameWeeksCount: number
+): CompetitionGroup[] {
+  const groups: CompetitionGroup[] = [];
+
+  // Collect all required days across all divisions
+  const allRequiredDays = new Set<number>();
+  for (const [_divId, config] of divisionConfigs) {
+    const requiredDays = (config.gameDayPreferences || [])
+      .filter((p) => p.priority === 'required')
+      .map((p) => p.dayOfWeek);
+    for (const day of requiredDays) {
+      allRequiredDays.add(day);
+    }
+  }
+
+  // For each required day, group divisions by their primary field
+  for (const dayOfWeek of allRequiredDays) {
+    // Map: primaryFieldId -> divisions using that as primary for this day
+    const fieldToDivisions = new Map<string, string[]>();
+
+    for (const division of divisions) {
+      const config = divisionConfigs.get(division.id);
+      if (!config) continue;
+
+      // Check if this division has this day as required
+      const divisionRequiredDays = (config.gameDayPreferences || [])
+        .filter((p) => p.priority === 'required')
+        .map((p) => p.dayOfWeek);
+
+      if (!divisionRequiredDays.includes(dayOfWeek)) {
+        continue; // This division doesn't need this day
+      }
+
+      // Find primary field for this day
+      const primaryField = findPrimaryFieldForDay(
+        division.id,
+        dayOfWeek,
+        config.fieldPreferences,
+        fieldAvailabilities,
+        seasonFields
+      );
+
+      if (primaryField) {
+        const existing = fieldToDivisions.get(primaryField) || [];
+        existing.push(division.id);
+        fieldToDivisions.set(primaryField, existing);
+      }
+    }
+
+    // Create competition groups for fields with multiple divisions
+    for (const [fieldId, divisionIds] of fieldToDivisions) {
+      if (divisionIds.length > 1) {
+        // Calculate game capacity for this field on this day
+        // Use the average game slot duration among competing divisions
+        let totalGameSlotHours = 0;
+        let divisionCount = 0;
+        for (const divId of divisionIds) {
+          const config = divisionConfigs.get(divId);
+          if (config) {
+            const gameSlotHours = config.gameDurationHours + (config.gameArriveBeforeHours || 0);
+            totalGameSlotHours += gameSlotHours;
+            divisionCount++;
+          }
+        }
+        const avgGameSlotHours = divisionCount > 0 ? totalGameSlotHours / divisionCount : 2; // Default 2 hours
+
+        // Calculate total available hours per week for this field on this day
+        let totalAvailableHoursPerWeek = 0;
+        for (const sf of seasonFields) {
+          if (sf.fieldId === fieldId) {
+            const availabilities = fieldAvailabilities.filter(
+              (fa) => fa.seasonFieldId === sf.id && fa.dayOfWeek === dayOfWeek
+            );
+            for (const avail of availabilities) {
+              // Parse time strings (HH:MM format) to calculate duration
+              const [startH, startM] = avail.startTime.split(':').map(Number);
+              const [endH, endM] = avail.endTime.split(':').map(Number);
+              const startMinutes = startH * 60 + startM;
+              const endMinutes = endH * 60 + endM;
+              const durationHours = (endMinutes - startMinutes) / 60;
+              totalAvailableHoursPerWeek += durationHours;
+            }
+          }
+        }
+
+        // Calculate how many games can fit per week
+        const slotsPerWeek = Math.floor(totalAvailableHoursPerWeek / avgGameSlotHours);
+
+        groups.push({
+          dayOfWeek,
+          divisionIds,
+          primaryFieldId: fieldId,
+          slotsPerWeek,
+        });
+      }
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * Initialize the required-day budget tracker with competition groups and per-week budgets.
+ */
+function initializeRequiredDayBudgetTracker(
+  competitionGroups: CompetitionGroup[],
+  divisionNames: Map<string, string>,
+  numWeeks: number
+): RequiredDayBudgetTracker {
+  const tracker: RequiredDayBudgetTracker = {
+    budgets: new Map(),
+    usage: new Map(),
+    competitionGroups,
+    divisionDayInCompetition: new Set(),
+    numWeeks,
+  };
+
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  for (const group of competitionGroups) {
+    const numDivisions = group.divisionIds.length;
+    // Use ceil to ensure at least 1 slot per division when there's any capacity
+    // This means the total might exceed available slots, but that's okay -
+    // divisions will naturally stop when slots run out
+    const budgetPerDivisionPerWeek = group.slotsPerWeek > 0
+      ? Math.max(1, Math.floor(group.slotsPerWeek / numDivisions))
+      : 0;
+
+    // Log the competition group
+    const divisionNameList = group.divisionIds.map((id) => divisionNames.get(id) || id).join(', ');
+    console.log(
+      `[RequiredDayBudget] Competition group for ${dayNames[group.dayOfWeek]}: ` +
+        `${divisionNameList} sharing field (${group.slotsPerWeek} slots/week → ${budgetPerDivisionPerWeek} each/week)`
+    );
+
+    for (const divisionId of group.divisionIds) {
+      // Mark this division as in competition for this day
+      const dayKey = `${divisionId}|${group.dayOfWeek}`;
+      tracker.divisionDayInCompetition.add(dayKey);
+
+      // Initialize per-week budgets and usage
+      for (let weekNum = 0; weekNum < numWeeks; weekNum++) {
+        const key = `${divisionId}|${group.dayOfWeek}|${weekNum}`;
+        tracker.budgets.set(key, budgetPerDivisionPerWeek);
+        tracker.usage.set(key, 0);
+      }
+    }
+  }
+
+  return tracker;
+}
+
+/**
+ * Check if a division can use a required-day slot for a specific week (hasn't exhausted budget).
+ * Returns true if no budget restriction applies or if budget is available.
+ */
+function canUseRequiredDaySlot(
+  divisionId: string,
+  dayOfWeek: number,
+  weekNum: number,
+  tracker: RequiredDayBudgetTracker
+): boolean {
+  const dayKey = `${divisionId}|${dayOfWeek}`;
+
+  // If not in a competition group for this day, no restriction
+  if (!tracker.divisionDayInCompetition.has(dayKey)) {
+    return true;
+  }
+
+  const key = `${divisionId}|${dayOfWeek}|${weekNum}`;
+  const budget = tracker.budgets.get(key) || 0;
+  const used = tracker.usage.get(key) || 0;
+  return used < budget;
+}
+
+/**
+ * Record that a division used a required-day slot for a specific week.
+ */
+function recordRequiredDayUsage(
+  divisionId: string,
+  dayOfWeek: number,
+  weekNum: number,
+  tracker: RequiredDayBudgetTracker,
+  divisionNames: Map<string, string>
+): void {
+  const dayKey = `${divisionId}|${dayOfWeek}`;
+
+  // Only track if in a competition group
+  if (!tracker.divisionDayInCompetition.has(dayKey)) {
+    return;
+  }
+
+  const key = `${divisionId}|${dayOfWeek}|${weekNum}`;
+  const currentUsage = tracker.usage.get(key) || 0;
+  tracker.usage.set(key, currentUsage + 1);
+
+  const budget = tracker.budgets.get(key) || 0;
+  const divisionName = divisionNames.get(divisionId) || divisionId;
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  // Log when approaching or at budget
+  if (currentUsage + 1 >= budget) {
+    console.log(
+      `[RequiredDayBudget] ${divisionName} used ${dayNames[dayOfWeek]} slot week ${weekNum + 1} ` +
+        `(${currentUsage + 1}/${budget}) - week budget exhausted`
+    );
+  }
+}
+
+/**
+ * Redistribute unused quota from a completed division to remaining divisions.
+ * For per-week budgets, this redistributes unused slots for each week.
+ */
+function redistributeUnusedQuota(
+  completedDivisionId: string,
+  remainingDivisionIds: string[],
+  tracker: RequiredDayBudgetTracker,
+  divisionNames: Map<string, string>
+): void {
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  for (const group of tracker.competitionGroups) {
+    if (!group.divisionIds.includes(completedDivisionId)) {
+      continue;
+    }
+
+    // Find remaining divisions in this group
+    const remainingInGroup = group.divisionIds.filter(
+      (id) => id !== completedDivisionId && remainingDivisionIds.includes(id)
+    );
+
+    if (remainingInGroup.length === 0) {
+      continue;
+    }
+
+    const completedName = divisionNames.get(completedDivisionId) || completedDivisionId;
+    let totalRedistributed = 0;
+
+    // Redistribute for each week
+    for (let weekNum = 0; weekNum < tracker.numWeeks; weekNum++) {
+      const completedKey = `${completedDivisionId}|${group.dayOfWeek}|${weekNum}`;
+      const budget = tracker.budgets.get(completedKey) || 0;
+      const used = tracker.usage.get(completedKey) || 0;
+      const unused = budget - used;
+
+      if (unused <= 0) {
+        continue;
+      }
+
+      // Distribute unused slots evenly among remaining divisions
+      const extraPerDivision = Math.floor(unused / remainingInGroup.length);
+      const remainder = unused % remainingInGroup.length;
+
+      for (let i = 0; i < remainingInGroup.length; i++) {
+        const divisionId = remainingInGroup[i];
+        const key = `${divisionId}|${group.dayOfWeek}|${weekNum}`;
+        const currentBudget = tracker.budgets.get(key) || 0;
+        // First division gets any remainder
+        const extra = extraPerDivision + (i === 0 ? remainder : 0);
+        tracker.budgets.set(key, currentBudget + extra);
+        totalRedistributed += extra;
+      }
+    }
+
+    if (totalRedistributed > 0) {
+      const targetNames = remainingInGroup.map((id) => divisionNames.get(id) || id).join(', ');
+      console.log(
+        `[RequiredDayBudget] Redistributed ${totalRedistributed} unused ${dayNames[group.dayOfWeek]} ` +
+          `slot(s) from ${completedName} to ${targetNames}`
+      );
+    }
+  }
+}
+
+/**
  * Main schedule generator
  * Generates optimal schedules for games, practices, and cage sessions
  * Uses season.gamesStartDate to determine when games can be scheduled
@@ -1417,10 +1770,25 @@ export class ScheduleGenerator {
     // Process matchups in order (by target week), finding the best available slot
     // Prioritize keeping rematches spread out by preferring slots in the target week
 
+    // Build required-day budget tracker for fair slot distribution between competing divisions
+    const competitionGroups = buildCompetitionGroups(
+      this.divisions,
+      this.divisionConfigs,
+      this.fieldAvailability,
+      this.seasonFields,
+      gameWeeks.length
+    );
+    const requiredDayBudgetTracker = initializeRequiredDayBudgetTracker(
+      competitionGroups,
+      this.divisionNames,
+      gameWeeks.length
+    );
+
     let totalScheduled = 0;
     let failedToSchedule = 0;
 
-    for (const division of divisionMatchupsList) {
+    for (let divisionIndex = 0; divisionIndex < divisionMatchupsList.length; divisionIndex++) {
+      const division = divisionMatchupsList[divisionIndex];
       verboseLog(`\nScheduling ${division.divisionName}:`);
 
       // Calculate total game slot time (game duration + arrive before time)
@@ -1839,6 +2207,7 @@ export class ScheduleGenerator {
 
                 // For spillover games, use special logic: pick earliest available date,
                 // ignoring day preferences (preferred/acceptable don't matter for catch-up games)
+                // BUT still respect the required-day budget to maintain fair distribution
                 if (isSpillover) {
                   // Group candidates by date
                   const candidatesByDate = new Map<string, PlacementCandidate[]>();
@@ -1858,6 +2227,16 @@ export class ScheduleGenerator {
                   // Try each date in order until we find a valid candidate
                   for (const date of sortedDates) {
                     const dateCandidates = candidatesByDate.get(date)!;
+
+                    // Check if this date is a required day with exhausted budget for this week
+                    const candidateDayOfWeek = dateCandidates[0]?.dayOfWeek;
+                    if (candidateDayOfWeek !== undefined &&
+                        requiredDays.includes(candidateDayOfWeek) &&
+                        !canUseRequiredDaySlot(division.divisionId, candidateDayOfWeek, weekNum, requiredDayBudgetTracker)) {
+                      // Skip this required day - budget exhausted for this week
+                      continue;
+                    }
+
                     const scoredCandidates = dateCandidates.map((c) =>
                       calculatePlacementScore(c, homeTeamState, this.scoringContext!, spilloverWeights)
                     );
@@ -1874,8 +2253,19 @@ export class ScheduleGenerator {
 
                   // If no valid candidate found on any date, bestCandidate remains undefined
                 } else if (requiredDays.length > 0) {
-                  // Phase 1: Try required days only
-                  const requiredDayCandidates = filteredCandidates.filter(c => requiredDays.includes(c.dayOfWeek));
+                  // Check if division has budget for any required day slot this week
+                  // Only allow required day if we have budget remaining
+                  const hasRequiredDayBudget = requiredDays.some((day) =>
+                    canUseRequiredDaySlot(division.divisionId, day, weekNum, requiredDayBudgetTracker)
+                  );
+
+                  // Phase 1: Try required days only (if budget allows for this week)
+                  const requiredDayCandidates = hasRequiredDayBudget
+                    ? filteredCandidates.filter((c) =>
+                        requiredDays.includes(c.dayOfWeek) &&
+                        canUseRequiredDaySlot(division.divisionId, c.dayOfWeek, weekNum, requiredDayBudgetTracker)
+                      )
+                    : [];
 
                   if (requiredDayCandidates.length > 0) {
                     const scoredRequired = requiredDayCandidates.map((c) =>
@@ -1935,13 +2325,18 @@ export class ScheduleGenerator {
                       }
                     }
                   } else {
-                    // No required day candidates available (shouldn't happen normally)
+                    // No required day candidates available (budget exhausted or no slots)
+                    // Fall back to non-required days only
                     usedFallback = true;
-                    const scoredCandidates = filteredCandidates.map((c) =>
-                      calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
-                    );
-                    scoredCandidates.sort((a, b) => b.score - a.score);
-                    bestCandidate = scoredCandidates[0];
+                    const nonRequiredCandidates = filteredCandidates.filter(c => !requiredDays.includes(c.dayOfWeek));
+                    if (nonRequiredCandidates.length > 0) {
+                      const scoredCandidates = nonRequiredCandidates.map((c) =>
+                        calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+                      );
+                      scoredCandidates.sort((a, b) => b.score - a.score);
+                      bestCandidate = scoredCandidates[0];
+                    }
+                    // If no non-required candidates either, bestCandidate stays undefined
                   }
                 } else {
                   // No required days configured - score all candidates normally
@@ -1998,6 +2393,15 @@ export class ScheduleGenerator {
                     preferredDayGames.set(matchup.homeTeamId, (preferredDayGames.get(matchup.homeTeamId) || 0) + 1);
                     preferredDayGames.set(matchup.awayTeamId, (preferredDayGames.get(matchup.awayTeamId) || 0) + 1);
                     requiredDaySlotsUsedThisWeek++;
+
+                    // Record usage for required-day budget tracking (per-week)
+                    recordRequiredDayUsage(
+                      division.divisionId,
+                      bestCandidate.dayOfWeek,
+                      weekNum,
+                      requiredDayBudgetTracker,
+                      this.divisionNames
+                    );
                   }
 
                   totalScheduled++;
@@ -2051,6 +2455,17 @@ export class ScheduleGenerator {
           verboseLog(`  📋 ${spilloverMatchups.length} matchups spilling over to next week`);
         }
       } // end week loop
+
+      // Redistribute unused required-day quota to remaining divisions
+      const remainingDivisionIds = divisionMatchupsList
+        .slice(divisionIndex + 1)
+        .map((d) => d.divisionId);
+      redistributeUnusedQuota(
+        division.divisionId,
+        remainingDivisionIds,
+        requiredDayBudgetTracker,
+        this.divisionNames
+      );
     } // end division loop
 
     // Report summary
