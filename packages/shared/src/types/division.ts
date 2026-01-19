@@ -85,7 +85,7 @@ export interface CreateDivisionConfigInput {
   cageSessionDurationHours?: number;
   fieldPreferences?: string[];
   gameWeekOverrides?: GameWeekOverride[];
-  maxGamesPerSeason?: number;
+  maxGamesPerSeason?: number | null;
   sundayPairedPracticeEnabled?: boolean;
   sundayPairedPracticeDurationHours?: number;
   sundayPairedPracticeFieldId?: string;
@@ -105,7 +105,7 @@ export interface UpdateDivisionConfigInput {
   cageSessionDurationHours?: number;
   fieldPreferences?: string[];
   gameWeekOverrides?: GameWeekOverride[];
-  maxGamesPerSeason?: number;
+  maxGamesPerSeason?: number | null;
   sundayPairedPracticeEnabled?: boolean;
   sundayPairedPracticeDurationHours?: number;
   sundayPairedPracticeFieldId?: string;

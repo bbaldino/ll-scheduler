@@ -1340,7 +1340,7 @@ export default function SeasonsPage() {
                                       onChange={(e) =>
                                         setConfigFormData({
                                           ...configFormData,
-                                          maxGamesPerSeason: e.target.value ? parseInt(e.target.value) : undefined,
+                                          maxGamesPerSeason: e.target.value ? parseInt(e.target.value) : null,
                                         })
                                       }
                                     />
