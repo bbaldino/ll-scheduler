@@ -1,6 +1,7 @@
 import type {
   SavedConfig,
   CreateSavedConfigInput,
+  UpdateSavedConfigInput,
   RestoreConfigResult,
   DivisionConfig,
   SeasonBlackout,
@@ -284,6 +285,185 @@ export async function saveConfig(
   }
 
   return savedConfig;
+}
+
+/**
+ * Update an existing saved configuration by re-capturing the current state
+ */
+export async function updateSavedConfig(
+  db: D1Database,
+  id: string,
+  input: UpdateSavedConfigInput
+): Promise<SavedConfig | null> {
+  // Get the existing saved config
+  const existing = await db
+    .prepare('SELECT * FROM saved_configs WHERE id = ?')
+    .bind(id)
+    .first<SavedConfigRow>();
+
+  if (!existing) {
+    return null;
+  }
+
+  const seasonId = existing.season_id;
+  const now = new Date().toISOString();
+
+  // Get season blackout dates
+  const season = await getSeasonById(db, seasonId);
+  if (!season) {
+    throw new Error('Season not found');
+  }
+  const seasonBlackoutDates = season.blackoutDates ? JSON.stringify(season.blackoutDates) : null;
+
+  // Get all current division configs for this season
+  const divisionConfigs = await listDivisionConfigsBySeasonId(db, seasonId);
+
+  // Get all current availabilities and overrides
+  const [fieldAvailabilities, cageAvailabilities, fieldDateOverrides, cageDateOverrides] =
+    await Promise.all([
+      listFieldAvailabilitiesForSeason(db, seasonId),
+      listCageAvailabilitiesForSeason(db, seasonId),
+      listFieldDateOverridesForSeason(db, seasonId),
+      listCageDateOverridesForSeason(db, seasonId),
+    ]);
+
+  // Delete all existing saved data for this config
+  await db.batch([
+    db.prepare('DELETE FROM saved_config_division_configs WHERE saved_config_id = ?').bind(id),
+    db.prepare('DELETE FROM saved_config_field_availabilities WHERE saved_config_id = ?').bind(id),
+    db.prepare('DELETE FROM saved_config_cage_availabilities WHERE saved_config_id = ?').bind(id),
+    db.prepare('DELETE FROM saved_config_field_date_overrides WHERE saved_config_id = ?').bind(id),
+    db.prepare('DELETE FROM saved_config_cage_date_overrides WHERE saved_config_id = ?').bind(id),
+  ]);
+
+  // Update the saved config record
+  await db
+    .prepare(
+      `UPDATE saved_configs SET name = ?, description = ?, season_blackout_dates = ?, updated_at = ? WHERE id = ?`
+    )
+    .bind(input.name, input.description || null, seasonBlackoutDates, now, id)
+    .run();
+
+  // Re-save division configs
+  if (divisionConfigs.length > 0) {
+    for (let i = 0; i < divisionConfigs.length; i += BATCH_SIZE) {
+      const batch = divisionConfigs.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((config) => {
+        const configData = {
+          practicesPerWeek: config.practicesPerWeek,
+          practiceDurationHours: config.practiceDurationHours,
+          gamesPerWeek: config.gamesPerWeek,
+          gameDurationHours: config.gameDurationHours,
+          gameArriveBeforeHours: config.gameArriveBeforeHours,
+          gameDayPreferences: config.gameDayPreferences,
+          minConsecutiveDayGap: config.minConsecutiveDayGap,
+          cageSessionsPerWeek: config.cageSessionsPerWeek,
+          cageSessionDurationHours: config.cageSessionDurationHours,
+          fieldPreferences: config.fieldPreferences,
+          gameWeekOverrides: config.gameWeekOverrides,
+          maxGamesPerSeason: config.maxGamesPerSeason,
+          sundayPairedPracticeEnabled: config.sundayPairedPracticeEnabled,
+          sundayPairedPracticeDurationHours: config.sundayPairedPracticeDurationHours,
+          sundayPairedPracticeFieldId: config.sundayPairedPracticeFieldId,
+          sundayPairedPracticeCageId: config.sundayPairedPracticeCageId,
+          gameSpacingEnabled: config.gameSpacingEnabled,
+        };
+        return db
+          .prepare(
+            `INSERT INTO saved_config_division_configs (id, saved_config_id, division_id, config_json, created_at)
+             VALUES (?, ?, ?, ?, ?)`
+          )
+          .bind(generateId(), id, config.divisionId, JSON.stringify(configData), now);
+      });
+      await db.batch(statements);
+    }
+  }
+
+  // Re-save field availabilities
+  if (fieldAvailabilities.length > 0) {
+    for (let i = 0; i < fieldAvailabilities.length; i += BATCH_SIZE) {
+      const batch = fieldAvailabilities.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((avail) =>
+        db
+          .prepare(
+            `INSERT INTO saved_config_field_availabilities (id, saved_config_id, season_field_id, day_of_week, start_time, end_time, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(generateId(), id, avail.seasonFieldId, avail.dayOfWeek, avail.startTime, avail.endTime, now)
+      );
+      await db.batch(statements);
+    }
+  }
+
+  // Re-save cage availabilities
+  if (cageAvailabilities.length > 0) {
+    for (let i = 0; i < cageAvailabilities.length; i += BATCH_SIZE) {
+      const batch = cageAvailabilities.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((avail) =>
+        db
+          .prepare(
+            `INSERT INTO saved_config_cage_availabilities (id, saved_config_id, season_cage_id, day_of_week, start_time, end_time, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(generateId(), id, avail.seasonCageId, avail.dayOfWeek, avail.startTime, avail.endTime, now)
+      );
+      await db.batch(statements);
+    }
+  }
+
+  // Re-save field date overrides
+  if (fieldDateOverrides.length > 0) {
+    for (let i = 0; i < fieldDateOverrides.length; i += BATCH_SIZE) {
+      const batch = fieldDateOverrides.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((override) =>
+        db
+          .prepare(
+            `INSERT INTO saved_config_field_date_overrides (id, saved_config_id, season_field_id, date, override_type, start_time, end_time, reason, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            generateId(),
+            id,
+            override.seasonFieldId,
+            override.date,
+            override.overrideType,
+            override.startTime || null,
+            override.endTime || null,
+            override.reason || null,
+            now
+          )
+      );
+      await db.batch(statements);
+    }
+  }
+
+  // Re-save cage date overrides
+  if (cageDateOverrides.length > 0) {
+    for (let i = 0; i < cageDateOverrides.length; i += BATCH_SIZE) {
+      const batch = cageDateOverrides.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((override) =>
+        db
+          .prepare(
+            `INSERT INTO saved_config_cage_date_overrides (id, saved_config_id, season_cage_id, date, override_type, start_time, end_time, reason, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            generateId(),
+            id,
+            override.seasonCageId,
+            override.date,
+            override.overrideType,
+            override.startTime || null,
+            override.endTime || null,
+            override.reason || null,
+            now
+          )
+      );
+      await db.batch(statements);
+    }
+  }
+
+  return getSavedConfigById(db, id);
 }
 
 /**

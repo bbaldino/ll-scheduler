@@ -17,6 +17,11 @@ export interface CreateSavedConfigInput {
   description?: string;
 }
 
+export interface UpdateSavedConfigInput {
+  name: string;
+  description?: string;
+}
+
 export interface RestoreConfigResult {
   divisionConfigsRestored: number;
   fieldAvailabilitiesRestored: number;

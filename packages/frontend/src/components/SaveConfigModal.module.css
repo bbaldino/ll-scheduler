@@ -15,7 +15,8 @@
   background: white;
   border-radius: 8px;
   width: 90%;
-  max-width: 500px;
+  max-width: 550px;
+  max-height: 90vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
@@ -57,6 +58,8 @@
 
 .content {
   padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .description {
@@ -155,4 +158,90 @@
 .saveButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Existing configs section */
+.loadingConfigs {
+  padding: 1rem;
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.existingConfigs {
+  margin-bottom: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.existingConfigsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #555;
+}
+
+.clearSelectionButton {
+  background: none;
+  border: none;
+  color: #2196f3;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.clearSelectionButton:hover {
+  text-decoration: underline;
+}
+
+.configList {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.configItem {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.configItem:last-child {
+  border-bottom: none;
+}
+
+.configItem:hover {
+  background: #f9f9f9;
+}
+
+.configItem.selected {
+  background: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.configItemName {
+  font-weight: 500;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.configItemDescription {
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.configItemDate {
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 0.2rem;
 }

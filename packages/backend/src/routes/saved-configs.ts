@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../index.js';
-import type { CreateSavedConfigInput } from '@ll-scheduler/shared';
+import type { CreateSavedConfigInput, UpdateSavedConfigInput } from '@ll-scheduler/shared';
 import {
   listSavedConfigs,
   getSavedConfigById,
   saveConfig,
+  updateSavedConfig,
   restoreConfig,
   deleteSavedConfig,
 } from '../services/saved-configs.js';
@@ -68,6 +69,27 @@ router.post('/:id/restore', async (c) => {
     }
     throw error;
   }
+});
+
+// PUT /api/saved-configs/:id - Update a saved config (overwrites with current data)
+router.put('/:id', async (c) => {
+  const id = c.req.param('id');
+  const input: UpdateSavedConfigInput = await c.req.json();
+
+  if (!input.name || input.name.trim() === '') {
+    return c.json({ error: 'name is required' }, 400);
+  }
+
+  const config = await updateSavedConfig(c.env.DB, id, {
+    name: input.name.trim(),
+    description: input.description?.trim(),
+  });
+
+  if (!config) {
+    return c.json({ error: 'Saved config not found' }, 404);
+  }
+
+  return c.json(config);
 });
 
 // DELETE /api/saved-configs/:id - Delete a saved config

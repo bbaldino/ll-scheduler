@@ -1,6 +1,7 @@
 import type {
   SavedConfig,
   CreateSavedConfigInput,
+  UpdateSavedConfigInput,
   RestoreConfigResult,
 } from '@ll-scheduler/shared';
 import { API_BASE } from './config';
@@ -38,6 +39,24 @@ export async function saveConfig(input: CreateSavedConfigInput): Promise<SavedCo
   });
   if (!response.ok) {
     throw new Error('Failed to save config');
+  }
+  return response.json();
+}
+
+/**
+ * Update an existing saved config (overwrites with current configuration data)
+ */
+export async function updateSavedConfig(
+  id: string,
+  input: UpdateSavedConfigInput
+): Promise<SavedConfig> {
+  const response = await fetch(`${API_BASE}/saved-configs/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update saved config');
   }
   return response.json();
 }
