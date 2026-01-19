@@ -555,28 +555,24 @@ export function calculateLargeGapPenaltyRaw(
   // Convert all practice dates to day numbers and sort
   const practiceDayNums = practiceDates.map(d => dateToDayNumber(d)).sort((a, b) => a - b);
 
-  // Add the candidate to the list and calculate what the max gap would be
-  const withCandidate = [...practiceDayNums, candidateDayNum].sort((a, b) => a - b);
+  // Calculate gap from the LAST practice to the candidate date
+  // This incentivizes scheduling practices sooner rather than later
+  const lastPracticeDayNum = practiceDayNums[practiceDayNums.length - 1];
+  const gapFromLast = candidateDayNum - lastPracticeDayNum;
 
-  let maxGap = 0;
-  for (let i = 1; i < withCandidate.length; i++) {
-    const gap = withCandidate[i] - withCandidate[i - 1];
-    maxGap = Math.max(maxGap, gap);
-  }
-
-  // Score based on resulting max gap - progressive penalty with no cap:
+  // Score based on gap from last practice - progressive penalty with no cap:
   // <= 5 days: 0 (ideal)
   // 6 days: 0.2
   // 7 days: 0.4
   // 10 days: 1.0
   // 15 days: 2.0
   // etc. (scales linearly, no cap)
-  if (maxGap <= 5) {
+  if (gapFromLast <= 5) {
     return 0;
   }
   // Linear scaling: each day beyond 5 adds 0.2 to the raw score
   // With weight -600: 6 days = -120, 10 days = -600, 15 days = -1200
-  return (maxGap - 5) * 0.2;
+  return (gapFromLast - 5) * 0.2;
 }
 
 /**

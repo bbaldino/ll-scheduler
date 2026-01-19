@@ -3297,8 +3297,10 @@ export class ScheduleGenerator {
           return a.teamName.localeCompare(b.teamName);
         });
 
-      // Teams are already sorted by deficit-first, gap-second approach
-      const rotatedByWeek = teamsNeedingPractices;
+      // Rotate the sorted order based on week number to ensure fairness
+      // This way, when teams have similar deficits/gaps (common case), different teams
+      // get first pick each week instead of always falling to alphabetical order
+      const rotatedByWeek = rotateArray(teamsNeedingPractices, week.weekNumber);
 
       if (rotatedByWeek.length === 0) {
         verboseLog('  No teams need practices this week');
