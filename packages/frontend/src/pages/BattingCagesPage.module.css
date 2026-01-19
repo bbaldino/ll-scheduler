@@ -101,10 +101,70 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  gap: 1rem;
 }
 
 .cageHeader h3 {
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.editNameButton {
+  font-size: 0.75em;
+  padding: 0.2rem 0.5rem;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  color: #1976d2;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.editNameButton:hover {
+  background: #bbdefb;
+}
+
+.editNameForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.editNameForm input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.editNameActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editNameActions button {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editNameActions button:first-of-type {
+  background: #4caf50;
+  color: white;
+  border: none;
+}
+
+.editNameActions button:last-of-type {
+  background: #f5f5f5;
+  border: 1px solid #ddd;
 }
 
 .cageActions {
@@ -330,4 +390,24 @@
   color: #888;
   font-style: italic;
   margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.deleteButton {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85em;
+  background: #ffebee;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  color: #c62828;
+  cursor: pointer;
+}
+
+.deleteButton:hover {
+  background: #ffcdd2;
 }

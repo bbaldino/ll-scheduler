@@ -77,6 +77,8 @@ export default function FieldsPage() {
   // Edit state
   const [editingAvailabilityId, setEditingAvailabilityId] = useState<string | null>(null);
   const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
+  const [editingFieldNameId, setEditingFieldNameId] = useState<string | null>(null);
+  const [editFieldName, setEditFieldName] = useState('');
 
   useEffect(() => {
     loadGlobalFields();
@@ -227,6 +229,35 @@ export default function FieldsPage() {
       console.error('Failed to update practice-only setting:', error);
       alert('Failed to update practice-only setting');
     }
+  };
+
+  const handleStartEditFieldName = (field: Field) => {
+    setEditingFieldNameId(field.id);
+    setEditFieldName(field.name);
+  };
+
+  const handleUpdateFieldName = async (fieldId: string) => {
+    if (!editFieldName.trim()) {
+      alert('Field name cannot be empty');
+      return;
+    }
+    try {
+      await updateField(fieldId, { name: editFieldName.trim() });
+      await loadGlobalFields();
+      if (currentSeason) {
+        await loadSeasonFields();
+      }
+      setEditingFieldNameId(null);
+      setEditFieldName('');
+    } catch (error) {
+      console.error('Failed to update field name:', error);
+      alert('Failed to update field name');
+    }
+  };
+
+  const handleCancelEditFieldName = () => {
+    setEditingFieldNameId(null);
+    setEditFieldName('');
   };
 
   const handleCreateAvailability = async (seasonFieldId: string) => {
@@ -449,11 +480,45 @@ export default function FieldsPage() {
           {globalFields.map((field) => (
             <div key={field.id} className={styles.fieldCard}>
               <div className={styles.fieldHeader}>
-                <h3>
-                  {field.name}
-                  {field.practiceOnly && <span className={styles.practiceOnlyBadge}>Practice Only</span>}
-                </h3>
-                <button onClick={() => handleDeleteGlobalField(field.id)}>Delete</button>
+                {editingFieldNameId === field.id ? (
+                  <div className={styles.editNameForm}>
+                    <input
+                      type="text"
+                      value={editFieldName}
+                      onChange={(e) => setEditFieldName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleUpdateFieldName(field.id);
+                        if (e.key === 'Escape') handleCancelEditFieldName();
+                      }}
+                      autoFocus
+                    />
+                    <div className={styles.editNameActions}>
+                      <button onClick={() => handleUpdateFieldName(field.id)}>Save</button>
+                      <button onClick={handleCancelEditFieldName}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h3>
+                      {field.name}
+                      {field.practiceOnly && <span className={styles.practiceOnlyBadge}>Practice Only</span>}
+                    </h3>
+                    <div className={styles.headerActions}>
+                      <button
+                        className={styles.editNameButton}
+                        onClick={() => handleStartEditFieldName(field)}
+                      >
+                        Edit Name
+                      </button>
+                      <button
+                        className={styles.deleteButton}
+                        onClick={() => handleDeleteGlobalField(field.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
               <div className={styles.fieldDetails}>
                 <div className={styles.practiceOnlySection}>

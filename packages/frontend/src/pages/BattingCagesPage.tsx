@@ -77,6 +77,8 @@ export default function BattingCagesPage() {
   // Edit state
   const [editingAvailabilityId, setEditingAvailabilityId] = useState<string | null>(null);
   const [editingOverrideId, setEditingOverrideId] = useState<string | null>(null);
+  const [editingCageNameId, setEditingCageNameId] = useState<string | null>(null);
+  const [editCageName, setEditCageName] = useState('');
 
   useEffect(() => {
     loadGlobalCages();
@@ -214,6 +216,35 @@ export default function BattingCagesPage() {
       console.error('Failed to update division compatibility:', error);
       alert('Failed to update division compatibility');
     }
+  };
+
+  const handleStartEditCageName = (cage: BattingCage) => {
+    setEditingCageNameId(cage.id);
+    setEditCageName(cage.name);
+  };
+
+  const handleUpdateCageName = async (cageId: string) => {
+    if (!editCageName.trim()) {
+      alert('Cage name cannot be empty');
+      return;
+    }
+    try {
+      await updateBattingCage(cageId, { name: editCageName.trim() });
+      await loadGlobalCages();
+      if (currentSeason) {
+        await loadSeasonCages();
+      }
+      setEditingCageNameId(null);
+      setEditCageName('');
+    } catch (error) {
+      console.error('Failed to update cage name:', error);
+      alert('Failed to update cage name');
+    }
+  };
+
+  const handleCancelEditCageName = () => {
+    setEditingCageNameId(null);
+    setEditCageName('');
   };
 
   const handleCreateAvailability = async (seasonCageId: string) => {
@@ -435,8 +466,42 @@ export default function BattingCagesPage() {
           {globalCages.map((cage) => (
             <div key={cage.id} className={styles.cageCard}>
               <div className={styles.cageHeader}>
-                <h3>{cage.name}</h3>
-                <button onClick={() => handleDeleteGlobalCage(cage.id)}>Delete</button>
+                {editingCageNameId === cage.id ? (
+                  <div className={styles.editNameForm}>
+                    <input
+                      type="text"
+                      value={editCageName}
+                      onChange={(e) => setEditCageName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleUpdateCageName(cage.id);
+                        if (e.key === 'Escape') handleCancelEditCageName();
+                      }}
+                      autoFocus
+                    />
+                    <div className={styles.editNameActions}>
+                      <button onClick={() => handleUpdateCageName(cage.id)}>Save</button>
+                      <button onClick={handleCancelEditCageName}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h3>{cage.name}</h3>
+                    <div className={styles.headerActions}>
+                      <button
+                        className={styles.editNameButton}
+                        onClick={() => handleStartEditCageName(cage)}
+                      >
+                        Edit Name
+                      </button>
+                      <button
+                        className={styles.deleteButton}
+                        onClick={() => handleDeleteGlobalCage(cage.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
               <div className={styles.cageDetails}>
                 <div className={styles.divisionSection}>
