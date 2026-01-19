@@ -43,6 +43,22 @@ function formatDateForTeamSnap(isoDate: string): string {
 }
 
 /**
+ * Calculate the actual event start time by adding arrive-before minutes to the slot start time.
+ * Event slots already include arrive-before time, so we need to add it back to get the actual start.
+ * For example: slot 9am-12pm with 60min arrive-before means actual game starts at 10am.
+ */
+function calculateActualStartTime(slotStartTime: string, arriveBeforeMinutes: number): string {
+  const [hoursStr, minutesStr] = slotStartTime.split(':');
+  let totalMinutes = parseInt(hoursStr, 10) * 60 + parseInt(minutesStr, 10);
+  totalMinutes += arriveBeforeMinutes;
+
+  const hours = Math.floor(totalMinutes / 60) % 24;
+  const minutes = totalMinutes % 60;
+
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+/**
  * Get arrival time in minutes based on event type and division config
  */
 function getArrivalTime(
@@ -171,11 +187,14 @@ export async function exportToTeamSnapFormat(
       location = event.cageId ? (cagesMap.get(event.cageId) || 'Unknown Cage') : '';
     }
 
+    const arrivalTimeMinutes = getArrivalTime(event.eventType, divisionConfig);
+    const actualStartTime = calculateActualStartTime(event.startTime, arrivalTimeMinutes);
+
     rows.push({
       date: formatDateForTeamSnap(event.date),
-      startTime: formatTimeForTeamSnap(event.startTime),
+      startTime: formatTimeForTeamSnap(actualStartTime),
       endTime: formatTimeForTeamSnap(event.endTime),
-      arrivalTime: getArrivalTime(event.eventType, divisionConfig),
+      arrivalTime: arrivalTimeMinutes,
       shortLabel: getShortLabel(event.eventType),
       eventType: getTeamSnapEventType(event.eventType),
       division: divisionName,
@@ -368,11 +387,14 @@ export async function exportToTeamSnapBulk(
         location = event.cageId ? (cagesMap.get(event.cageId) || 'Unknown Cage') : '';
       }
 
+      const arrivalTimeMinutes = getArrivalTime(event.eventType, divisionConfig);
+      const actualStartTime = calculateActualStartTime(event.startTime, arrivalTimeMinutes);
+
       rows.push({
         date: formatDateForTeamSnap(event.date),
-        startTime: formatTimeForTeamSnap(event.startTime),
+        startTime: formatTimeForTeamSnap(actualStartTime),
         endTime: formatTimeForTeamSnap(event.endTime),
-        arrivalTime: getArrivalTime(event.eventType, divisionConfig),
+        arrivalTime: arrivalTimeMinutes,
         shortLabel: getShortLabel(event.eventType),
         eventType: getTeamSnapEventType(event.eventType),
         division: eventDivisionName,

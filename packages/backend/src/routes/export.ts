@@ -6,6 +6,13 @@ import { createZip } from '../utils/zip.js';
 const router = new Hono<{ Bindings: Env }>();
 
 /**
+ * Sanitize a string for use in a filename
+ */
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+}
+
+/**
  * GET /api/export/teamsnap
  * Export scheduled events in TeamSnap CSV format
  *
@@ -32,12 +39,35 @@ router.get('/teamsnap', async (c) => {
 
     const csv = teamSnapRowsToCsv(rows);
 
+    // Build descriptive filename based on filters
+    const filenameParts: string[] = ['schedule'];
+
+    if (divisionId) {
+      const divisionResult = await c.env.DB
+        .prepare('SELECT name FROM divisions WHERE id = ?')
+        .bind(divisionId)
+        .first<{ name: string }>();
+      filenameParts.push(sanitizeFilename(divisionResult?.name || 'unknown'));
+    } else {
+      filenameParts.push('all-divisions');
+    }
+
+    if (teamId) {
+      const teamResult = await c.env.DB
+        .prepare('SELECT name FROM teams WHERE id = ?')
+        .bind(teamId)
+        .first<{ name: string }>();
+      filenameParts.push(sanitizeFilename(teamResult?.name || 'unknown'));
+    }
+
+    const filename = filenameParts.join('-') + '.csv';
+
     // Return as CSV file download
     return new Response(csv, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="schedule-export-teamsnap.csv"`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
       },
     });
   } catch (error) {
