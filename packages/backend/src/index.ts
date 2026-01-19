@@ -17,6 +17,7 @@ import scheduleGeneratorRouter from './routes/schedule-generator.js';
 import savedSchedulesRouter from './routes/saved-schedules.js';
 import savedConfigsRouter from './routes/saved-configs.js';
 import availableSlotsRouter from './routes/available-slots.js';
+import exportRouter from './routes/export.js';
 
 export type Env = {
   DB: D1Database;
@@ -68,6 +69,7 @@ app.route('/api/schedule-generator', scheduleGeneratorRouter);
 app.route('/api/saved-schedules', savedSchedulesRouter);
 app.route('/api/saved-configs', savedConfigsRouter);
 app.route('/api/available-slots', availableSlotsRouter);
+app.route('/api/export', exportRouter);
 
 // 404 handler
 app.notFound((c) => {

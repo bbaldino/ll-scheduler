@@ -19,6 +19,7 @@ import { fetchSeasonCages } from '../api/batting-cages';
 import { evaluateSchedule } from '../api/schedule-generator';
 import { fetchAvailableSlots } from '../api/available-slots';
 import { fetchDivisionConfigs } from '../api/division-configs';
+import { API_BASE } from '../api/config';
 import type {
   ScheduledEvent,
   CreateScheduledEventInput,
@@ -358,6 +359,35 @@ export default function ScheduledEventsPage() {
     }
   };
 
+  const handleExportTeamSnap = () => {
+    if (!currentSeason) {
+      alert('No season selected');
+      return;
+    }
+
+    // Build export URL with current filters
+    const params = new URLSearchParams({ seasonId: currentSeason.id });
+    if (filterDivision) {
+      params.append('divisionId', filterDivision);
+    }
+    if (filterTeam) {
+      params.append('teamId', filterTeam);
+    }
+
+    // Open in new tab to trigger download
+    window.open(`${API_BASE}/export/teamsnap?${params.toString()}`, '_blank');
+  };
+
+  const handleExportTeamSnapBulk = () => {
+    if (!currentSeason) {
+      alert('No season selected');
+      return;
+    }
+
+    // Download ZIP with all teams' schedules
+    window.open(`${API_BASE}/export/teamsnap/bulk?seasonId=${currentSeason.id}`, '_blank');
+  };
+
   const getTeamName = (teamId?: string) => {
     if (!teamId) return 'N/A';
     return teams.find((t) => t.id === teamId)?.name || 'Unknown';
@@ -511,6 +541,8 @@ export default function ScheduledEventsPage() {
           </button>
           <button onClick={() => setShowSaveModal(true)}>Save Schedule</button>
           <button onClick={() => setShowRestoreModal(true)}>Manage Saved</button>
+          <button onClick={handleExportTeamSnap}>Export to TeamSnap</button>
+          <button onClick={handleExportTeamSnapBulk}>Export All Teams (ZIP)</button>
           {viewMode === 'list' && (
             <button onClick={() => setIsCreating(true)}>Create Event</button>
           )}
