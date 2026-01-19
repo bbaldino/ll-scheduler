@@ -564,23 +564,19 @@ export function calculateLargeGapPenaltyRaw(
     maxGap = Math.max(maxGap, gap);
   }
 
-  // Score based on resulting max gap:
+  // Score based on resulting max gap - progressive penalty with no cap:
   // <= 5 days: 0 (ideal)
-  // 6 days: 0.3
-  // 7 days: 0.5
-  // 8 days: 0.7
-  // 9+ days: 1.0 (worst)
+  // 6 days: 0.2
+  // 7 days: 0.4
+  // 10 days: 1.0
+  // 15 days: 2.0
+  // etc. (scales linearly, no cap)
   if (maxGap <= 5) {
     return 0;
-  } else if (maxGap === 6) {
-    return 0.3;
-  } else if (maxGap === 7) {
-    return 0.5;
-  } else if (maxGap === 8) {
-    return 0.7;
-  } else {
-    return 1.0;
   }
+  // Linear scaling: each day beyond 5 adds 0.2 to the raw score
+  // With weight -600: 6 days = -120, 10 days = -600, 15 days = -1200
+  return (maxGap - 5) * 0.2;
 }
 
 /**

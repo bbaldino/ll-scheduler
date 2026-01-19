@@ -3582,20 +3582,30 @@ export class ScheduleGenerator {
             }
 
             // Sort dates and get top 5 date candidates
+            // Use dateSelectionScore (excludes earliestTime and timeAdjacency) for sorting
             const topByDate = Array.from(byDate.entries())
-              .sort((a, b) => b[1].score - a[1].score)
+              .sort((a, b) => {
+                const aDateScore = a[1].score - (a[1].scoreBreakdown?.earliestTime || 0) - (a[1].scoreBreakdown?.timeAdjacency || 0);
+                const bDateScore = b[1].score - (b[1].scoreBreakdown?.earliestTime || 0) - (b[1].scoreBreakdown?.timeAdjacency || 0);
+                return bDateScore - aDateScore;
+              })
               .slice(0, 7)
-              .map(([date, sc]) => ({
-                date,
-                dayOfWeek: ScheduleGenerator.DAY_NAMES[sc.dayOfWeek],
-                resource: sc.resourceName,
-                score: sc.score.toFixed(1),
-                largeGapPenalty: sc.scoreBreakdown?.largeGapPenalty?.toFixed(1),
-                practiceSpacing: sc.scoreBreakdown?.practiceSpacing?.toFixed(1),
-                daySpread: sc.scoreBreakdown?.daySpread?.toFixed(1),
-                earliestTime: sc.scoreBreakdown?.earliestTime?.toFixed(1),
-                resourceUtilization: sc.scoreBreakdown?.resourceUtilization?.toFixed(1),
-              }));
+              .map(([date, sc]) => {
+                const dateSelectionScore = sc.score - (sc.scoreBreakdown?.earliestTime || 0) - (sc.scoreBreakdown?.timeAdjacency || 0);
+                return {
+                  date,
+                  dayOfWeek: ScheduleGenerator.DAY_NAMES[sc.dayOfWeek],
+                  resource: sc.resourceName,
+                  score: sc.score.toFixed(1),
+                  dateSelectionScore: dateSelectionScore.toFixed(1),
+                  largeGapPenalty: sc.scoreBreakdown?.largeGapPenalty?.toFixed(1),
+                  practiceSpacing: sc.scoreBreakdown?.practiceSpacing?.toFixed(1),
+                  daySpread: sc.scoreBreakdown?.daySpread?.toFixed(1),
+                  earliestTime: sc.scoreBreakdown?.earliestTime?.toFixed(1),
+                  timeAdjacency: sc.scoreBreakdown?.timeAdjacency?.toFixed(1),
+                  resourceUtilization: sc.scoreBreakdown?.resourceUtilization?.toFixed(1),
+                };
+              });
 
             this.log('info', 'practice', `Candidate analysis for ${teamState.teamName} (${teamState.divisionName})`, {
               team: teamState.teamName,

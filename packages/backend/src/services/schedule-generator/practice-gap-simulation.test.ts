@@ -632,9 +632,9 @@ describe('Practice Gap Simulation', () => {
     console.log(`\nMax gap distribution: [${sortedMaxGaps.join(', ')}]`);
     console.log(`Max gap range: ${maxGapRange}`);
 
-    // This shows the problem - game conflicts create huge imbalances
-    // The max-gap ordering can't help if teams physically can't use any slots
-    expect(maxGapRange).toBeGreaterThan(10); // Expect poor balance due to game conflicts
+    // With progressive gap penalty, the algorithm handles game conflicts better
+    // Max gap range should be reasonable even with game conflicts
+    expect(maxGapRange).toBeLessThan(15); // Progressive penalty helps maintain balance
   });
 
   /**
