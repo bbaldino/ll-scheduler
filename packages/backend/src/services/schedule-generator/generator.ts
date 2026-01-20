@@ -4175,6 +4175,150 @@ export class ScheduleGenerator {
         console.log(`  [ShortRest] ${divisionName}: no beneficial swaps found, delta=${delta} [${finalViolations}]`);
       }
     }
+
+    // Phase 2: Reduce total back-to-back games (1-day gaps) across ALL divisions
+    this.reduceBackToBackGames(scheduledGames);
+  }
+
+  /**
+   * Reduce total back-to-back games by swapping game dates within weeks.
+   * This is a greedy optimization that tries any swap that reduces back-to-back count.
+   */
+  private reduceBackToBackGames(scheduledGames: ScheduledEventDraft[]): void {
+    console.log('  [BackToBack] Starting back-to-back reduction...');
+
+    // Group games by division
+    const gamesByDivision = new Map<string, ScheduledEventDraft[]>();
+    for (const game of scheduledGames) {
+      if (!gamesByDivision.has(game.divisionId)) {
+        gamesByDivision.set(game.divisionId, []);
+      }
+      gamesByDivision.get(game.divisionId)!.push(game);
+    }
+
+    for (const [divisionId, divisionGames] of gamesByDivision) {
+      const divisionName = this.divisionNames.get(divisionId) || divisionId.slice(-8);
+
+      // Count back-to-back games (1-day gaps)
+      const countBackToBack = (): number => {
+        const teamGameDates = new Map<string, string[]>();
+        for (const game of divisionGames) {
+          if (game.homeTeamId) {
+            if (!teamGameDates.has(game.homeTeamId)) teamGameDates.set(game.homeTeamId, []);
+            teamGameDates.get(game.homeTeamId)!.push(game.date);
+          }
+          if (game.awayTeamId) {
+            if (!teamGameDates.has(game.awayTeamId)) teamGameDates.set(game.awayTeamId, []);
+            teamGameDates.get(game.awayTeamId)!.push(game.date);
+          }
+        }
+
+        let total = 0;
+        for (const dates of teamGameDates.values()) {
+          const sortedDates = [...new Set(dates)].sort();
+          for (let i = 1; i < sortedDates.length; i++) {
+            const d1 = new Date(sortedDates[i - 1]);
+            const d2 = new Date(sortedDates[i]);
+            const gap = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+            if (gap === 1) total++;
+          }
+        }
+        return total;
+      };
+
+      let backToBackCount = countBackToBack();
+      if (backToBackCount === 0) {
+        verboseLog(`  [BackToBack] ${divisionName}: no back-to-back games`);
+        continue;
+      }
+
+      const initialCount = backToBackCount;
+
+      // Group games by week for swapping
+      const gamesByWeek = new Map<number, ScheduledEventDraft[]>();
+      for (const game of divisionGames) {
+        const weekNum = this.getWeekNumberForDate(game.date);
+        if (!gamesByWeek.has(weekNum)) {
+          gamesByWeek.set(weekNum, []);
+        }
+        gamesByWeek.get(weekNum)!.push(game);
+      }
+
+      // Try swaps within each week
+      let swapsMade = 0;
+      const maxIterations = 30;
+
+      for (let iter = 0; iter < maxIterations && backToBackCount > 0; iter++) {
+        let foundImprovement = false;
+
+        for (const [, weekGames] of gamesByWeek) {
+          if (weekGames.length < 2) continue;
+
+          // Try all pairs of games on different days
+          for (let i = 0; i < weekGames.length && !foundImprovement; i++) {
+            for (let j = i + 1; j < weekGames.length && !foundImprovement; j++) {
+              const game1 = weekGames[i];
+              const game2 = weekGames[j];
+
+              // Skip if same day or same field (can't swap)
+              if (game1.date === game2.date) continue;
+              if (game1.fieldId !== game2.fieldId) continue;
+
+              // Try swapping dates and times
+              const orig1Date = game1.date;
+              const orig1Time = game1.startTime;
+              const orig1EndTime = game1.endTime;
+              const orig2Date = game2.date;
+              const orig2Time = game2.startTime;
+              const orig2EndTime = game2.endTime;
+
+              game1.date = orig2Date;
+              game1.startTime = orig2Time;
+              game1.endTime = orig2EndTime;
+              game2.date = orig1Date;
+              game2.startTime = orig1Time;
+              game2.endTime = orig1EndTime;
+
+              const newCount = countBackToBack();
+
+              if (newCount < backToBackCount) {
+                // Keep the swap
+                const teams1 = [game1.homeTeamId, game1.awayTeamId].filter(Boolean).map(t => {
+                  const state = this.teamSchedulingStates.get(t!);
+                  return state?.teamName || t;
+                }).join(' vs ');
+                const teams2 = [game2.homeTeamId, game2.awayTeamId].filter(Boolean).map(t => {
+                  const state = this.teamSchedulingStates.get(t!);
+                  return state?.teamName || t;
+                }).join(' vs ');
+
+                verboseLog(`  [BackToBack] ${divisionName}: swapped ${teams1} (was ${orig1Date}) with ${teams2} (was ${orig2Date}), count ${backToBackCount}->${newCount}`);
+
+                backToBackCount = newCount;
+                swapsMade++;
+                foundImprovement = true;
+              } else {
+                // Revert
+                game1.date = orig1Date;
+                game1.startTime = orig1Time;
+                game1.endTime = orig1EndTime;
+                game2.date = orig2Date;
+                game2.startTime = orig2Time;
+                game2.endTime = orig2EndTime;
+              }
+            }
+          }
+        }
+
+        if (!foundImprovement) break;
+      }
+
+      if (swapsMade > 0) {
+        console.log(`  [BackToBack] ${divisionName}: reduced from ${initialCount} to ${backToBackCount} (${swapsMade} swaps)`);
+      } else if (initialCount > 0) {
+        console.log(`  [BackToBack] ${divisionName}: ${backToBackCount} back-to-back (no swaps possible)`);
+      }
+    }
   }
 
   /**
