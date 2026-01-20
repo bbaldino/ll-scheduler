@@ -1024,6 +1024,11 @@ export class ScheduleGenerator {
       this.rebalanceShortRest();
       console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
 
+      // Rebuild fieldDatesUsed from actual scheduled events after rebalancing
+      // This is necessary because rebalancing swaps dates directly on events
+      // without updating the team scheduling states
+      this.rebuildFieldDatesUsed();
+
       // Step 4d: Schedule Sunday combo practices (before regular practices)
       verboseLog('\n' + '-'.repeat(80));
       verboseLog('SCHEDULING SUNDAY COMBO PRACTICES');
@@ -4124,6 +4129,104 @@ export class ScheduleGenerator {
                 continue;
               }
 
+              // Check if swap would violate maxGamesPerWeek for any team
+              const config = this.divisionConfigs.get(divisionId);
+              const maxGamesPerWeek = config?.maxGamesPerWeek;
+              if (maxGamesPerWeek !== undefined) {
+                const getWeekNumber = (dateStr: string): number => {
+                  const date = new Date(dateStr);
+                  const seasonStart = new Date(this.season.gamesStartDate || this.season.startDate);
+                  const diffTime = date.getTime() - seasonStart.getTime();
+                  return Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000));
+                };
+
+                const week1 = getWeekNumber(game1.date);
+                const week2 = getWeekNumber(game2.date);
+
+                // Only need to check if swapping across weeks
+                if (week1 !== week2) {
+                  // Count games per team per week (excluding the games being swapped)
+                  const countGamesInWeek = (teamId: string, weekNum: number, excludeGame: typeof game1): number => {
+                    return divisionGames.filter(g =>
+                      g !== excludeGame &&
+                      getWeekNumber(g.date) === weekNum &&
+                      (g.homeTeamId === teamId || g.awayTeamId === teamId)
+                    ).length;
+                  };
+
+                  let wouldExceedMaxGames = false;
+                  // Check teams from game1 moving to week2
+                  for (const teamId of teams1) {
+                    const gamesInWeek2 = countGamesInWeek(teamId, week2, game1);
+                    if (gamesInWeek2 + 1 > maxGamesPerWeek) {
+                      wouldExceedMaxGames = true;
+                      break;
+                    }
+                  }
+                  // Check teams from game2 moving to week1
+                  if (!wouldExceedMaxGames) {
+                    for (const teamId of teams2) {
+                      const gamesInWeek1 = countGamesInWeek(teamId, week1, game2);
+                      if (gamesInWeek1 + 1 > maxGamesPerWeek) {
+                        wouldExceedMaxGames = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  if (wouldExceedMaxGames) {
+                    continue;
+                  }
+                }
+              }
+
+              // Check if this would create same matchup on consecutive days
+              // (same two teams playing each other with only 1 day gap)
+              const isSameMatchup = (g1: typeof game1, g2: typeof game1): boolean => {
+                const teams1Set = new Set([g1.homeTeamId, g1.awayTeamId].filter(Boolean));
+                const teams2Set = new Set([g2.homeTeamId, g2.awayTeamId].filter(Boolean));
+                if (teams1Set.size !== teams2Set.size) return false;
+                for (const t of teams1Set) {
+                  if (!teams2Set.has(t)) return false;
+                }
+                return true;
+              };
+
+              const getDayGap = (date1: string, date2: string): number => {
+                const d1 = new Date(date1);
+                const d2 = new Date(date2);
+                return Math.abs(Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+              };
+
+              // After swap: game1 will be on game2's date, game2 will be on game1's date
+              // Check if any OTHER game with the same matchup would be consecutive to the new dates
+              const wouldCreateConsecutiveMatchup = (): boolean => {
+                for (const otherGame of divisionGames) {
+                  if (otherGame === game1 || otherGame === game2) continue;
+
+                  // Check if otherGame has same matchup as game1
+                  if (isSameMatchup(game1, otherGame)) {
+                    // game1 is moving to game2.date - check gap with otherGame
+                    if (getDayGap(game2.date, otherGame.date) <= 1) {
+                      return true;
+                    }
+                  }
+
+                  // Check if otherGame has same matchup as game2
+                  if (isSameMatchup(game2, otherGame)) {
+                    // game2 is moving to game1.date - check gap with otherGame
+                    if (getDayGap(game1.date, otherGame.date) <= 1) {
+                      return true;
+                    }
+                  }
+                }
+                return false;
+              };
+
+              if (wouldCreateConsecutiveMatchup()) {
+                continue;
+              }
+
               // Try the swap
               const orig1Date = game1.date;
               const orig1Time = game1.startTime;
@@ -4193,6 +4296,57 @@ export class ScheduleGenerator {
         console.log(`  [ShortRest] ${divisionName}: made ${swapsMade} swap(s), final delta=${delta} [${finalViolations}]`);
       } else {
         console.log(`  [ShortRest] ${divisionName}: no beneficial swaps found, delta=${delta} [${finalViolations}]`);
+      }
+    }
+
+    // VALIDATION: Check for any same-day field event conflicts after all swaps
+    const allGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+    const teamEventsByDate = new Map<string, Map<string, number>>();
+    for (const game of allGames) {
+      for (const teamId of [game.homeTeamId, game.awayTeamId]) {
+        if (!teamId) continue;
+        if (!teamEventsByDate.has(teamId)) {
+          teamEventsByDate.set(teamId, new Map());
+        }
+        const dateMap = teamEventsByDate.get(teamId)!;
+        dateMap.set(game.date, (dateMap.get(game.date) || 0) + 1);
+      }
+    }
+    for (const [teamId, dateMap] of teamEventsByDate) {
+      for (const [date, count] of dateMap) {
+        if (count > 1) {
+          const teamState = this.teamSchedulingStates.get(teamId);
+          console.error(`  [ShortRest] ERROR: ${teamState?.teamName || teamId} has ${count} games on ${date} after rebalancing!`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Rebuild fieldDatesUsed from actual scheduled events.
+   * This is necessary after rebalancing which swaps dates directly on events
+   * without updating the team scheduling states.
+   */
+  private rebuildFieldDatesUsed(): void {
+    // Clear all fieldDatesUsed sets
+    for (const teamState of this.teamSchedulingStates.values()) {
+      teamState.fieldDatesUsed.clear();
+    }
+
+    // Rebuild from scheduled events (games and practices use fields)
+    for (const event of this.scheduledEvents) {
+      if (event.eventType === 'game' || event.eventType === 'practice') {
+        const teamIds: string[] = [];
+        if (event.teamId) teamIds.push(event.teamId);
+        if (event.homeTeamId) teamIds.push(event.homeTeamId);
+        if (event.awayTeamId) teamIds.push(event.awayTeamId);
+
+        for (const teamId of teamIds) {
+          const teamState = this.teamSchedulingStates.get(teamId);
+          if (teamState) {
+            teamState.fieldDatesUsed.add(event.date);
+          }
+        }
       }
     }
   }

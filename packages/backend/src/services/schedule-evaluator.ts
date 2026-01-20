@@ -450,7 +450,7 @@ function evaluateConstraintViolations(
     if (event.awayTeamId) teamIds.push(event.awayTeamId);
 
     for (const teamId of teamIds) {
-      const key = `${teamId}-${event.date}`;
+      const key = `${teamId}|${event.date}`;
       const existing = eventsByTeamDate.get(key) || [];
       existing.push(event);
       eventsByTeamDate.set(key, existing);
@@ -465,7 +465,7 @@ function evaluateConstraintViolations(
       const cageEvents = dayEvents.filter((e) => e.cageId && !e.fieldId);
 
       if (fieldEvents.length > 1) {
-        const [teamId, date] = key.split('-');
+        const [teamId, date] = key.split('|');
         const team = teamMap.get(teamId);
         const division = team ? divisionMap.get(team.divisionId) : undefined;
 
@@ -773,11 +773,10 @@ function evaluateGameSpacing(
 
   for (const team of teams) {
     const division = divisionMap.get(team.divisionId);
-    const config = configByDivision.get(team.divisionId);
     if (!division) continue;
 
-    // Determine threshold: 2 days for game spacing divisions, 1 day (back-to-back only) for others
-    const shortRestThreshold = config?.gameSpacingEnabled ? 2 : 1;
+    // Short rest threshold is always 2 days (games within 2 days of each other)
+    const shortRestThreshold = 2;
 
     // Get all games for this team, sorted by date
     const teamGames = events
@@ -855,41 +854,28 @@ function evaluateGameSpacing(
     byDivision.set(report.divisionId, existing);
   }
 
-  // Track issues for summary
+  // Track issues for summary - check delta (max - min violations) for all divisions
+  // Fail if delta > 1 (i.e., short rest violations are not balanced across teams)
   const divisionIssues: string[] = [];
-  let totalBackToBack = 0;
 
   for (const [divisionId, divisionReports] of byDivision) {
     const teamsWithData = divisionReports.filter((r) => r.totalGames >= 2);
     if (teamsWithData.length === 0) continue;
 
-    const threshold = teamsWithData[0].shortRestThreshold;
+    const violationCounts = teamsWithData.map((r) => r.shortRestViolationCount);
+    const maxViolations = Math.max(...violationCounts);
+    const minViolations = Math.min(...violationCounts);
+    const delta = maxViolations - minViolations;
 
-    if (threshold === 2) {
-      // Game spacing divisions: check delta (max - min violations)
-      const violationCounts = teamsWithData.map((r) => r.shortRestViolationCount);
-      const maxViolations = Math.max(...violationCounts);
-      const minViolations = Math.min(...violationCounts);
-      const delta = maxViolations - minViolations;
-
-      if (delta >= 2) {
-        // Mark teams at max as failed
-        for (const report of divisionReports) {
-          if (report.shortRestViolationCount === maxViolations) {
-            report.passed = false;
-          }
-        }
-        const divName = teamsWithData[0].divisionName;
-        divisionIssues.push(`${divName}: delta=${delta}`);
-      }
-    } else {
-      // Non-game-spacing divisions: fail if any back-to-back games
+    if (delta > 1) {
+      // Mark teams at max as failed
       for (const report of divisionReports) {
-        if (report.shortRestViolationCount > 0) {
+        if (report.shortRestViolationCount === maxViolations) {
           report.passed = false;
-          totalBackToBack += report.shortRestViolationCount;
         }
       }
+      const divName = teamsWithData[0].divisionName;
+      divisionIssues.push(`${divName}: delta=${delta}`);
     }
   }
 
@@ -899,14 +885,7 @@ function evaluateGameSpacing(
   if (allPassed) {
     summary = 'No game spacing issues';
   } else {
-    const parts: string[] = [];
-    if (divisionIssues.length > 0) {
-      parts.push(`short rest imbalance: ${divisionIssues.join(', ')}`);
-    }
-    if (totalBackToBack > 0) {
-      parts.push(`${totalBackToBack} back-to-back games`);
-    }
-    summary = parts.join('; ');
+    summary = `short rest imbalance: ${divisionIssues.join(', ')}`;
   }
 
   return {
