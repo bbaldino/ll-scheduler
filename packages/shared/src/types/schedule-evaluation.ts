@@ -20,6 +20,7 @@ export interface ScheduleEvaluationResult {
   matchupBalance: MatchupBalanceReport;
   matchupSpacing: MatchupSpacingReport;
   gameSlotEfficiency: GameSlotEfficiencyReport;
+  weeklyGamesDistribution: WeeklyGamesDistributionReport;
 }
 
 // Weekly Requirements Report
@@ -232,6 +233,41 @@ export interface DivisionMatchupSpacingReport {
   minSpacing: number; // Minimum gap across all matchups
   avgSpacing: number; // Average gap across all matchups
   passed: boolean;
+}
+
+// Weekly Games Distribution Report - shows games per team per week
+export interface WeeklyGamesDistributionReport {
+  passed: boolean;
+  summary: string;
+  divisionReports: DivisionWeeklyGamesReport[];
+}
+
+export interface DivisionWeeklyGamesReport {
+  divisionId: string;
+  divisionName: string;
+  gamesPerWeek: number; // Expected games per week for this division
+  weeks: WeekInfo[];
+  teamReports: TeamWeeklyGamesReport[];
+  maxGamesInAnyWeek: number; // Highest game count for any team in any week
+  issues: string[]; // e.g., "Team X has 5 games in week 3 (expected: 2)"
+  passed: boolean;
+}
+
+export interface WeekInfo {
+  weekNumber: number; // 1-based
+  weekStart: string;
+  weekEnd: string;
+}
+
+export interface TeamWeeklyGamesReport {
+  teamId: string;
+  teamName: string;
+  gamesPerWeek: number[]; // Array indexed by week number (0-based), value is game count
+  totalGames: number;
+  maxGamesInWeek: number;
+  minGamesInWeek: number;
+  weeksOverQuota: number; // Count of weeks where games > expected
+  weeksUnderQuota: number; // Count of weeks where games < expected
 }
 
 // Request type for evaluate endpoint

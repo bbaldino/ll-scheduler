@@ -154,10 +154,11 @@ describe('buildCompetitionGroups', () => {
 });
 
 describe('initializeRequiredDayBudgetTracker', () => {
-  it('allocates budgets proportionally based on preference weights', () => {
-    // Two divisions with different preferences sharing 4 slots
-    // divA: required (weight=3), divB: acceptable (weight=1)
-    // Total weight = 4, so divA gets 3/4 * 4 = 3 slots, divB gets 1/4 * 4 = 1 slot
+  it('allocates budgets equally among divisions with remainder to higher priority', () => {
+    // Two divisions sharing 4 slots - splits evenly first, then remainder to higher priority
+    // divA: required, divB: acceptable
+    // Base: 4/2 = 2 each, remainder = 0
+    // Result: divA=2, divB=2
     const group: CompetitionGroup = {
       dayOfWeek: 6,
       divisionIds: ['divA', 'divB'],
@@ -180,8 +181,9 @@ describe('initializeRequiredDayBudgetTracker', () => {
     const divABudget = tracker.budgets.get('divA|6|0');
     const divBBudget = tracker.budgets.get('divB|6|0');
 
-    expect(divABudget).toBe(3); // 3/4 * 4 = 3
-    expect(divBBudget).toBe(1); // 1/4 * 4 = 1
+    // Equal distribution: 4 slots / 2 divisions = 2 each
+    expect(divABudget).toBe(2);
+    expect(divBBudget).toBe(2);
 
     // Total should equal slots per week
     expect(divABudget! + divBBudget!).toBe(4);

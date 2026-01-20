@@ -21,6 +21,9 @@ import type {
   IsolatedGameSlot,
   PracticeSpacingReport,
   TeamPracticeSpacingReport,
+  WeeklyGamesDistributionReport,
+  DivisionWeeklyGamesReport,
+  TeamWeeklyGamesReport,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
 
@@ -135,6 +138,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.gameSlotEfficiency}
             expanded={expandedSections.has('gameSlotEfficiency')}
             onToggle={() => toggleSection('gameSlotEfficiency')}
+          />
+
+          {/* Weekly Games Distribution */}
+          <WeeklyGamesDistributionSection
+            report={result.weeklyGamesDistribution}
+            expanded={expandedSections.has('weeklyGamesDistribution')}
+            onToggle={() => toggleSection('weeklyGamesDistribution')}
           />
         </div>
       </div>
@@ -1301,6 +1311,121 @@ function PracticeSpacingSection({
                 </div>
               );
             })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeeklyGamesDistributionSection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: WeeklyGamesDistributionReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Weekly Games Distribution"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          {report.divisionReports.length === 0 ? (
+            <p className={styles.noData}>No division data available</p>
+          ) : (
+            report.divisionReports.map((division: DivisionWeeklyGamesReport) => (
+              <div key={division.divisionId} className={styles.divisionReport}>
+                <div
+                  className={styles.divisionHeader}
+                  onClick={() => toggleDivision(division.divisionId)}
+                >
+                  <span className={division.passed ? styles.statusPass : styles.statusFail}>
+                    {division.passed ? '✓' : '✗'}
+                  </span>
+                  <span className={styles.divisionName}>{division.divisionName}</span>
+                  <span className={styles.complianceRate}>
+                    Expected: {division.gamesPerWeek}/week, Max seen: {division.maxGamesInAnyWeek}
+                  </span>
+                  <span className={styles.expandIcon}>
+                    {expandedDivisions.has(division.divisionId) ? '▼' : '▶'}
+                  </span>
+                </div>
+
+                {expandedDivisions.has(division.divisionId) && (
+                  <div className={styles.divisionContent}>
+                    {division.issues.length > 0 && (
+                      <div className={styles.issuesList}>
+                        {division.issues.slice(0, 10).map((issue, idx) => (
+                          <div key={idx} className={styles.issue}>
+                            {issue}
+                          </div>
+                        ))}
+                        {division.issues.length > 10 && (
+                          <div className={styles.issue}>
+                            ... and {division.issues.length - 10} more issues
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Games per week table */}
+                    <div className={styles.weeklyGamesTable}>
+                      <table className={styles.balanceTable}>
+                        <thead>
+                          <tr>
+                            <th>Team</th>
+                            {division.weeks.map((week) => (
+                              <th key={week.weekNumber} title={`${week.weekStart} - ${week.weekEnd}`}>
+                                W{week.weekNumber}
+                              </th>
+                            ))}
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {division.teamReports.map((team: TeamWeeklyGamesReport) => (
+                            <tr key={team.teamId}>
+                              <td>{team.teamName}</td>
+                              {team.gamesPerWeek.map((games, weekIdx) => (
+                                <td
+                                  key={weekIdx}
+                                  className={games > division.gamesPerWeek ? styles.cellWarning : ''}
+                                >
+                                  {games}
+                                </td>
+                              ))}
+                              <td>{team.totalGames}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
           )}
         </div>
       )}

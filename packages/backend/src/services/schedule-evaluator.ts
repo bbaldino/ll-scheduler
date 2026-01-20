@@ -22,6 +22,10 @@ import type {
   IsolatedGameSlot,
   PracticeSpacingReport,
   TeamPracticeSpacingReport,
+  WeeklyGamesDistributionReport,
+  DivisionWeeklyGamesReport,
+  TeamWeeklyGamesReport,
+  WeekInfo,
   ScheduledEvent,
   Team,
   Division,
@@ -97,6 +101,13 @@ export async function evaluateSchedule(
   const matchupSpacing = evaluateMatchupSpacing(events, teams, divisionMap);
   const gameSlotEfficiency = evaluateGameSlotEfficiency(events, teamMap, divisionMap, fieldMap);
   const practiceSpacing = evaluatePracticeSpacing(events, teams, divisionMap);
+  const weeklyGamesDistribution = evaluateWeeklyGamesDistribution(
+    events,
+    teams,
+    divisionMap,
+    configByDivision,
+    season
+  );
 
   // Calculate overall score
   const checks = [
@@ -109,6 +120,7 @@ export async function evaluateSchedule(
     matchupSpacing.passed,
     gameSlotEfficiency.passed,
     practiceSpacing.passed,
+    weeklyGamesDistribution.passed,
   ];
   const passedCount = checks.filter(Boolean).length;
   const overallScore = Math.round((passedCount / checks.length) * 100);
@@ -126,6 +138,7 @@ export async function evaluateSchedule(
     matchupBalance,
     matchupSpacing,
     gameSlotEfficiency,
+    weeklyGamesDistribution,
   };
 }
 
@@ -1364,5 +1377,128 @@ function evaluatePracticeSpacing(
     summary,
     teamReports,
     overallAverageDaysBetweenPractices: Math.round(overallAvg * 10) / 10,
+  };
+}
+
+/**
+ * Evaluate weekly games distribution - shows games per team per week
+ * Helps identify spillover by showing which weeks have more games than expected
+ */
+function evaluateWeeklyGamesDistribution(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisionMap: Map<string, Division>,
+  configByDivision: Map<string, DivisionConfig>,
+  season: Season
+): WeeklyGamesDistributionReport {
+  const divisionReports: DivisionWeeklyGamesReport[] = [];
+
+  // Generate game weeks
+  const gameWeeks = generateGameWeeks(season);
+  const weekInfos: WeekInfo[] = gameWeeks.map((gw) => ({
+    weekNumber: gw.weekNumber,
+    weekStart: gw.start,
+    weekEnd: gw.end,
+  }));
+
+  // Group teams by division
+  const teamsByDivision = new Map<string, Team[]>();
+  for (const team of teams) {
+    const existing = teamsByDivision.get(team.divisionId) || [];
+    existing.push(team);
+    teamsByDivision.set(team.divisionId, existing);
+  }
+
+  // Filter to only games
+  const games = events.filter((e) => e.eventType === 'game');
+
+  for (const [divisionId, divisionTeams] of teamsByDivision) {
+    const division = divisionMap.get(divisionId);
+    const config = configByDivision.get(divisionId);
+    if (!division || !config) continue;
+
+    const expectedGamesPerWeek = config?.gamesPerWeek || 0;
+    const issues: string[] = [];
+    const teamReports: TeamWeeklyGamesReport[] = [];
+    let maxGamesInAnyWeek = 0;
+
+    // Sort teams by name for consistent display
+    const sortedTeams = [...divisionTeams].sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const team of sortedTeams) {
+      // Initialize games per week array
+      const gamesPerWeek: number[] = new Array(gameWeeks.length).fill(0);
+
+      // Find all games for this team
+      const teamGames = games.filter(
+        (g) => g.homeTeamId === team.id || g.awayTeamId === team.id
+      );
+
+      // Count games per week
+      for (const game of teamGames) {
+        // Find which week this game belongs to
+        const weekIndex = gameWeeks.findIndex(
+          (gw) => game.date >= gw.start && game.date <= gw.end
+        );
+        if (weekIndex >= 0) {
+          gamesPerWeek[weekIndex]++;
+        }
+      }
+
+      const maxInWeek = Math.max(...gamesPerWeek, 0);
+      const minInWeek = Math.min(...gamesPerWeek.filter((g) => g > 0), 0);
+      maxGamesInAnyWeek = Math.max(maxGamesInAnyWeek, maxInWeek);
+
+      // Count weeks over/under quota
+      let weeksOverQuota = 0;
+      let weeksUnderQuota = 0;
+      for (let i = 0; i < gamesPerWeek.length; i++) {
+        const weeklyExpected = getGamesPerWeekForDivision(config!, i + 1);
+        if (gamesPerWeek[i] > weeklyExpected) {
+          weeksOverQuota++;
+          issues.push(
+            `${team.name}: Week ${i + 1} has ${gamesPerWeek[i]} games (expected: ${weeklyExpected})`
+          );
+        } else if (gamesPerWeek[i] < weeklyExpected) {
+          weeksUnderQuota++;
+        }
+      }
+
+      teamReports.push({
+        teamId: team.id,
+        teamName: team.name,
+        gamesPerWeek,
+        totalGames: teamGames.length,
+        maxGamesInWeek: maxInWeek,
+        minGamesInWeek: minInWeek,
+        weeksOverQuota,
+        weeksUnderQuota,
+      });
+    }
+
+    // Division passes if no team has more than expected + 1 in any week
+    const passed = maxGamesInAnyWeek <= expectedGamesPerWeek + 1;
+
+    divisionReports.push({
+      divisionId,
+      divisionName: division.name,
+      gamesPerWeek: expectedGamesPerWeek,
+      weeks: weekInfos,
+      teamReports,
+      maxGamesInAnyWeek,
+      issues,
+      passed,
+    });
+  }
+
+  const allPassed = divisionReports.every((r) => r.passed);
+  const totalIssues = divisionReports.reduce((sum, r) => sum + r.issues.length, 0);
+
+  return {
+    passed: allPassed,
+    summary: allPassed
+      ? 'All teams within acceptable weekly game counts'
+      : `${totalIssues} weeks with games exceeding quota`,
+    divisionReports,
   };
 }

@@ -2409,8 +2409,8 @@ export class ScheduleGenerator {
                 let usedFallback = false;
 
                 // For spillover games, use special logic: pick earliest available date,
-                // ignoring day preferences (preferred/acceptable don't matter for catch-up games)
-                // BUT still respect the required-day budget to maintain fair distribution
+                // ignoring ALL day preferences - spillover games are catch-up games that
+                // should just go to the soonest available slot
                 if (isSpillover) {
                   // Group candidates by date
                   const candidatesByDate = new Map<string, PlacementCandidate[]>();
@@ -2428,17 +2428,9 @@ export class ScheduleGenerator {
                   const spilloverWeights = { ...this.scoringWeights, gameDayPreference: 0 };
 
                   // Try each date in order until we find a valid candidate
+                  // No budget checks - spillover games take the first available slot
                   for (const date of sortedDates) {
                     const dateCandidates = candidatesByDate.get(date)!;
-
-                    // Check if this date is a required day with exhausted budget for this week
-                    const candidateDayOfWeek = dateCandidates[0]?.dayOfWeek;
-                    if (candidateDayOfWeek !== undefined &&
-                        requiredDays.includes(candidateDayOfWeek) &&
-                        !canUseRequiredDaySlot(division.divisionId, candidateDayOfWeek, weekNum, requiredDayBudgetTracker)) {
-                      // Skip this required day - budget exhausted for this week
-                      continue;
-                    }
 
                     const scoredCandidates = dateCandidates.map((c) =>
                       calculatePlacementScore(c, homeTeamState, this.scoringContext!, spilloverWeights)
