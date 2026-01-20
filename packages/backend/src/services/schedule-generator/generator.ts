@@ -1018,7 +1018,13 @@ export class ScheduleGenerator {
       this.rebalanceScheduledHomeAway();
       console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
 
-      // Step 4c: Schedule Sunday combo practices (before regular practices)
+      // Step 4c: Rebalance short rest violations across teams
+      // This swaps game dates within weeks to balance short rest violations
+      stepStart = Date.now();
+      this.rebalanceShortRest();
+      console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
+
+      // Step 4d: Schedule Sunday combo practices (before regular practices)
       verboseLog('\n' + '-'.repeat(80));
       verboseLog('SCHEDULING SUNDAY COMBO PRACTICES');
       verboseLog('-'.repeat(80));
@@ -3966,6 +3972,208 @@ export class ScheduleGenerator {
 
     if (teamsWithImbalance === 0) {
       console.log('    All teams balanced (diff <= 1)');
+    }
+  }
+
+  /**
+   * Rebalance short rest (games scheduled ≤2 days apart) across teams within each division.
+   * This is a post-scheduling optimization that swaps game dates within the same week
+   * to reduce the delta (max - min) of short rest violations per team.
+   */
+  private rebalanceShortRest(): void {
+    console.log('  [ShortRest] Starting short rest balance optimization...');
+
+    // Get all scheduled games
+    const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+    if (scheduledGames.length === 0) {
+      console.log('  [ShortRest] No games to optimize');
+      return;
+    }
+
+    // Group games by division
+    const gamesByDivision = new Map<string, typeof scheduledGames>();
+    for (const game of scheduledGames) {
+      if (!gamesByDivision.has(game.divisionId)) {
+        gamesByDivision.set(game.divisionId, []);
+      }
+      gamesByDivision.get(game.divisionId)!.push(game);
+    }
+
+    // Process each division
+    for (const [divisionId, divisionGames] of gamesByDivision) {
+      const divisionName = this.divisionNames.get(divisionId) || divisionId.slice(-8);
+
+      // Calculate short rest violations per team
+      const calculateViolations = (): Map<string, number> => {
+        const teamGameDates = new Map<string, string[]>();
+
+        for (const game of divisionGames) {
+          if (game.homeTeamId) {
+            if (!teamGameDates.has(game.homeTeamId)) teamGameDates.set(game.homeTeamId, []);
+            teamGameDates.get(game.homeTeamId)!.push(game.date);
+          }
+          if (game.awayTeamId) {
+            if (!teamGameDates.has(game.awayTeamId)) teamGameDates.set(game.awayTeamId, []);
+            teamGameDates.get(game.awayTeamId)!.push(game.date);
+          }
+        }
+
+        const violations = new Map<string, number>();
+        for (const [teamId, dates] of teamGameDates) {
+          const sortedDates = [...new Set(dates)].sort();
+          let count = 0;
+          for (let i = 1; i < sortedDates.length; i++) {
+            const d1 = new Date(sortedDates[i - 1]);
+            const d2 = new Date(sortedDates[i]);
+            const gap = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+            if (gap <= 2) count++;
+          }
+          violations.set(teamId, count);
+        }
+        return violations;
+      };
+
+      const getDelta = (violations: Map<string, number>): number => {
+        const counts = Array.from(violations.values());
+        if (counts.length === 0) return 0;
+        return Math.max(...counts) - Math.min(...counts);
+      };
+
+      let violations = calculateViolations();
+      let delta = getDelta(violations);
+
+      if (delta <= 1) {
+        verboseLog(`  [ShortRest] ${divisionName}: delta=${delta}, no optimization needed`);
+        continue;
+      }
+
+      console.log(`  [ShortRest] ${divisionName}: initial delta=${delta}, attempting optimization...`);
+
+      // Group games by week and field for potential swaps
+      const gamesByWeekAndField = new Map<string, typeof divisionGames>();
+      for (const game of divisionGames) {
+        const weekNum = this.getWeekNumberForDate(game.date);
+        const fieldId = game.fieldId || 'unknown';
+        const key = `${weekNum}|${fieldId}`;
+        if (!gamesByWeekAndField.has(key)) {
+          gamesByWeekAndField.set(key, []);
+        }
+        gamesByWeekAndField.get(key)!.push(game);
+      }
+
+      // Try to find beneficial swaps
+      let swapsMade = 0;
+      const maxIterations = 20; // Prevent infinite loops
+
+      for (let iter = 0; iter < maxIterations && delta > 1; iter++) {
+        let foundImprovement = false;
+
+        // Find teams with max and min violations
+        const counts = Array.from(violations.values());
+        const maxViolations = Math.max(...counts);
+        const minViolations = Math.min(...counts);
+
+        const teamsAtMax = Array.from(violations.entries())
+          .filter(([, v]) => v === maxViolations)
+          .map(([t]) => t);
+        const teamsAtMin = Array.from(violations.entries())
+          .filter(([, v]) => v === minViolations)
+          .map(([t]) => t);
+
+        // Try swapping games within each week/field group
+        for (const [, weekGames] of gamesByWeekAndField) {
+          if (weekGames.length < 2) continue;
+
+          // Get day of week for each game
+          const gamesWithDow = weekGames.map(g => ({
+            game: g,
+            dow: new Date(g.date).getDay(), // 0=Sun, 6=Sat
+          }));
+
+          // Look for Thu/Fri games (dow 4 or 5) that could swap with Tue/Wed/Mon games (dow 1, 2, 3)
+          const thuFriGames = gamesWithDow.filter(g => g.dow === 4 || g.dow === 5);
+          const earlyWeekGames = gamesWithDow.filter(g => g.dow >= 1 && g.dow <= 3);
+
+          for (const thuFri of thuFriGames) {
+            for (const early of earlyWeekGames) {
+              // Check if this swap could help: one game should involve a max-violation team,
+              // and the other should involve a min-violation team
+              const thuFriTeams = new Set([thuFri.game.homeTeamId, thuFri.game.awayTeamId].filter(Boolean));
+              const earlyTeams = new Set([early.game.homeTeamId, early.game.awayTeamId].filter(Boolean));
+
+              const thuFriHasMax = teamsAtMax.some(t => thuFriTeams.has(t));
+              const earlyHasMin = teamsAtMin.some(t => earlyTeams.has(t));
+
+              if (!thuFriHasMax || !earlyHasMin) continue;
+
+              // Try the swap: exchange dates and times
+              const origThuFriDate = thuFri.game.date;
+              const origThuFriTime = thuFri.game.startTime;
+              const origThuFriEndTime = thuFri.game.endTime;
+              const origEarlyDate = early.game.date;
+              const origEarlyTime = early.game.startTime;
+              const origEarlyEndTime = early.game.endTime;
+
+              thuFri.game.date = origEarlyDate;
+              thuFri.game.startTime = origEarlyTime;
+              thuFri.game.endTime = origEarlyEndTime;
+              early.game.date = origThuFriDate;
+              early.game.startTime = origThuFriTime;
+              early.game.endTime = origThuFriEndTime;
+
+              // Recalculate violations
+              const newViolations = calculateViolations();
+              const newDelta = getDelta(newViolations);
+
+              if (newDelta < delta) {
+                // Keep the swap
+                const thuFriTeamNames = Array.from(thuFriTeams).map(t => {
+                  const state = this.teamSchedulingStates.get(t!);
+                  return state?.teamName || t;
+                }).join(' vs ');
+                const earlyTeamNames = Array.from(earlyTeams).map(t => {
+                  const state = this.teamSchedulingStates.get(t!);
+                  return state?.teamName || t;
+                }).join(' vs ');
+
+                console.log(`  [ShortRest] ${divisionName}: swapped ${thuFriTeamNames} (was ${origThuFriDate}) with ${earlyTeamNames} (was ${origEarlyDate}), delta ${delta}->${newDelta}`);
+
+                violations = newViolations;
+                delta = newDelta;
+                swapsMade++;
+                foundImprovement = true;
+                break;
+              } else {
+                // Revert the swap
+                thuFri.game.date = origThuFriDate;
+                thuFri.game.startTime = origThuFriTime;
+                thuFri.game.endTime = origThuFriEndTime;
+                early.game.date = origEarlyDate;
+                early.game.startTime = origEarlyTime;
+                early.game.endTime = origEarlyEndTime;
+              }
+            }
+            if (foundImprovement) break;
+          }
+          if (foundImprovement) break;
+        }
+
+        if (!foundImprovement) break;
+      }
+
+      // Log final state for this division
+      const finalViolations = Array.from(violations.entries())
+        .map(([teamId, count]) => {
+          const state = this.teamSchedulingStates.get(teamId);
+          return `${state?.teamName || teamId}:${count}`;
+        })
+        .join(', ');
+
+      if (swapsMade > 0) {
+        console.log(`  [ShortRest] ${divisionName}: made ${swapsMade} swap(s), final delta=${delta} [${finalViolations}]`);
+      } else {
+        console.log(`  [ShortRest] ${divisionName}: no beneficial swaps found, delta=${delta} [${finalViolations}]`);
+      }
     }
   }
 
