@@ -2236,100 +2236,96 @@ export class ScheduleGenerator {
           verboseLog(`  Week ${weekNum + 1}: ${spilloverMatchupsForWeek.length} spillover matchups (excluded from required-day optimization)`);
         }
 
-        // Pre-compute stable random values for each matchup
-        // This ensures consistent ordering during sort (Math.random() in comparator is unstable)
-        const matchupRandomKeys = new Map<string, number>();
-        for (const m of allMatchupsThisWeek) {
-          const key = `${m.homeTeamId}-${m.awayTeamId}-${m.targetWeek}`;
-          matchupRandomKeys.set(key, Math.random());
-        }
-        const getMatchupKey = (m: typeof allMatchupsThisWeek[0]) =>
-          `${m.homeTeamId}-${m.awayTeamId}-${m.targetWeek}`;
-
-        // Sort function for fairness balancing:
-        // 1. Teams with more short rest games go first (so they get first pick of non-short-rest slots)
-        // 2. Teams with fewer preferred-day games go first (matters when there's scarcity)
-        // 3. Random tie-breaker to prevent systematic bias from ID ordering
-        const fairnessSort = (a: typeof allMatchupsThisWeek[0], b: typeof allMatchupsThisWeek[0]) => {
-          // First priority: teams with more short rest games should go first
-          const aMaxShortRest = Math.max(
-            this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0,
-            this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0
-          );
-          const bMaxShortRest = Math.max(
-            this.teamSchedulingStates.get(b.homeTeamId)?.shortRestGamesCount || 0,
-            this.teamSchedulingStates.get(b.awayTeamId)?.shortRestGamesCount || 0
-          );
-          if (aMaxShortRest !== bMaxShortRest) {
-            return bMaxShortRest - aMaxShortRest; // Higher short rest count goes first
-          }
-
-          // Second priority: teams with fewer preferred-day games go first
-          const aMinGames = Math.min(
-            preferredDayGames.get(a.homeTeamId) || 0,
-            preferredDayGames.get(a.awayTeamId) || 0
-          );
-          const bMinGames = Math.min(
-            preferredDayGames.get(b.homeTeamId) || 0,
-            preferredDayGames.get(b.awayTeamId) || 0
-          );
-          if (aMinGames !== bMinGames) {
-            return aMinGames - bMinGames;
-          }
-
-          // Stable random tie-breaker using pre-computed values
-          // This prevents systematic bias from ID ordering
-          const aRandom = matchupRandomKeys.get(getMatchupKey(a)) || 0;
-          const bRandom = matchupRandomKeys.get(getMatchupKey(b)) || 0;
-          return aRandom - bRandom;
-        };
-
-        // For weekday matchups: prioritize those where BOTH teams have Saturday games this week
-        // These teams are at highest risk of short rest from late weekday games (Thu/Fri)
-        // By processing them first, they get early weekday slots (Mon/Tue/Wed)
-        const teamsWithSaturdayGames = new Set<string>();
-        for (const m of requiredDayMatchups) {
-          teamsWithSaturdayGames.add(m.homeTeamId);
-          teamsWithSaturdayGames.add(m.awayTeamId);
-        }
-
-        const weekdayShortRestRiskSort = (a: typeof allMatchupsThisWeek[0], b: typeof allMatchupsThisWeek[0]) => {
-          // Count how many teams in each matchup have Saturday games
-          const aRisk = (teamsWithSaturdayGames.has(a.homeTeamId) ? 1 : 0) +
-                        (teamsWithSaturdayGames.has(a.awayTeamId) ? 1 : 0);
-          const bRisk = (teamsWithSaturdayGames.has(b.homeTeamId) ? 1 : 0) +
-                        (teamsWithSaturdayGames.has(b.awayTeamId) ? 1 : 0);
-
-          // Higher risk (both teams have Saturday) should go first
-          if (aRisk !== bRisk) {
-            return bRisk - aRisk;
-          }
-
-          // If same risk level, use fairness sort
-          return fairnessSort(a, b);
-        };
-
-        // Sort each group separately, then concatenate
+        // Create pools of matchups to process
         // Order: spillover first (already delayed), then required-day matchups, then weekday matchups
-        // Spillover is sorted by age first (oldest spillover = lowest originalWeek gets priority), then fairness
-        // Weekday matchups use special sort to prioritize at-risk pairs (both teams have Saturday games)
-        const sortedSpilloverMatchups = [...spilloverMatchupsForWeek].sort((a, b) => {
-          // First: sort by originalWeek (oldest spillover first)
-          const aOriginal = a.originalWeek ?? a.targetWeek;
-          const bOriginal = b.originalWeek ?? b.targetWeek;
-          if (aOriginal !== bOriginal) return aOriginal - bOriginal;
-          // Second: fairness
-          return fairnessSort(a, b);
-        });
-        const sortedRequiredDayMatchups = [...requiredDayMatchups].sort(fairnessSort);
-        const sortedOtherMatchups = [...nonRequiredDayMatchups].sort(weekdayShortRestRiskSort);
-        const sortedMatchups = [...sortedSpilloverMatchups, ...sortedRequiredDayMatchups, ...sortedOtherMatchups];
+        const spilloverPool = [...spilloverMatchupsForWeek];
+        const requiredDayPool = [...requiredDayMatchups];
+        const weekdayPool = [...nonRequiredDayMatchups];
 
         // Track how many required-day slots we've used this week
         let requiredDaySlotsUsedThisWeek = 0;
 
-        // Process each matchup in sorted order
-        for (const matchup of sortedMatchups) {
+        // Helper to pick the highest-need matchup from a pool (deterministic, needs-based)
+        // Returns the index of the best matchup, or -1 if pool is empty
+        // Uses multiple needs-based criteria with team ID as absolute last resort
+        const pickHighestNeedMatchup = (pool: typeof spilloverPool, isSpillover: boolean): number => {
+          if (pool.length === 0) return -1;
+
+          // Compare two matchups: returns negative if a has higher need, positive if b has higher need
+          const compareMatchups = (a: typeof pool[0], b: typeof pool[0]): number => {
+            // 1. For spillover: oldest spillover first (lowest originalWeek)
+            if (isSpillover) {
+              const aOriginal = a.originalWeek ?? a.targetWeek;
+              const bOriginal = b.originalWeek ?? b.targetWeek;
+              if (aOriginal !== bOriginal) return aOriginal - bOriginal;
+            }
+
+            // 2. Short rest balance: matchups involving teams with MORE short rest go first
+            // These teams need good slots to avoid accumulating more violations
+            const aHomeState = this.teamSchedulingStates.get(a.homeTeamId);
+            const aAwayState = this.teamSchedulingStates.get(a.awayTeamId);
+            const bHomeState = this.teamSchedulingStates.get(b.homeTeamId);
+            const bAwayState = this.teamSchedulingStates.get(b.awayTeamId);
+
+            const aMaxShortRest = Math.max(
+              aHomeState?.shortRestGamesCount || 0,
+              aAwayState?.shortRestGamesCount || 0
+            );
+            const bMaxShortRest = Math.max(
+              bHomeState?.shortRestGamesCount || 0,
+              bAwayState?.shortRestGamesCount || 0
+            );
+            if (aMaxShortRest !== bMaxShortRest) return bMaxShortRest - aMaxShortRest; // Higher goes first
+
+            // 3. Also consider the sum of short rest (both teams' burden)
+            const aSumShortRest = (aHomeState?.shortRestGamesCount || 0) + (aAwayState?.shortRestGamesCount || 0);
+            const bSumShortRest = (bHomeState?.shortRestGamesCount || 0) + (bAwayState?.shortRestGamesCount || 0);
+            if (aSumShortRest !== bSumShortRest) return bSumShortRest - aSumShortRest; // Higher goes first
+
+            // 4. Total games scheduled: teams with fewer games may need priority
+            const aTotalGames = (aHomeState?.gamesScheduled || 0) + (aAwayState?.gamesScheduled || 0);
+            const bTotalGames = (bHomeState?.gamesScheduled || 0) + (bAwayState?.gamesScheduled || 0);
+            if (aTotalGames !== bTotalGames) return aTotalGames - bTotalGames; // Fewer goes first
+
+            // 5. Preferred day games: teams with fewer preferred-day games get priority
+            const aPreferredGames = (preferredDayGames.get(a.homeTeamId) || 0) + (preferredDayGames.get(a.awayTeamId) || 0);
+            const bPreferredGames = (preferredDayGames.get(b.homeTeamId) || 0) + (preferredDayGames.get(b.awayTeamId) || 0);
+            if (aPreferredGames !== bPreferredGames) return aPreferredGames - bPreferredGames; // Fewer goes first
+
+            // 6. Home/away imbalance: prioritize matchups that could help balance
+            const aHomeImbalance = Math.abs((aHomeState?.homeGames || 0) - (aHomeState?.awayGames || 0)) +
+                                   Math.abs((aAwayState?.homeGames || 0) - (aAwayState?.awayGames || 0));
+            const bHomeImbalance = Math.abs((bHomeState?.homeGames || 0) - (bHomeState?.awayGames || 0)) +
+                                   Math.abs((bAwayState?.homeGames || 0) - (bAwayState?.awayGames || 0));
+            if (aHomeImbalance !== bHomeImbalance) return bHomeImbalance - aHomeImbalance; // More imbalanced goes first
+
+            // 7. LAST RESORT: deterministic tie-breaker using team IDs
+            // Only reached when ALL needs-based criteria are exactly equal
+            // Compare by creating a canonical matchup key (sorted team IDs)
+            const aKey = [a.homeTeamId, a.awayTeamId].sort().join('-');
+            const bKey = [b.homeTeamId, b.awayTeamId].sort().join('-');
+            return aKey.localeCompare(bKey);
+          };
+
+          // Find the matchup with highest need (lowest compare result against all others)
+          let bestIdx = 0;
+          for (let i = 1; i < pool.length; i++) {
+            if (compareMatchups(pool[i], pool[bestIdx]) < 0) {
+              bestIdx = i;
+            }
+          }
+
+          return bestIdx;
+        };
+
+        // Process matchups dynamically - pick highest need from current pool state
+        // This ensures teams' needs are re-evaluated after each game is scheduled
+        const processPool = (pool: typeof spilloverPool, isSpillover: boolean) => {
+          while (pool.length > 0) {
+            const idx = pickHighestNeedMatchup(pool, isSpillover);
+            if (idx === -1) break;
+
+            const matchup = pool.splice(idx, 1)[0];
         // Skip matchups already scheduled in the interleaved pre-pass
         const matchupKey = ScheduleGenerator.createMatchupKey(matchup.homeTeamId, matchup.awayTeamId, matchup.targetWeek);
         if (scheduledInPrePass.has(matchupKey)) {
@@ -2668,7 +2664,14 @@ export class ScheduleGenerator {
             failedToSchedule++;
           }
         }
-        } // end for loop for matchups
+          } // end while loop in processPool
+        }; // end processPool function
+
+        // Process each pool in order: spillover first, then required-day, then weekday
+        // Each call dynamically picks the highest-need matchup from the current pool state
+        processPool(spilloverPool, true);
+        processPool(requiredDayPool, false);
+        processPool(weekdayPool, false);
 
         // Carry forward any matchups that couldn't be scheduled this week
         spilloverMatchups = newSpillover;
@@ -2945,7 +2948,19 @@ export class ScheduleGenerator {
               if (aIsOverflow && !bIsOverflow) return -1;
               if (!aIsOverflow && bIsOverflow) return 1;
 
-              // Second: team fairness
+              // Second: short rest balance - teams with more short rest games go first
+              // This gives them first pick of slots that don't create more short rest
+              const aHomeShortRest = this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0;
+              const aAwayShortRest = this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0;
+              const bHomeShortRest = this.teamSchedulingStates.get(b.homeTeamId)?.shortRestGamesCount || 0;
+              const bAwayShortRest = this.teamSchedulingStates.get(b.awayTeamId)?.shortRestGamesCount || 0;
+              const aMaxShortRest = Math.max(aHomeShortRest, aAwayShortRest);
+              const bMaxShortRest = Math.max(bHomeShortRest, bAwayShortRest);
+              if (aMaxShortRest !== bMaxShortRest) {
+                return bMaxShortRest - aMaxShortRest; // Higher short rest count goes first
+              }
+
+              // Third: team fairness
               const aHome = priorityGamesPerTeam.get(a.homeTeamId) || 0;
               const aAway = priorityGamesPerTeam.get(a.awayTeamId) || 0;
               const bHome = priorityGamesPerTeam.get(b.homeTeamId) || 0;
