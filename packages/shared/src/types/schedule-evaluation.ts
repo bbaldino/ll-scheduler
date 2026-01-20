@@ -138,6 +138,8 @@ export interface TeamGameSpacingReport {
   minDaysBetweenGames: number; // Minimum gap found
   maxDaysBetweenGames: number; // Maximum gap found
   gameGaps: number[]; // Array of days between each consecutive game pair
+  shortRestThreshold: number; // 2 for game spacing divisions, 1 for others (back-to-back only)
+  shortRestViolationCount: number; // Count of gaps <= threshold
   passed: boolean;
 }
 

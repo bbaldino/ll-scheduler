@@ -770,15 +770,14 @@ function evaluateGameSpacing(
   configByDivision: Map<string, DivisionConfig>
 ): GameSpacingReport {
   const teamReports: TeamGameSpacingReport[] = [];
-  const MAX_DEVIATION_FROM_AVG = 1.5; // Max allowed deviation from overall average (in days)
 
   for (const team of teams) {
     const division = divisionMap.get(team.divisionId);
     const config = configByDivision.get(team.divisionId);
     if (!division) continue;
 
-    // Skip divisions where game spacing is not enabled
-    if (!config?.gameSpacingEnabled) continue;
+    // Determine threshold: 2 days for game spacing divisions, 1 day (back-to-back only) for others
+    const shortRestThreshold = config?.gameSpacingEnabled ? 2 : 1;
 
     // Get all games for this team, sorted by date
     const teamGames = events
@@ -801,6 +800,8 @@ function evaluateGameSpacing(
         minDaysBetweenGames: 0,
         maxDaysBetweenGames: 0,
         gameGaps: [],
+        shortRestThreshold,
+        shortRestViolationCount: 0,
         passed: true, // Can't fail with < 2 games
       });
       continue;
@@ -821,6 +822,9 @@ function evaluateGameSpacing(
     const minDays = Math.min(...gameGaps);
     const maxDays = Math.max(...gameGaps);
 
+    // Count violations based on threshold
+    const shortRestViolationCount = gameGaps.filter((gap) => gap <= shortRestThreshold).length;
+
     teamReports.push({
       teamId: team.id,
       teamName: team.name,
@@ -831,58 +835,83 @@ function evaluateGameSpacing(
       minDaysBetweenGames: minDays,
       maxDaysBetweenGames: maxDays,
       gameGaps,
-      passed: true, // Will be updated after calculating overall average
+      shortRestThreshold,
+      shortRestViolationCount,
+      passed: true, // Will be updated based on division-level analysis below
     });
   }
 
-  // Calculate average per division (not global) since divisions have different games per week
-  const divisionAverages = new Map<string, number>();
+  // Calculate overall average for display purposes
   const teamsWithGames = teamReports.filter((r) => r.totalGames >= 2);
+  const overallAvg = teamsWithGames.length > 0
+    ? teamsWithGames.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) / teamsWithGames.length
+    : 0;
 
-  // Group by division and calculate per-division average
+  // Group by division to calculate delta for game spacing divisions
   const byDivision = new Map<string, TeamGameSpacingReport[]>();
-  for (const report of teamsWithGames) {
+  for (const report of teamReports) {
     const existing = byDivision.get(report.divisionId) || [];
     existing.push(report);
     byDivision.set(report.divisionId, existing);
   }
 
+  // Track issues for summary
+  const divisionIssues: string[] = [];
+  let totalBackToBack = 0;
+
   for (const [divisionId, divisionReports] of byDivision) {
-    const avg = divisionReports.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) / divisionReports.length;
-    divisionAverages.set(divisionId, avg);
-  }
+    const teamsWithData = divisionReports.filter((r) => r.totalGames >= 2);
+    if (teamsWithData.length === 0) continue;
 
-  // Now check each team's deviation from their division's average
-  for (const report of teamReports) {
-    if (report.totalGames < 2) continue;
-    const divisionAvg = divisionAverages.get(report.divisionId) || 0;
-    const deviation = Math.abs(report.averageDaysBetweenGames - divisionAvg);
-    report.passed = deviation <= MAX_DEVIATION_FROM_AVG;
-  }
+    const threshold = teamsWithData[0].shortRestThreshold;
 
-  const allPassed = teamReports.every((r) => r.passed);
-  const failedCount = teamReports.filter((r) => !r.passed).length;
+    if (threshold === 2) {
+      // Game spacing divisions: check delta (max - min violations)
+      const violationCounts = teamsWithData.map((r) => r.shortRestViolationCount);
+      const maxViolations = Math.max(...violationCounts);
+      const minViolations = Math.min(...violationCounts);
+      const delta = maxViolations - minViolations;
 
-  // Calculate max deviation within each division for summary
-  let maxDeviation = 0;
-  for (const [divisionId, divisionReports] of byDivision) {
-    const divisionAvg = divisionAverages.get(divisionId) || 0;
-    for (const report of divisionReports) {
-      const deviation = Math.abs(report.averageDaysBetweenGames - divisionAvg);
-      maxDeviation = Math.max(maxDeviation, deviation);
+      if (delta >= 2) {
+        // Mark teams at max as failed
+        for (const report of divisionReports) {
+          if (report.shortRestViolationCount === maxViolations) {
+            report.passed = false;
+          }
+        }
+        const divName = teamsWithData[0].divisionName;
+        divisionIssues.push(`${divName}: delta=${delta}`);
+      }
+    } else {
+      // Non-game-spacing divisions: fail if any back-to-back games
+      for (const report of divisionReports) {
+        if (report.shortRestViolationCount > 0) {
+          report.passed = false;
+          totalBackToBack += report.shortRestViolationCount;
+        }
+      }
     }
   }
 
-  // Calculate overall average for display purposes only
-  const overallAvg = teamsWithGames.length > 0
-    ? teamsWithGames.reduce((sum, r) => sum + r.averageDaysBetweenGames, 0) / teamsWithGames.length
-    : 0;
+  const allPassed = teamReports.every((r) => r.passed);
+
+  let summary: string;
+  if (allPassed) {
+    summary = 'No game spacing issues';
+  } else {
+    const parts: string[] = [];
+    if (divisionIssues.length > 0) {
+      parts.push(`short rest imbalance: ${divisionIssues.join(', ')}`);
+    }
+    if (totalBackToBack > 0) {
+      parts.push(`${totalBackToBack} back-to-back games`);
+    }
+    summary = parts.join('; ');
+  }
 
   return {
     passed: allPassed,
-    summary: allPassed
-      ? `Game spacing is fair within divisions (max deviation: ${maxDeviation.toFixed(1)} days)`
-      : `${failedCount} teams with uneven game spacing within their division (max deviation: ${maxDeviation.toFixed(1)} days)`,
+    summary,
     teamReports,
     overallAverageDaysBetweenGames: Math.round(overallAvg * 10) / 10,
   };
