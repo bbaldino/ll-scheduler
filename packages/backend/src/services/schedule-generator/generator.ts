@@ -1883,6 +1883,7 @@ export class ScheduleGenerator {
 
       // Track preferred day games per team (e.g., Saturday games)
       // Used to balance preferred day distribution
+      // NOTE: Will be initialized with counts from pre-pass games after requiredDays is defined
       const preferredDayGames = new Map<string, number>();
       for (const team of division.teams) {
         preferredDayGames.set(team.id, 0);
@@ -1953,6 +1954,30 @@ export class ScheduleGenerator {
       // Get the required/preferred days for this division
       const gameDayPrefs = this.scoringContext?.gameDayPreferences.get(division.divisionId) || [];
       const requiredDays = gameDayPrefs.filter(p => p.priority === 'required').map(p => p.dayOfWeek);
+
+      // Initialize preferredDayGames with counts from games already scheduled (e.g., from interleaved pre-pass)
+      // This ensures the main loop fairness check accounts for games scheduled in the pre-pass
+      if (requiredDays.length > 0) {
+        for (const team of division.teams) {
+          let saturdayGamesCount = 0;
+          for (const event of this.scheduledEvents) {
+            if (event.eventType === 'game' &&
+                (event.homeTeamId === team.id || event.awayTeamId === team.id)) {
+              const eventDayOfWeek = parseLocalDate(event.date).getDay();
+              if (requiredDays.includes(eventDayOfWeek)) {
+                saturdayGamesCount++;
+              }
+            }
+          }
+          preferredDayGames.set(team.id, saturdayGamesCount);
+        }
+        // Log initial Saturday game counts from pre-pass
+        const counts = Array.from(preferredDayGames.entries()).map(([id, count]) => {
+          const team = division.teams.find(t => t.id === id);
+          return `${team?.name || id}:${count}`;
+        }).join(', ');
+        console.log(`[FAIRNESS-INIT] ${division.divisionName} initial Saturday counts from pre-pass: ${counts}`);
+      }
 
       // Calculate fair share of preferred-day games based on actual slot availability
       // Count how many preferred-day game slots are available for this division
@@ -2043,9 +2068,12 @@ export class ScheduleGenerator {
         const spilloverMatchupsForWeek = allMatchupsThisWeek.filter(
           (m) => m.originalWeek !== undefined && m.originalWeek !== weekNum
         );
-        const regularMatchupsForWeek = allMatchupsThisWeek.filter(
+        // Shuffle regular matchups to prevent alphabetical bias in required-day slot selection.
+        // Without this, teams with alphabetically-earlier names get systematically more Saturday games
+        // because findRequiredDayOptimalMatchups favors earlier indices when costs are equal.
+        const regularMatchupsForWeek = this.shuffleArray(allMatchupsThisWeek.filter(
           (m) => m.originalWeek === undefined || m.originalWeek === weekNum
-        );
+        ));
 
         // Get required-day dates for this week (e.g., Saturday dates)
         // Used to check if scheduling a matchup would cause short rest
@@ -2091,6 +2119,11 @@ export class ScheduleGenerator {
           matchupsPerTeam.set(m.awayTeamId, (matchupsPerTeam.get(m.awayTeamId) || 0) + 1);
         }
 
+        // Calculate average Saturday games across all teams for fairness balancing
+        const allTeamIds = Array.from(preferredDayGames.keys());
+        const totalPreferredGames = Array.from(preferredDayGames.values()).reduce((a, b) => a + b, 0);
+        const avgPreferredGames = allTeamIds.length > 0 ? totalPreferredGames / allTeamIds.length : 0;
+
         const matchupCosts = regularMatchupsForWeek.map((m) => {
           // Get current short rest counts
           const homeCount = this.teamSchedulingStates.get(m.homeTeamId)?.shortRestGamesCount || 0;
@@ -2120,16 +2153,63 @@ export class ScheduleGenerator {
             weekdayPenalty -= (awayWouldCausePrevWeek ? awayCount + 1 : 0);
           }
 
+          // FAIRNESS: Adjust cost based on how many Saturday games each team already has
+          // Teams with FEWER Saturday games should have HIGHER weekday penalty (we want to give them Saturday)
+          // Teams with MORE Saturday games should have LOWER weekday penalty (OK to put on weekday)
+          const homeSatGames = preferredDayGames.get(m.homeTeamId) || 0;
+          const awaySatGames = preferredDayGames.get(m.awayTeamId) || 0;
+          const homeDeficit = avgPreferredGames - homeSatGames; // Positive if below average
+          const awayDeficit = avgPreferredGames - awaySatGames;
+
+          // Use a strong fairness factor that dominates over other considerations
+          // Teams that already have more Saturday games than others should be deprioritized
+          // Scale by 20 to ensure this is the primary selection criterion
+          const fairnessBonus = (homeDeficit + awayDeficit) * 20;
+          weekdayPenalty += fairnessBonus;
+
+          // Additional strong penalty if EITHER team is significantly above average
+          // This prevents any one team from accumulating too many Saturday games
+          const maxSatGames = Math.max(homeSatGames, awaySatGames);
+          if (maxSatGames > avgPreferredGames + 1) {
+            // Strong penalty for matchups involving teams that already have too many Saturdays
+            weekdayPenalty -= (maxSatGames - avgPreferredGames) * 30;
+          }
+
           // Return negative cost (backtracking minimizes cost, but we want HIGH weekday penalty = SELECTED for Saturday)
           // Actually, let's keep it as weekdayPenalty and change the backtracking to MAXIMIZE
           // Or simpler: return negative of weekdayPenalty so minimizing cost = maximizing weekday avoidance
           return -weekdayPenalty;
         });
 
+        // Sort matchups by fairness BEFORE backtracking to ensure fairer matchups are explored first
+        // This gives teams with fewer Saturday games priority in the backtracking search
+        const sortedMatchupsWithCosts = regularMatchupsForWeek
+          .map((m, i) => ({ matchup: m, cost: matchupCosts[i] }))
+          .sort((a, b) => {
+            const aHome = preferredDayGames.get(a.matchup.homeTeamId) || 0;
+            const aAway = preferredDayGames.get(a.matchup.awayTeamId) || 0;
+            const bHome = preferredDayGames.get(b.matchup.homeTeamId) || 0;
+            const bAway = preferredDayGames.get(b.matchup.awayTeamId) || 0;
+
+            // Primary: prefer matchups where the MAX team has fewer Saturday games
+            // This avoids giving more games to teams that are already ahead
+            const aMax = Math.max(aHome, aAway);
+            const bMax = Math.max(bHome, bAway);
+            if (aMax !== bMax) return aMax - bMax;
+
+            // Secondary: prefer matchups where the min team has fewer Saturday games
+            const aMin = Math.min(aHome, aAway);
+            const bMin = Math.min(bHome, bAway);
+            return aMin - bMin;
+          });
+
+        const fairnessSortedMatchups = sortedMatchupsWithCosts.map(x => x.matchup);
+        const fairnessSortedCosts = sortedMatchupsWithCosts.map(x => x.cost);
+
         const { requiredDayMatchups, otherMatchups: nonRequiredDayMatchups } = findRequiredDayOptimalMatchups(
-          regularMatchupsForWeek,
+          fairnessSortedMatchups,
           requiredDayGameCapacity,
-          matchupCosts
+          fairnessSortedCosts
         );
 
         if (requiredDayMatchups.length > 0) {
@@ -2365,7 +2445,11 @@ export class ScheduleGenerator {
                     canUseRequiredDaySlot(division.divisionId, day, weekNum, requiredDayBudgetTracker)
                   );
 
-                  // Phase 1: Try required days only (if budget allows for this week)
+                  // Note: Team-level fairness for Saturday games is handled in the pre-pass for competition groups.
+                  // For non-competition divisions, the budget system limits total Saturday games per division.
+                  // We don't add fairness checks here because it would reduce total Saturday utilization.
+
+                  // Phase 1: Try required days only (if budget allows)
                   const requiredDayCandidates = hasRequiredDayBudget
                     ? filteredCandidates.filter((c) =>
                         requiredDays.includes(c.dayOfWeek) &&
@@ -2712,13 +2796,45 @@ export class ScheduleGenerator {
       divisionLookup.set(div.divisionId, div);
     }
 
-    // Process each week
-    for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
-      const week = gameWeeks[weekNum];
-      const weekDatesSet = new Set(week.dates);
+    // Track Saturday games per team for fairness balancing
+    // This prevents any one team from accumulating too many Saturday games
+    const saturdayGamesPerTeam = new Map<string, number>();
+    for (const div of divisionMatchupsList) {
+      for (const team of div.teams) {
+        saturdayGamesPerTeam.set(team.id, 0);
+      }
+    }
 
-      // Process each competition group
-      for (const group of competitionGroups) {
+    // Group competition groups by their highest priority level
+    // A group's priority is the highest (most important) priority among its divisions
+    const hasRequired = (g: typeof competitionGroups[0]) =>
+      g.divisionPreferences.some(p => p.priority === 'required');
+    const hasPreferred = (g: typeof competitionGroups[0]) =>
+      g.divisionPreferences.some(p => p.priority === 'preferred');
+
+    const requiredGroups = competitionGroups.filter(g => hasRequired(g));
+    const preferredGroups = competitionGroups.filter(g => !hasRequired(g) && hasPreferred(g));
+    const acceptableGroups = competitionGroups.filter(g => !hasRequired(g) && !hasPreferred(g));
+
+    // Process by priority level: ALL required days across ALL weeks first,
+    // then ALL preferred days, then ALL acceptable days.
+    // This ensures matchups are preserved for higher-priority days across the entire season.
+    const priorityLevels = [
+      { name: 'required', groups: requiredGroups },
+      { name: 'preferred', groups: preferredGroups },
+      { name: 'acceptable', groups: acceptableGroups },
+    ];
+
+    for (const { name: priorityName, groups: priorityGroups } of priorityLevels) {
+      if (priorityGroups.length === 0) continue;
+
+      // Process each week for this priority level
+      for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
+        const week = gameWeeks[weekNum];
+        const weekDatesSet = new Set(week.dates);
+
+        // Process all groups at this priority level
+        for (const group of priorityGroups) {
         const dayOfWeek = group.dayOfWeek;
         const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
 
@@ -2730,13 +2846,16 @@ export class ScheduleGenerator {
           const divData = divisionLookup.get(pref.divisionId);
           if (!divData) continue;
 
-          // Get matchups for this week that haven't been scheduled yet
+          // FAIRNESS FIX: Get matchups from this week AND future weeks that haven't been scheduled yet.
+          // This allows the fairness algorithm to pull matchups from future weeks to balance
+          // Saturday game distribution. Without this, teams whose matchups are assigned to later
+          // weeks get fewer Saturday games.
           const weekMatchups = divData.matchups.filter((m) => {
             const key = ScheduleGenerator.createMatchupKey(m.homeTeamId, m.awayTeamId, m.targetWeek);
-            return m.targetWeek === weekNum && !scheduledMatchupKeys.has(key);
+            return m.targetWeek >= weekNum && !scheduledMatchupKeys.has(key);
           });
 
-          divisionMatchupQueues.set(pref.divisionId, [...weekMatchups]); // Copy so we can mutate
+          divisionMatchupQueues.set(pref.divisionId, [...weekMatchups]);
         }
 
         // Round-robin through divisions, scheduling one matchup at a time
@@ -2762,8 +2881,34 @@ export class ScheduleGenerator {
               continue; // No more matchups for this division
             }
 
-            // Try to schedule the next matchup from this division's queue
-            const matchup = queue[0]; // Peek at first matchup
+            // FAIRNESS: Sort queue to prioritize matchups that help the most underrepresented teams
+            // Calculate average Saturday games per team in the division
+            const teamIds = divData.teams.map(t => t.id);
+            const totalSatGames = teamIds.reduce((sum, id) => sum + (saturdayGamesPerTeam.get(id) || 0), 0);
+            const avgSatGames = teamIds.length > 0 ? totalSatGames / teamIds.length : 0;
+
+            queue.sort((a, b) => {
+              const aHome = saturdayGamesPerTeam.get(a.homeTeamId) || 0;
+              const aAway = saturdayGamesPerTeam.get(a.awayTeamId) || 0;
+              const bHome = saturdayGamesPerTeam.get(b.homeTeamId) || 0;
+              const bAway = saturdayGamesPerTeam.get(b.awayTeamId) || 0;
+
+              // Primary: Sort by minimum Saturday games (help teams that are most behind)
+              const aMin = Math.min(aHome, aAway);
+              const bMin = Math.min(bHome, bAway);
+              if (aMin !== bMin) return aMin - bMin;
+
+              // Secondary: When MIN is tied, prefer matchups where BOTH teams need games
+              // (sum of deficits from average - higher deficit = more need)
+              const aDeficit = (avgSatGames - aHome) + (avgSatGames - aAway);
+              const bDeficit = (avgSatGames - bHome) + (avgSatGames - bAway);
+              if (aDeficit !== bDeficit) return bDeficit - aDeficit; // Higher deficit first
+
+              // Tertiary: prefer matchups where the max is lower (avoid widening spread)
+              const aMax = Math.max(aHome, aAway);
+              const bMax = Math.max(bHome, bAway);
+              return aMax - bMax;
+            });
 
             // Find field slots for this week and day ON THE PRIMARY FIELD ONLY
             // This ensures fair distribution of the shared primary field between competing divisions
@@ -2778,50 +2923,77 @@ export class ScheduleGenerator {
             );
 
             if (daySlots.length === 0) {
-              queue.shift(); // Remove this matchup, can't schedule on this day
+              // No slots available on this day for this division - clear the queue and skip
+              queue.length = 0;
               continue;
             }
 
-            // Generate candidates for this game on competition group day only
-            const candidates = generateCandidatesForGame(
-              matchup,
-              daySlots,
-              week,
-              totalGameSlotHours,
-              this.season.id,
-              this.scoringContext!
-            );
+            // FAIRNESS FIX: Try matchups in order of fairness priority until one succeeds
+            // This ensures that if the best matchup by fairness can't be scheduled,
+            // we try the next-best instead of moving to the next division
+            const divName = this.divisionNames.get(divisionId) || divisionId;
+            let scheduledMatchup: (GameMatchup & { targetWeek: number }) | null = null;
+            let scheduledMatchupIndex = -1;
+            let bestCandidate: ReturnType<typeof calculatePlacementScore> | null = null;
+            let homeTeamState: TeamSchedulingState | null = null;
+            let awayTeamState: TeamSchedulingState | null = null;
 
-            if (candidates.length === 0) {
-              queue.shift(); // Remove this matchup, no valid slots
-              continue;
+            for (let matchupIndex = 0; matchupIndex < queue.length; matchupIndex++) {
+              const matchup = queue[matchupIndex];
+
+              // Generate candidates for this game on competition group day only
+              const candidates = generateCandidatesForGame(
+                matchup,
+                daySlots,
+                week,
+                totalGameSlotHours,
+                this.season.id,
+                this.scoringContext!
+              );
+
+              if (candidates.length === 0) {
+                continue; // Try next matchup
+              }
+
+              // Score and pick best candidate
+              const hState = this.teamSchedulingStates.get(matchup.homeTeamId);
+              if (!hState) {
+                continue; // Try next matchup
+              }
+
+              const scoredCandidates = candidates.map((c) =>
+                calculatePlacementScore(c, hState, this.scoringContext!, this.scoringWeights)
+              );
+              scoredCandidates.sort((a, b) => b.score - a.score);
+              const candidate = scoredCandidates[0];
+
+              // Check for hard constraint violations
+              if (!candidate || candidate.score <= -500000) {
+                continue; // Try next matchup
+              }
+
+              // Check away team state
+              const aState = this.teamSchedulingStates.get(matchup.awayTeamId);
+              if (!aState) {
+                continue; // Try next matchup
+              }
+
+              // Found a valid matchup to schedule!
+              scheduledMatchup = matchup;
+              scheduledMatchupIndex = matchupIndex;
+              bestCandidate = candidate;
+              homeTeamState = hState;
+              awayTeamState = aState;
+              break; // Use the first valid matchup (best by fairness)
             }
 
-            // Score and pick best candidate
-            const homeTeamState = this.teamSchedulingStates.get(matchup.homeTeamId);
-            if (!homeTeamState) {
-              queue.shift();
-              continue;
+            if (!scheduledMatchup || !bestCandidate || !homeTeamState || !awayTeamState) {
+              continue; // No valid matchup found for this division
             }
 
-            const scoredCandidates = candidates.map((c) =>
-              calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
-            );
-            scoredCandidates.sort((a, b) => b.score - a.score);
-            const bestCandidate = scoredCandidates[0];
-
-            // Check for hard constraint violations
-            if (!bestCandidate || bestCandidate.score <= -500000) {
-              queue.shift(); // Remove this matchup, has constraint violation
-              continue;
-            }
-
-            // Schedule the game
-            const awayTeamState = this.teamSchedulingStates.get(matchup.awayTeamId);
-            if (!awayTeamState) {
-              queue.shift();
-              continue;
-            }
+            // Remove the scheduled matchup from queue
+            queue.splice(scheduledMatchupIndex, 1);
+            const matchup = scheduledMatchup;
 
             const eventDraft = candidateToEventDraft(bestCandidate, divisionId);
             this.scheduledEvents.push(eventDraft);
@@ -2830,6 +3002,12 @@ export class ScheduleGenerator {
             // Update team states
             updateTeamStateAfterScheduling(homeTeamState, eventDraft, week.weekNumber, true, awayTeamState.teamId, false);
             updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId, false);
+
+            // Update Saturday game tracking for fairness (ONLY for Saturday games)
+            if (dayOfWeek === 6) {
+              saturdayGamesPerTeam.set(matchup.homeTeamId, (saturdayGamesPerTeam.get(matchup.homeTeamId) || 0) + 1);
+              saturdayGamesPerTeam.set(matchup.awayTeamId, (saturdayGamesPerTeam.get(matchup.awayTeamId) || 0) + 1);
+            }
 
             // Update resource usage
             updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, totalGameSlotHours);
@@ -2845,7 +3023,6 @@ export class ScheduleGenerator {
             queue.shift();
 
             // Log
-            const divName = this.divisionNames.get(divisionId) || divisionId;
             const homeTeam = divData.teams.find((t) => t.id === matchup.homeTeamId);
             const awayTeam = divData.teams.find((t) => t.id === matchup.awayTeamId);
             console.log(
@@ -2862,6 +3039,18 @@ export class ScheduleGenerator {
           console.log(`[Interleaved] Week ${weekNum + 1} ${dayName}: scheduled ${scheduledThisGroup} games for competition group`);
         }
       }
+      }
+    }
+
+    // Log final Saturday game distribution by division
+    console.log(`\n[Interleaved] Final Saturday game distribution after pre-pass:`);
+    for (const div of divisionMatchupsList) {
+      const divName = this.divisionNames.get(div.divisionId) || div.divisionId;
+      const teamCounts = div.teams.map(t => {
+        const count = saturdayGamesPerTeam.get(t.id) || 0;
+        return `${t.name}:${count}`;
+      }).join(', ');
+      console.log(`  ${divName}: ${teamCounts}`);
     }
 
     console.log(`[Interleaved] Pre-pass complete. Scheduled ${scheduledMatchupKeys.size} games in interleaved fashion.\n`);
