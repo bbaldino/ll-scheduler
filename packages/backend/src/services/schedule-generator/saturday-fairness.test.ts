@@ -54,8 +54,10 @@ describe('Saturday game fairness within divisions', () => {
     fieldPreferences,
     gameDayPreferences: [
       { dayOfWeek: 6, priority: 'required' as const }, // Saturday required
+      { dayOfWeek: 2, priority: 'preferred' as const }, // Tuesday preferred
+      { dayOfWeek: 3, priority: 'preferred' as const }, // Wednesday preferred
+      { dayOfWeek: 4, priority: 'preferred' as const }, // Thursday preferred
       { dayOfWeek: 1, priority: 'acceptable' as const }, // Monday acceptable
-      { dayOfWeek: 2, priority: 'acceptable' as const }, // Tuesday acceptable
     ],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -153,15 +155,21 @@ describe('Saturday game fairness within divisions', () => {
     // With 2hr per slot (1.5hr game + 0.5hr arrive), that's 10 hours
     // Also add weekday availability
     const fieldAvailability: FieldAvailability[] = [
-      // Saturday
+      // Saturday (required)
       createFieldAvailability('sf-tball', 6, '08:00', '18:00'), // 10 hours = 5 slots
       createFieldAvailability('sf-aa', 6, '08:00', '18:00'),
-      // Monday
-      createFieldAvailability('sf-tball', 1, '17:00', '21:00'), // 4 hours = 2 slots
-      createFieldAvailability('sf-aa', 1, '17:00', '21:00'),
-      // Tuesday
-      createFieldAvailability('sf-tball', 2, '17:00', '21:00'),
+      // Tuesday (preferred)
+      createFieldAvailability('sf-tball', 2, '17:00', '21:00'), // 4 hours = 2 slots
       createFieldAvailability('sf-aa', 2, '17:00', '21:00'),
+      // Wednesday (preferred)
+      createFieldAvailability('sf-tball', 3, '17:00', '21:00'),
+      createFieldAvailability('sf-aa', 3, '17:00', '21:00'),
+      // Thursday (preferred)
+      createFieldAvailability('sf-tball', 4, '17:00', '21:00'),
+      createFieldAvailability('sf-aa', 4, '17:00', '21:00'),
+      // Monday (acceptable)
+      createFieldAvailability('sf-tball', 1, '17:00', '21:00'),
+      createFieldAvailability('sf-aa', 1, '17:00', '21:00'),
     ];
 
     // Minimal cage setup
