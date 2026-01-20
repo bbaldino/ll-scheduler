@@ -40,9 +40,14 @@ function generateGameWeeks(gamesStartDate: string, endDate: string): Array<{ wee
   const start = new Date(gamesStartDate + 'T00:00:00');
   const end = new Date(endDate + 'T00:00:00');
 
-  // Find the start of the first week (Sunday of the week containing gamesStartDate)
+  // Find the start of the first week (Monday of the week containing gamesStartDate)
+  // This must match the backend's generateWeekDefinitions in draft.ts
+  // getDay(): 0=Sunday, 1=Monday, ..., 6=Saturday
+  // For Monday-based weeks: Sunday goes back 6 days, other days go back (day-1) days
   let weekStart = new Date(start);
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const dayOfWeek = weekStart.getDay();
+  const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  weekStart.setDate(weekStart.getDate() - daysToSubtract);
 
   let weekNumber = 1;
   while (weekStart <= end) {
