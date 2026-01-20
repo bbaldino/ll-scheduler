@@ -2829,22 +2829,30 @@ export class ScheduleGenerator {
     const preferredGroups = competitionGroups.filter(g => !hasRequired(g) && hasPreferred(g));
     const acceptableGroups = competitionGroups.filter(g => !hasRequired(g) && !hasPreferred(g));
 
-    // Process by priority level: ALL required days across ALL weeks first,
-    // then ALL preferred days, then ALL acceptable days.
-    // This ensures matchups are preserved for higher-priority days across the entire season.
+    // Process week-by-week, with all priority tiers within each week.
+    // This allows us to track overflow from Saturday (required) and give it priority
+    // on Tuesday/Monday (preferred/acceptable) within the SAME week.
     const priorityLevels = [
       { name: 'required', groups: requiredGroups },
       { name: 'preferred', groups: preferredGroups },
       { name: 'acceptable', groups: acceptableGroups },
     ];
 
-    for (const { name: priorityName, groups: priorityGroups } of priorityLevels) {
-      if (priorityGroups.length === 0) continue;
+    // Track overflow matchups - games that were attempted but couldn't be scheduled on higher-priority days
+    // These specific matchups get priority on lower-priority days within the same week
+    // Key: matchup key (homeTeamId-awayTeamId-targetWeek), Value: true if overflow
+    let overflowMatchups = new Set<string>();
 
-      // Process each week for this priority level
-      for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
-        const week = gameWeeks[weekNum];
-        const weekDatesSet = new Set(week.dates);
+    for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
+      const week = gameWeeks[weekNum];
+      const weekDatesSet = new Set(week.dates);
+
+      // Reset overflow tracking at start of each week
+      overflowMatchups = new Set<string>();
+
+
+      for (const { name: priorityName, groups: priorityGroups } of priorityLevels) {
+        if (priorityGroups.length === 0) continue;
 
         // POOLED APPROACH: Collect all divisions and their available days for this priority tier
         // This allows fair alternation across ALL days in the tier, not just within each day
@@ -2898,13 +2906,24 @@ export class ScheduleGenerator {
             // Get all groups (days) this division can use
             const availableGroups = divisionToGroups.get(divisionId) || [];
 
-            // FAIRNESS: Sort queue to prioritize matchups that help underrepresented teams
+            // Sort queue to prioritize:
+            // 1. Overflow matchups (couldn't be scheduled on higher-priority days this week)
+            // 2. Then by team fairness (help underrepresented teams)
             const priorityGamesPerTeam = gamesPerTeamByPriority.get(priorityName)!;
             const teamIds = divData.teams.map(t => t.id);
             const totalPriorityGames = teamIds.reduce((sum, id) => sum + (priorityGamesPerTeam.get(id) || 0), 0);
             const avgPriorityGames = teamIds.length > 0 ? totalPriorityGames / teamIds.length : 0;
 
             queue.sort((a, b) => {
+              // First: overflow matchups come first (they couldn't fit on higher-priority days)
+              const aKey = ScheduleGenerator.createMatchupKey(a.homeTeamId, a.awayTeamId, a.targetWeek);
+              const bKey = ScheduleGenerator.createMatchupKey(b.homeTeamId, b.awayTeamId, b.targetWeek);
+              const aIsOverflow = overflowMatchups.has(aKey);
+              const bIsOverflow = overflowMatchups.has(bKey);
+              if (aIsOverflow && !bIsOverflow) return -1;
+              if (!aIsOverflow && bIsOverflow) return 1;
+
+              // Second: team fairness
               const aHome = priorityGamesPerTeam.get(a.homeTeamId) || 0;
               const aAway = priorityGamesPerTeam.get(a.awayTeamId) || 0;
               const bHome = priorityGamesPerTeam.get(b.homeTeamId) || 0;
@@ -3054,8 +3073,32 @@ export class ScheduleGenerator {
         if (scheduledThisTier > 0) {
           console.log(`[Interleaved] Week ${weekNum + 1} ${priorityName}: scheduled ${scheduledThisTier} games`);
         }
-      } // end for each week
-    } // end for each priority level
+
+        // After required/preferred tiers, mark unscheduled current-week matchups as overflow
+        // These get priority in the next tier (preferred/acceptable)
+        if (priorityName === 'required' || priorityName === 'preferred') {
+          for (const divisionId of divisionList) {
+            const queue = divisionMatchupQueues.get(divisionId);
+            if (!queue) continue;
+
+            for (const matchup of queue) {
+              // Only consider matchups targeted for this week
+              if (matchup.targetWeek !== weekNum) continue;
+
+              const key = ScheduleGenerator.createMatchupKey(matchup.homeTeamId, matchup.awayTeamId, matchup.targetWeek);
+              if (!scheduledMatchupKeys.has(key)) {
+                // This matchup couldn't be scheduled on higher-priority days - mark as overflow
+                overflowMatchups.add(key);
+              }
+            }
+          }
+
+          if (overflowMatchups.size > 0) {
+            console.log(`[Interleaved] Week ${weekNum + 1} after ${priorityName}: ${overflowMatchups.size} matchups marked as overflow for lower-priority days`);
+          }
+        }
+      } // end for each priority level
+    } // end for each week
 
     // Log final game distribution by priority level
     console.log(`\n[Interleaved] Final game distribution by priority level after pre-pass:`);
