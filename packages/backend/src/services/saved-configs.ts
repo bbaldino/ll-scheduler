@@ -169,6 +169,7 @@ export async function saveConfig(
           practicesPerWeek: config.practicesPerWeek,
           practiceDurationHours: config.practiceDurationHours,
           gamesPerWeek: config.gamesPerWeek,
+          maxGamesPerWeek: config.maxGamesPerWeek,
           gameDurationHours: config.gameDurationHours,
           gameArriveBeforeHours: config.gameArriveBeforeHours,
           gameDayPreferences: config.gameDayPreferences,
@@ -353,6 +354,7 @@ export async function updateSavedConfig(
           practicesPerWeek: config.practicesPerWeek,
           practiceDurationHours: config.practiceDurationHours,
           gamesPerWeek: config.gamesPerWeek,
+          maxGamesPerWeek: config.maxGamesPerWeek,
           gameDurationHours: config.gameDurationHours,
           gameArriveBeforeHours: config.gameArriveBeforeHours,
           gameDayPreferences: config.gameDayPreferences,
@@ -512,7 +514,7 @@ export async function restoreConfig(
         .prepare(
           `INSERT INTO division_configs (
             id, division_id, season_id,
-            practices_per_week, practice_duration_hours, games_per_week, game_duration_hours,
+            practices_per_week, practice_duration_hours, games_per_week, max_games_per_week, game_duration_hours,
             game_arrive_before_hours, game_day_preferences, min_consecutive_day_gap,
             cage_sessions_per_week, cage_session_duration_hours, field_preferences,
             game_week_overrides, max_games_per_season,
@@ -520,7 +522,7 @@ export async function restoreConfig(
             sunday_paired_practice_field_id, sunday_paired_practice_cage_id,
             game_spacing_enabled,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
           generateId(),
@@ -529,6 +531,7 @@ export async function restoreConfig(
           configData.practicesPerWeek,
           configData.practiceDurationHours,
           configData.gamesPerWeek,
+          configData.maxGamesPerWeek || null,
           configData.gameDurationHours,
           configData.gameArriveBeforeHours || null,
           configData.gameDayPreferences ? JSON.stringify(configData.gameDayPreferences) : null,

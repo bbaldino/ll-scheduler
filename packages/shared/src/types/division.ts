@@ -48,6 +48,7 @@ export interface DivisionConfig {
   practicesPerWeek: number;
   practiceDurationHours: number;
   gamesPerWeek: number;
+  maxGamesPerWeek?: number; // Hard cap on games per team per week (including spillover). If unset, no cap.
   gameDurationHours: number;
   gameArriveBeforeHours?: number; // Time before game start players should arrive
   practiceArriveBeforeMinutes?: number; // Time before practice start players should arrive (in minutes)
@@ -78,6 +79,7 @@ export interface CreateDivisionConfigInput {
   practicesPerWeek: number;
   practiceDurationHours: number;
   gamesPerWeek: number;
+  maxGamesPerWeek?: number;
   gameDurationHours: number;
   gameArriveBeforeHours?: number;
   practiceArriveBeforeMinutes?: number;
@@ -99,6 +101,7 @@ export interface UpdateDivisionConfigInput {
   practicesPerWeek?: number;
   practiceDurationHours?: number;
   gamesPerWeek?: number;
+  maxGamesPerWeek?: number;
   gameDurationHours?: number;
   gameArriveBeforeHours?: number;
   practiceArriveBeforeMinutes?: number;

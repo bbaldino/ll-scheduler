@@ -91,6 +91,7 @@ export default function SeasonsPage() {
     practiceDurationHours: 1,
     practiceArriveBeforeMinutes: 10,
     gamesPerWeek: undefined,
+    maxGamesPerWeek: undefined,
     gameDurationHours: undefined,
     gameArriveBeforeHours: undefined,
     gameDayPreferences: undefined,
@@ -263,6 +264,7 @@ export default function SeasonsPage() {
       practiceDurationHours: config.practiceDurationHours,
       practiceArriveBeforeMinutes: config.practiceArriveBeforeMinutes,
       gamesPerWeek: config.gamesPerWeek,
+      maxGamesPerWeek: config.maxGamesPerWeek,
       gameDurationHours: config.gameDurationHours,
       gameArriveBeforeHours: config.gameArriveBeforeHours,
       gameDayPreferences: config.gameDayPreferences,
@@ -307,6 +309,7 @@ export default function SeasonsPage() {
         practiceDurationHours: configFormData.practiceDurationHours,
         practiceArriveBeforeMinutes: configFormData.practiceArriveBeforeMinutes,
         gamesPerWeek: configFormData.gamesPerWeek,
+        maxGamesPerWeek: configFormData.maxGamesPerWeek,
         gameDurationHours: configFormData.gameDurationHours,
         gameArriveBeforeHours: configFormData.gameArriveBeforeHours,
         gameDayPreferences: configFormData.gameDayPreferences,
@@ -1349,6 +1352,24 @@ export default function SeasonsPage() {
                                       required
                                     />
                                   </div>
+                                  <div className={styles.formGroup}>
+                                    <label>Max Games/Week (optional)</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      placeholder="No limit"
+                                      value={configFormData.maxGamesPerWeek || ''}
+                                      onChange={(e) =>
+                                        setConfigFormData({
+                                          ...configFormData,
+                                          maxGamesPerWeek: e.target.value ? parseInt(e.target.value) : undefined,
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                </div>
+                                <div className={styles.formRow}>
                                   <div className={styles.formGroup}>
                                     <label>Max Games/Season (optional)</label>
                                     <input

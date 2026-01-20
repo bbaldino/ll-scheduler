@@ -12,6 +12,7 @@ interface DivisionConfigRow {
   practices_per_week: number;
   practice_duration_hours: number;
   games_per_week: number;
+  max_games_per_week: number | null;
   game_duration_hours: number;
   game_arrive_before_hours: number | null;
   practice_arrive_before_minutes: number | null;
@@ -39,6 +40,7 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     practicesPerWeek: row.practices_per_week,
     practiceDurationHours: row.practice_duration_hours,
     gamesPerWeek: row.games_per_week,
+    maxGamesPerWeek: row.max_games_per_week || undefined,
     gameDurationHours: row.game_duration_hours,
     gameArriveBeforeHours: row.game_arrive_before_hours || undefined,
     practiceArriveBeforeMinutes: row.practice_arrive_before_minutes ?? undefined,
@@ -105,8 +107,8 @@ export async function createDivisionConfig(
 
   await db
     .prepare(
-      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, game_duration_hours, game_arrive_before_hours, practice_arrive_before_minutes, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, game_spacing_enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO division_configs (id, division_id, season_id, practices_per_week, practice_duration_hours, games_per_week, max_games_per_week, game_duration_hours, game_arrive_before_hours, practice_arrive_before_minutes, game_day_preferences, min_consecutive_day_gap, cage_sessions_per_week, cage_session_duration_hours, field_preferences, game_week_overrides, max_games_per_season, sunday_paired_practice_enabled, sunday_paired_practice_duration_hours, sunday_paired_practice_field_id, sunday_paired_practice_cage_id, game_spacing_enabled, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -115,6 +117,7 @@ export async function createDivisionConfig(
       input.practicesPerWeek,
       input.practiceDurationHours,
       input.gamesPerWeek,
+      input.maxGamesPerWeek || null,
       input.gameDurationHours,
       input.gameArriveBeforeHours || null,
       input.practiceArriveBeforeMinutes ?? 10,
@@ -167,6 +170,10 @@ export async function updateDivisionConfig(
   if (input.gamesPerWeek !== undefined) {
     updates.push('games_per_week = ?');
     values.push(input.gamesPerWeek);
+  }
+  if (input.maxGamesPerWeek !== undefined) {
+    updates.push('max_games_per_week = ?');
+    values.push(input.maxGamesPerWeek || null);
   }
   if (input.gameDurationHours !== undefined) {
     updates.push('game_duration_hours = ?');

@@ -2311,8 +2311,16 @@ export class ScheduleGenerator {
 
         // Sort each group separately, then concatenate
         // Order: spillover first (already delayed), then required-day matchups, then weekday matchups
+        // Spillover is sorted by age first (oldest spillover = lowest originalWeek gets priority), then fairness
         // Weekday matchups use special sort to prioritize at-risk pairs (both teams have Saturday games)
-        const sortedSpilloverMatchups = [...spilloverMatchupsForWeek].sort(fairnessSort);
+        const sortedSpilloverMatchups = [...spilloverMatchupsForWeek].sort((a, b) => {
+          // First: sort by originalWeek (oldest spillover first)
+          const aOriginal = a.originalWeek ?? a.targetWeek;
+          const bOriginal = b.originalWeek ?? b.targetWeek;
+          if (aOriginal !== bOriginal) return aOriginal - bOriginal;
+          // Second: fairness
+          return fairnessSort(a, b);
+        });
         const sortedRequiredDayMatchups = [...requiredDayMatchups].sort(fairnessSort);
         const sortedOtherMatchups = [...nonRequiredDayMatchups].sort(weekdayShortRestRiskSort);
         const sortedMatchups = [...sortedSpilloverMatchups, ...sortedRequiredDayMatchups, ...sortedOtherMatchups];
@@ -2362,16 +2370,30 @@ export class ScheduleGenerator {
           const hasOverride = this.hasGameWeekOverride(division.divisionId, weekNum + 1);
 
           // Quota enforcement rules:
-          // - Weeks WITH override: override is a hard cap on ALL games (regular + spillover)
-          // - Weeks WITHOUT override (default): spillover games don't count against quota
-          if (hasOverride) {
+          // 1. maxGamesPerWeek: Hard cap on ALL games (regular + spillover) - if set
+          // 2. Weeks WITH override: override is a hard cap on ALL games (regular + spillover)
+          // 3. Weeks WITHOUT override (default): spillover games don't count against quota
+          const config = this.divisionConfigs.get(division.divisionId);
+          const maxGamesPerWeek = config?.maxGamesPerWeek;
+
+          // Check maxGamesPerWeek first - this is a hard cap that always applies
+          if (maxGamesPerWeek !== undefined) {
+            if (homeTotalGamesThisWeek >= maxGamesPerWeek) {
+              failureReason = `${homeTeam.name} at max games cap (${homeTotalGamesThisWeek}/${maxGamesPerWeek} games in week ${weekNum + 1})`;
+            } else if (awayTotalGamesThisWeek >= maxGamesPerWeek) {
+              failureReason = `${awayTeam.name} at max games cap (${awayTotalGamesThisWeek}/${maxGamesPerWeek} games in week ${weekNum + 1})`;
+            }
+          }
+
+          // Then check override/regular quota rules
+          if (!failureReason && hasOverride) {
             // Override weeks: enforce quota as hard cap on ALL games
             if (homeTotalGamesThisWeek >= gamesPerWeekQuota) {
               failureReason = `${homeTeam.name} at override cap (${homeTotalGamesThisWeek}/${gamesPerWeekQuota} games in week ${weekNum + 1})`;
             } else if (awayTotalGamesThisWeek >= gamesPerWeekQuota) {
               failureReason = `${awayTeam.name} at override cap (${awayTotalGamesThisWeek}/${gamesPerWeekQuota} games in week ${weekNum + 1})`;
             }
-          } else if (!isSpillover) {
+          } else if (!failureReason && !isSpillover) {
             // Non-override weeks: only regular games count against quota (spillover are "extra")
             if (homeRegularGamesThisWeek >= gamesPerWeekQuota) {
               failureReason = `${homeTeam.name} already at quota (${homeRegularGamesThisWeek}/${gamesPerWeekQuota})`;
@@ -3008,6 +3030,17 @@ export class ScheduleGenerator {
                 const aState = this.teamSchedulingStates.get(matchup.awayTeamId);
                 if (!aState) {
                   continue; // Try next matchup
+                }
+
+                // Check maxGamesPerWeek cap for both teams
+                const divConfig = this.divisionConfigs.get(divisionId);
+                const maxGamesPerWeek = divConfig?.maxGamesPerWeek;
+                if (maxGamesPerWeek !== undefined) {
+                  const homeGamesThisWeek = hState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+                  const awayGamesThisWeek = aState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+                  if (homeGamesThisWeek >= maxGamesPerWeek || awayGamesThisWeek >= maxGamesPerWeek) {
+                    continue; // Try next matchup - one of the teams is at max cap
+                  }
                 }
 
                 // Found a valid matchup to schedule!
