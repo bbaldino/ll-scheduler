@@ -4114,6 +4114,42 @@ export class ScheduleGenerator {
               const origEarlyTime = early.game.startTime;
               const origEarlyEndTime = early.game.endTime;
 
+              // Check if swap would create same-day conflicts
+              let wouldCreateSameDayConflict = false;
+              for (const teamId of thuFriTeams) {
+                // Check if this team has another game on origEarlyDate (the date it would move to)
+                const hasOtherGameOnNewDate = divisionGames.some(
+                  (g) =>
+                    g !== thuFri.game &&
+                    g !== early.game &&
+                    g.date === origEarlyDate &&
+                    (g.homeTeamId === teamId || g.awayTeamId === teamId)
+                );
+                if (hasOtherGameOnNewDate) {
+                  wouldCreateSameDayConflict = true;
+                  break;
+                }
+              }
+              if (!wouldCreateSameDayConflict) {
+                for (const teamId of earlyTeams) {
+                  // Check if this team has another game on origThuFriDate (the date it would move to)
+                  const hasOtherGameOnNewDate = divisionGames.some(
+                    (g) =>
+                      g !== thuFri.game &&
+                      g !== early.game &&
+                      g.date === origThuFriDate &&
+                      (g.homeTeamId === teamId || g.awayTeamId === teamId)
+                  );
+                  if (hasOtherGameOnNewDate) {
+                    wouldCreateSameDayConflict = true;
+                    break;
+                  }
+                }
+              }
+
+              // Skip this swap if it would create same-day conflicts
+              if (wouldCreateSameDayConflict) continue;
+
               thuFri.game.date = origEarlyDate;
               thuFri.game.startTime = origEarlyTime;
               thuFri.game.endTime = origEarlyEndTime;
@@ -4271,6 +4307,48 @@ export class ScheduleGenerator {
               const orig2Date = game2.date;
               const orig2Time = game2.startTime;
               const orig2EndTime = game2.endTime;
+
+              // Check if swap would create same-day conflicts
+              // Get all teams involved in both games
+              const teamsInGame1 = [game1.homeTeamId, game1.awayTeamId].filter(Boolean) as string[];
+              const teamsInGame2 = [game2.homeTeamId, game2.awayTeamId].filter(Boolean) as string[];
+
+              // Check if any team in game1 has another game on orig2Date (excluding game1 itself)
+              // Check if any team in game2 has another game on orig1Date (excluding game2 itself)
+              let wouldCreateSameDayConflict = false;
+              for (const teamId of teamsInGame1) {
+                // Check if this team has another game on orig2Date (the date game1 would move to)
+                const hasOtherGameOnNewDate = divisionGames.some(
+                  (g) =>
+                    g !== game1 &&
+                    g !== game2 &&
+                    g.date === orig2Date &&
+                    (g.homeTeamId === teamId || g.awayTeamId === teamId)
+                );
+                if (hasOtherGameOnNewDate) {
+                  wouldCreateSameDayConflict = true;
+                  break;
+                }
+              }
+              if (!wouldCreateSameDayConflict) {
+                for (const teamId of teamsInGame2) {
+                  // Check if this team has another game on orig1Date (the date game2 would move to)
+                  const hasOtherGameOnNewDate = divisionGames.some(
+                    (g) =>
+                      g !== game1 &&
+                      g !== game2 &&
+                      g.date === orig1Date &&
+                      (g.homeTeamId === teamId || g.awayTeamId === teamId)
+                  );
+                  if (hasOtherGameOnNewDate) {
+                    wouldCreateSameDayConflict = true;
+                    break;
+                  }
+                }
+              }
+
+              // Skip this swap if it would create same-day conflicts
+              if (wouldCreateSameDayConflict) continue;
 
               game1.date = orig2Date;
               game1.startTime = orig2Time;
