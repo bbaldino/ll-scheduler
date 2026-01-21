@@ -1,6 +1,7 @@
 import type {
   ScheduleGenerationLog,
   GenerateScheduleResult,
+  SchedulingLogEntry,
 } from '@ll-scheduler/shared';
 import { generateId } from '../utils/id.js';
 
@@ -11,13 +12,27 @@ interface ScheduleGenerationLogRow {
   events_created: number;
   message: string | null;
   statistics: string | null;
-  log: string | null;
   errors: string | null;
   warnings: string | null;
   created_at: string;
 }
 
-function rowToScheduleGenerationLog(row: ScheduleGenerationLogRow): ScheduleGenerationLog {
+interface ScheduleGenerationLogEntryRow {
+  id: string;
+  log_id: string;
+  entry_index: number;
+  timestamp: string;
+  level: string;
+  category: string;
+  message: string;
+  summary: string | null;
+  details: string | null;
+}
+
+function rowToScheduleGenerationLog(
+  row: ScheduleGenerationLogRow,
+  entries?: SchedulingLogEntry[]
+): ScheduleGenerationLog {
   return {
     id: row.id,
     seasonId: row.season_id,
@@ -25,10 +40,21 @@ function rowToScheduleGenerationLog(row: ScheduleGenerationLogRow): ScheduleGene
     eventsCreated: row.events_created,
     message: row.message || undefined,
     statistics: row.statistics ? JSON.parse(row.statistics) : undefined,
-    log: row.log ? JSON.parse(row.log) : undefined,
+    log: entries,
     errors: row.errors ? JSON.parse(row.errors) : undefined,
     warnings: row.warnings ? JSON.parse(row.warnings) : undefined,
     createdAt: row.created_at,
+  };
+}
+
+function entryRowToLogEntry(row: ScheduleGenerationLogEntryRow): SchedulingLogEntry {
+  return {
+    timestamp: row.timestamp,
+    level: row.level as SchedulingLogEntry['level'],
+    category: row.category as SchedulingLogEntry['category'],
+    message: row.message,
+    summary: row.summary || undefined,
+    details: row.details ? JSON.parse(row.details) : undefined,
   };
 }
 
@@ -40,12 +66,13 @@ export async function saveScheduleGenerationLog(
   const id = generateId();
   const now = new Date().toISOString();
 
+  // Insert the main log record (without the log entries)
   await db
     .prepare(
       `INSERT INTO schedule_generation_logs (
         id, season_id, success, events_created, message,
-        statistics, log, errors, warnings, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        statistics, errors, warnings, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -54,12 +81,44 @@ export async function saveScheduleGenerationLog(
       result.eventsCreated,
       result.message || null,
       result.statistics ? JSON.stringify(result.statistics) : null,
-      result.schedulingLog ? JSON.stringify(result.schedulingLog) : null,
       result.errors ? JSON.stringify(result.errors) : null,
       result.warnings ? JSON.stringify(result.warnings) : null,
       now
     )
     .run();
+
+  // Insert log entries in batches to avoid hitting limits
+  if (result.schedulingLog && result.schedulingLog.length > 0) {
+    const BATCH_SIZE = 100;
+    const entries = result.schedulingLog;
+
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      const batch = entries.slice(i, i + BATCH_SIZE);
+      const statements = batch.map((entry, batchIndex) => {
+        const entryId = generateId();
+        const entryIndex = i + batchIndex;
+        return db
+          .prepare(
+            `INSERT INTO schedule_generation_log_entries (
+              id, log_id, entry_index, timestamp, level, category, message, summary, details
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            entryId,
+            id,
+            entryIndex,
+            entry.timestamp,
+            entry.level,
+            entry.category,
+            entry.message,
+            entry.summary || null,
+            entry.details ? JSON.stringify(entry.details) : null
+          );
+      });
+
+      await db.batch(statements);
+    }
+  }
 
   const log = await getScheduleGenerationLogById(db, id);
   if (!log) {
@@ -78,7 +137,21 @@ export async function getScheduleGenerationLogById(
     .bind(id)
     .first<ScheduleGenerationLogRow>();
 
-  return result ? rowToScheduleGenerationLog(result) : null;
+  if (!result) {
+    return null;
+  }
+
+  // Fetch log entries
+  const entriesResult = await db
+    .prepare(
+      'SELECT * FROM schedule_generation_log_entries WHERE log_id = ? ORDER BY entry_index'
+    )
+    .bind(id)
+    .all<ScheduleGenerationLogEntryRow>();
+
+  const entries = (entriesResult.results || []).map(entryRowToLogEntry);
+
+  return rowToScheduleGenerationLog(result, entries.length > 0 ? entries : undefined);
 }
 
 export async function getLatestScheduleGenerationLog(
@@ -92,7 +165,21 @@ export async function getLatestScheduleGenerationLog(
     .bind(seasonId)
     .first<ScheduleGenerationLogRow>();
 
-  return result ? rowToScheduleGenerationLog(result) : null;
+  if (!result) {
+    return null;
+  }
+
+  // Fetch log entries
+  const entriesResult = await db
+    .prepare(
+      'SELECT * FROM schedule_generation_log_entries WHERE log_id = ? ORDER BY entry_index'
+    )
+    .bind(result.id)
+    .all<ScheduleGenerationLogEntryRow>();
+
+  const entries = (entriesResult.results || []).map(entryRowToLogEntry);
+
+  return rowToScheduleGenerationLog(result, entries.length > 0 ? entries : undefined);
 }
 
 export async function listScheduleGenerationLogs(
@@ -107,13 +194,16 @@ export async function listScheduleGenerationLogs(
     .bind(seasonId, limit)
     .all<ScheduleGenerationLogRow>();
 
-  return (result.results || []).map(rowToScheduleGenerationLog);
+  // For list view, we don't load the full log entries (they can be large)
+  // Callers should use getScheduleGenerationLogById for full details
+  return (result.results || []).map((row) => rowToScheduleGenerationLog(row, undefined));
 }
 
 export async function deleteScheduleGenerationLog(
   db: D1Database,
   id: string
 ): Promise<boolean> {
+  // Entries are deleted automatically via CASCADE
   const result = await db
     .prepare('DELETE FROM schedule_generation_logs WHERE id = ?')
     .bind(id)

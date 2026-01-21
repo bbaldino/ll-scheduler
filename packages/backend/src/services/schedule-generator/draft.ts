@@ -935,15 +935,25 @@ export function hasWarmupConflict(
   endTime: string,
   context: ScoringContext
 ): boolean {
-  if (!context.gameWarmupBlocks) return false;
+  if (!context.gameWarmupBlocks) {
+    return false;
+  }
 
   const key = `${date}-${cageId}`;
   const blocks = context.gameWarmupBlocks.get(key);
-  if (!blocks || blocks.length === 0) return false;
+  if (!blocks || blocks.length === 0) {
+    return false;
+  }
 
-  return blocks.some(block =>
+  const hasConflict = blocks.some(block =>
     timesOverlap(block.startTime, block.endTime, startTime, endTime)
   );
+
+  if (hasConflict) {
+    console.log(`[hasWarmupConflict] CONFLICT: cage=${cageId} date=${date} slot=${startTime}-${endTime} overlaps with warmup blocks: ${JSON.stringify(blocks)}`);
+  }
+
+  return hasConflict;
 }
 
 /**

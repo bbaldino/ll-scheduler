@@ -78,6 +78,7 @@ import {
   generateTeamPairingsForWeek,
   calculateDaysBetween,
   rebalanceMatchupsHomeAway,
+  hasWarmupConflict,
 } from './draft.js';
 
 /**
@@ -1041,6 +1042,10 @@ export class ScheduleGenerator {
         rebuildEventIndexes(this.scoringContext, this.scheduledEvents);
       }
 
+      // Build warmup blocks from scheduled games - needed before any cage scheduling
+      // (including Sunday paired practices which may include cage time)
+      this.buildGameWarmupBlocks();
+
       // Step 4e: Schedule Sunday combo practices (before regular practices)
       verboseLog('\n' + '-'.repeat(80));
       verboseLog('SCHEDULING SUNDAY COMBO PRACTICES');
@@ -1066,8 +1071,6 @@ export class ScheduleGenerator {
       verboseLog('SCHEDULING CAGE SESSIONS');
       verboseLog('-'.repeat(80));
       stepStart = Date.now();
-      // Build warmup blocks from scheduled games before scheduling cage sessions
-      this.buildGameWarmupBlocks();
       await this.scheduleCageSessions();
       console.log(`  scheduleCageSessions: ${Date.now() - stepStart}ms`);
       verboseLog(`✓ Cage sessions scheduled: ${this.scheduledEvents.filter(e => e.eventType === 'cage').length}`);
@@ -5992,8 +5995,9 @@ export class ScheduleGenerator {
         // Check if field slot is available
         const fieldConflict = this.hasResourceConflict(fieldSlot.resourceId, 'field', date, fieldStart, fieldEnd);
         const cageConflict = this.hasResourceConflict(cageSlot.resourceId, 'cage', date, cageStart, cageEnd);
+        const cageWarmupConflict = this.scoringContext ? hasWarmupConflict(cageSlot.resourceId, date, cageStart, cageEnd, this.scoringContext) : false;
 
-        if (!fieldConflict && !cageConflict) {
+        if (!fieldConflict && !cageConflict && !cageWarmupConflict) {
           // Schedule both events
           const practiceEvent = {
             seasonId: this.season.id,
@@ -6032,8 +6036,9 @@ export class ScheduleGenerator {
 
         const fieldConflictAlt = this.hasResourceConflict(fieldSlot.resourceId, 'field', date, fieldStartAlt, fieldEndAlt);
         const cageConflictAlt = this.hasResourceConflict(cageSlot.resourceId, 'cage', date, cageStartAlt, cageEndAlt);
+        const cageWarmupConflictAlt = this.scoringContext ? hasWarmupConflict(cageSlot.resourceId, date, cageStartAlt, cageEndAlt, this.scoringContext) : false;
 
-        if (!fieldConflictAlt && !cageConflictAlt) {
+        if (!fieldConflictAlt && !cageConflictAlt && !cageWarmupConflictAlt) {
           // Schedule both events (cage first)
           const cageEventAlt = {
             seasonId: this.season.id,
@@ -6613,21 +6618,33 @@ export class ScheduleGenerator {
 
     // Get all scheduled games
     const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+    console.log(`[buildGameWarmupBlocks] Found ${scheduledGames.length} scheduled games`);
+    console.log(`[buildGameWarmupBlocks] cageDivisionCompatibility has ${this.cageDivisionCompatibility.size} entries`);
 
     for (const game of scheduledGames) {
       const config = this.divisionConfigs.get(game.divisionId);
-      if (!config) continue;
+      if (!config) {
+        console.log(`[buildGameWarmupBlocks] No config for division ${game.divisionId}`);
+        continue;
+      }
 
       const arriveBeforeHours = config.gameArriveBeforeHours || 0;
-      if (arriveBeforeHours <= 0) continue;
+      if (arriveBeforeHours <= 0) {
+        continue;
+      }
 
       // Only block cages for divisions that have cage time
-      if (!config.cageSessionsPerWeek || config.cageSessionsPerWeek <= 0) continue;
+      if (!config.cageSessionsPerWeek || config.cageSessionsPerWeek <= 0) {
+        continue;
+      }
 
-      // Calculate warmup window: (game_start - arrive_before) to game_start
+      // Calculate warmup window: game.startTime to (game.startTime + arrive_before)
+      // Note: game.startTime in the database is the arrive time (when players should arrive),
+      // and the duration includes the arrive-before period. So the warmup window is from
+      // the stored start time until (start + arriveBeforeHours).
       const [gameHours, gameMinutes] = game.startTime.split(':').map(Number);
       const gameStartMinutes = gameHours * 60 + gameMinutes;
-      const warmupStartMinutes = gameStartMinutes - Math.round(arriveBeforeHours * 60);
+      const warmupEndMinutes = gameStartMinutes + Math.round(arriveBeforeHours * 60);
 
       // Format times as HH:MM
       const formatTime = (minutes: number): string => {
@@ -6636,8 +6653,8 @@ export class ScheduleGenerator {
         return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
       };
 
-      const warmupStartTime = formatTime(Math.max(0, warmupStartMinutes));
-      const warmupEndTime = game.startTime;
+      const warmupStartTime = game.startTime;
+      const warmupEndTime = formatTime(warmupEndMinutes);
 
       // Find all cages compatible with this division
       for (const [cageId, compatibility] of this.cageDivisionCompatibility) {
@@ -6666,6 +6683,17 @@ export class ScheduleGenerator {
     for (const blocks of this.scoringContext.gameWarmupBlocks.values()) {
       totalBlocks += blocks.length;
     }
+    console.log(`[buildGameWarmupBlocks] Built ${totalBlocks} warmup blocks across ${this.scoringContext.gameWarmupBlocks.size} date-cage keys`);
+    // Log ALL warmup blocks for 3/9 specifically for debugging
+    for (const [key, blocks] of this.scoringContext.gameWarmupBlocks) {
+      if (key.includes('2026-03-09')) {
+        console.log(`[buildGameWarmupBlocks] 3/9 blocks: ${key} -> ${JSON.stringify(blocks)}`);
+      }
+    }
+    // Also log all Majors games on 3/9
+    const majorsGamesOn309 = scheduledGames.filter(g => g.date === '2026-03-09');
+    console.log(`[buildGameWarmupBlocks] Games on 3/9: ${majorsGamesOn309.map(g => `${g.startTime} div=${g.divisionId}`).join(', ')}`);
+
     if (totalBlocks > 0) {
       this.log('info', 'cage', `Built ${totalBlocks} warmup blocks for cage scheduling`);
     }
