@@ -51,6 +51,7 @@ export interface ScoreBreakdown {
   homeAwayBalance: number;
   matchupHomeAwayBalance: number;
   dayGap: number;
+  matchupSpacing: number;
   timeAdjacency: number;
   earliestTime: number;
   fieldPreference: number;
@@ -89,6 +90,7 @@ export function calculatePlacementScore(
     homeAwayBalance: 0,
     matchupHomeAwayBalance: 0,
     dayGap: 0,
+    matchupSpacing: 0,
     timeAdjacency: 0,
     earliestTime: 0,
     fieldPreference: 0,
@@ -120,6 +122,7 @@ export function calculatePlacementScore(
       breakdown.homeAwayBalance = calculateHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.homeAwayBalance;
       breakdown.matchupHomeAwayBalance = calculateMatchupHomeAwayBalanceRaw(candidate.homeTeamId, candidate.awayTeamId, context) * weights.matchupHomeAwayBalance;
       breakdown.shortRestBalance = calculateShortRestBalanceRaw(candidate, context) * weights.shortRestBalance;
+      breakdown.matchupSpacing = calculateMatchupSpacingRaw(candidate.date, candidate.homeTeamId, candidate.awayTeamId, context) * weights.matchupSpacing;
     }
 
     // Weekday game diversity: penalize concentrating weekday games on the same day
@@ -718,6 +721,62 @@ export function calculateShortRestBalanceRaw(
   }
 
   return maxPenalty;
+}
+
+/**
+ * Calculate matchup spacing raw score
+ * Returns 0-1 where 1 means the matchup is too close (within 7 days of last game with same opponent).
+ * This is used with a negative weight to penalize rematches that are too close together.
+ *
+ * The goal is to spread games between the same two teams apart by at least 7 days.
+ * If teams haven't played each other yet, returns 0 (no penalty).
+ */
+export function calculateMatchupSpacingRaw(
+  candidateDate: string,
+  homeTeamId: string,
+  awayTeamId: string,
+  context: ScoringContext
+): number {
+  const homeTeam = context.teamStates.get(homeTeamId);
+  const awayTeam = context.teamStates.get(awayTeamId);
+
+  if (!homeTeam || !awayTeam) {
+    return 0;
+  }
+
+  // Get dates when these teams last played each other
+  // Check both directions since matchupDates is stored per-team
+  const homeMatchupDates = homeTeam.matchupDates?.get(awayTeamId) || [];
+  const awayMatchupDates = awayTeam.matchupDates?.get(homeTeamId) || [];
+
+  // Combine dates (they should be the same, but be safe)
+  const allMatchupDates = [...new Set([...homeMatchupDates, ...awayMatchupDates])];
+
+  if (allMatchupDates.length === 0) {
+    // Teams haven't played each other yet, no penalty
+    return 0;
+  }
+
+  // Find the minimum gap from any previous matchup date to the candidate date
+  const candidateDayNum = dateToDayNumber(candidateDate);
+  let minGap = Infinity;
+
+  for (const prevDate of allMatchupDates) {
+    const gap = Math.abs(candidateDayNum - dateToDayNumber(prevDate));
+    minGap = Math.min(minGap, gap);
+  }
+
+  // Target: at least 7 days between games with same opponent
+  // If gap >= 7, no penalty (return 0)
+  // If gap < 7, return penalty scaled 0-1 (closer = higher penalty)
+  if (minGap >= 7) {
+    return 0;
+  }
+
+  // Gap is 0-6 days, scale to 0-1 penalty
+  // 0 days = 1.0 penalty (worst)
+  // 6 days = ~0.14 penalty (minor)
+  return 1 - (minGap / 7);
 }
 
 /**

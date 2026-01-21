@@ -219,6 +219,7 @@ export interface ScoringWeights {
   homeAwayBalance: number; // For games: balance home/away assignments across season
   matchupHomeAwayBalance: number; // For games: balance home/away within each specific matchup
   dayGap: number; // Prefer spacing events apart (1 = 2+ day gap, 0.5 = consecutive)
+  matchupSpacing: number; // For games: prefer spacing same matchup apart (penalize rematches within 7 days)
   timeAdjacency: number; // Prefer slots adjacent to existing events (pack events together)
   earliestTime: number; // For games: prefer earlier start times
   fieldPreference: number; // Prefer division's preferred fields (1 = most preferred, 0 = not in list)
@@ -252,6 +253,7 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   homeAwayBalance: 70,
   matchupHomeAwayBalance: 150, // Strong preference for balanced home/away within each matchup
   dayGap: 400, // Strong preference to avoid back-to-back games
+  matchupSpacing: -800000, // Hard constraint - any matchup spacing < 7 days will exceed -500000 rejection threshold
   timeAdjacency: 0, // TODO: Consider removing this entirely if earliestTime is sufficient. Was 150 but caused issues where games were scheduled later to be adjacent to manually-added events instead of using earliest available slot.
   earliestTime: 200, // Strong preference for earlier game times
   fieldPreference: 300, // Strong preference for division's preferred fields
@@ -302,7 +304,9 @@ export interface ScoredCandidate extends PlacementCandidate {
     gameDayPreference: number;
     timeQuality: number;
     homeAwayBalance: number;
+    matchupHomeAwayBalance: number;
     dayGap: number;
+    matchupSpacing: number;
     timeAdjacency: number;
     earliestTime: number;
     fieldPreference: number;
@@ -343,6 +347,8 @@ export interface TeamSchedulingState {
   awayGames: number;
   // Per-opponent home/away tracking: opponentId -> { home: number, away: number }
   matchupHomeAway: Map<string, { home: number; away: number }>;
+  // Per-opponent game dates tracking: opponentId -> sorted list of dates when they played
+  matchupDates: Map<string, string[]>;
   // Constraint tracking - separate field and cage dates since cage + field on same day is OK
   fieldDatesUsed: Set<string>; // Dates with field events (games/practices) scheduled
   cageDatesUsed: Set<string>; // Dates with cage events scheduled

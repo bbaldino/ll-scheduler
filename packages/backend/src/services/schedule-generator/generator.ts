@@ -1024,12 +1024,17 @@ export class ScheduleGenerator {
       this.rebalanceShortRest();
       console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
 
+      // Step 4d: Rebalance matchup spacing (avoid same teams playing within 7 days)
+      stepStart = Date.now();
+      this.rebalanceMatchupSpacing();
+      console.log(`  rebalanceMatchupSpacing: ${Date.now() - stepStart}ms`);
+
       // Rebuild fieldDatesUsed from actual scheduled events after rebalancing
       // This is necessary because rebalancing swaps dates directly on events
       // without updating the team scheduling states
       this.rebuildFieldDatesUsed();
 
-      // Step 4d: Schedule Sunday combo practices (before regular practices)
+      // Step 4e: Schedule Sunday combo practices (before regular practices)
       verboseLog('\n' + '-'.repeat(80));
       verboseLog('SCHEDULING SUNDAY COMBO PRACTICES');
       verboseLog('-'.repeat(80));
@@ -2384,7 +2389,8 @@ export class ScheduleGenerator {
           const maxGamesPerWeek = config?.maxGamesPerWeek;
 
           // Check maxGamesPerWeek first - this is a hard cap that always applies
-          if (maxGamesPerWeek !== undefined) {
+          // Use != null to handle both null and undefined (when not configured)
+          if (maxGamesPerWeek != null) {
             if (homeTotalGamesThisWeek >= maxGamesPerWeek) {
               failureReason = `${homeTeam.name} at max games cap (${homeTotalGamesThisWeek}/${maxGamesPerWeek} games in week ${weekNum + 1})`;
             } else if (awayTotalGamesThisWeek >= maxGamesPerWeek) {
@@ -4180,8 +4186,7 @@ export class ScheduleGenerator {
                 }
               }
 
-              // Check if this would create same matchup on consecutive days
-              // (same two teams playing each other with only 1 day gap)
+              // Check if this would violate matchup spacing (same two teams playing within 7 days)
               const isSameMatchup = (g1: typeof game1, g2: typeof game1): boolean => {
                 const teams1Set = new Set([g1.homeTeamId, g1.awayTeamId].filter(Boolean));
                 const teams2Set = new Set([g2.homeTeamId, g2.awayTeamId].filter(Boolean));
@@ -4199,15 +4204,15 @@ export class ScheduleGenerator {
               };
 
               // After swap: game1 will be on game2's date, game2 will be on game1's date
-              // Check if any OTHER game with the same matchup would be consecutive to the new dates
-              const wouldCreateConsecutiveMatchup = (): boolean => {
+              // Check if any OTHER game with the same matchup would be too close (< 7 days)
+              const wouldViolateMatchupSpacing = (): boolean => {
                 for (const otherGame of divisionGames) {
                   if (otherGame === game1 || otherGame === game2) continue;
 
                   // Check if otherGame has same matchup as game1
                   if (isSameMatchup(game1, otherGame)) {
                     // game1 is moving to game2.date - check gap with otherGame
-                    if (getDayGap(game2.date, otherGame.date) <= 1) {
+                    if (getDayGap(game2.date, otherGame.date) < 7) {
                       return true;
                     }
                   }
@@ -4215,7 +4220,7 @@ export class ScheduleGenerator {
                   // Check if otherGame has same matchup as game2
                   if (isSameMatchup(game2, otherGame)) {
                     // game2 is moving to game1.date - check gap with otherGame
-                    if (getDayGap(game1.date, otherGame.date) <= 1) {
+                    if (getDayGap(game1.date, otherGame.date) < 7) {
                       return true;
                     }
                   }
@@ -4223,7 +4228,7 @@ export class ScheduleGenerator {
                 return false;
               };
 
-              if (wouldCreateConsecutiveMatchup()) {
+              if (wouldViolateMatchupSpacing()) {
                 continue;
               }
 
@@ -4318,6 +4323,337 @@ export class ScheduleGenerator {
           const teamState = this.teamSchedulingStates.get(teamId);
           console.error(`  [ShortRest] ERROR: ${teamState?.teamName || teamId} has ${count} games on ${date} after rebalancing!`);
         }
+      }
+    }
+  }
+
+  /**
+   * Rebalance matchup spacing - avoid same teams playing within 7 days.
+   * This is a post-scheduling optimization that swaps game dates to increase
+   * the gap between repeated matchups (same two teams playing each other).
+   */
+  private rebalanceMatchupSpacing(): void {
+    console.log('  [MatchupSpacing] Starting matchup spacing optimization...');
+
+    const MIN_MATCHUP_GAP_DAYS = 7;
+
+    // Get all scheduled games
+    const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+    if (scheduledGames.length === 0) {
+      console.log('  [MatchupSpacing] No games to optimize');
+      return;
+    }
+
+    // Group games by division
+    const gamesByDivision = new Map<string, typeof scheduledGames>();
+    for (const game of scheduledGames) {
+      if (!gamesByDivision.has(game.divisionId)) {
+        gamesByDivision.set(game.divisionId, []);
+      }
+      gamesByDivision.get(game.divisionId)!.push(game);
+    }
+
+    // Process each division
+    for (const [divisionId, divisionGames] of gamesByDivision) {
+      const divisionName = this.divisionNames.get(divisionId) || divisionId.slice(-8);
+
+      // Helper to get matchup key (normalized so order doesn't matter)
+      const getMatchupKey = (game: (typeof divisionGames)[0]): string => {
+        const teams = [game.homeTeamId, game.awayTeamId].filter(Boolean).sort();
+        return teams.join('|');
+      };
+
+      // Helper to calculate day gap between two dates
+      const getDayGap = (date1: string, date2: string): number => {
+        const d1 = new Date(date1);
+        const d2 = new Date(date2);
+        return Math.abs(Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+      };
+
+      // Group games by matchup
+      const gamesByMatchup = new Map<string, typeof divisionGames>();
+      for (const game of divisionGames) {
+        const key = getMatchupKey(game);
+        if (!gamesByMatchup.has(key)) {
+          gamesByMatchup.set(key, []);
+        }
+        gamesByMatchup.get(key)!.push(game);
+      }
+
+      // Find matchups with violations (gaps < MIN_MATCHUP_GAP_DAYS)
+      const findViolations = (): Array<{ matchupKey: string; games: typeof divisionGames; minGap: number }> => {
+        const violations: Array<{ matchupKey: string; games: typeof divisionGames; minGap: number }> = [];
+        for (const [matchupKey, games] of gamesByMatchup) {
+          if (games.length < 2) continue;
+          const sortedGames = [...games].sort((a, b) => a.date.localeCompare(b.date));
+          let minGap = Infinity;
+          for (let i = 1; i < sortedGames.length; i++) {
+            const gap = getDayGap(sortedGames[i - 1].date, sortedGames[i].date);
+            minGap = Math.min(minGap, gap);
+          }
+          if (minGap < MIN_MATCHUP_GAP_DAYS) {
+            violations.push({ matchupKey, games: sortedGames, minGap });
+          }
+        }
+        return violations.sort((a, b) => a.minGap - b.minGap); // Worst violations first
+      };
+
+      let violations = findViolations();
+      if (violations.length === 0) {
+        verboseLog(`  [MatchupSpacing] ${divisionName}: no matchup spacing violations`);
+        continue;
+      }
+
+      const worstGap = violations[0]?.minGap || 0;
+      console.log(`  [MatchupSpacing] ${divisionName}: ${violations.length} matchup(s) with gap < ${MIN_MATCHUP_GAP_DAYS} days (worst: ${worstGap} days)`);
+      console.log(`    Matchup details:`);
+      for (const v of violations) {
+        const teamNames = v.matchupKey.split('|').map(id => {
+          const state = this.teamSchedulingStates.get(id);
+          return state?.teamName || id.slice(-8);
+        }).join(' vs ');
+        console.log(`      ${teamNames}: minGap=${v.minGap}, games on ${v.games.map(g => g.date).join(', ')}`);
+      }
+
+      // Try to improve spacing through swaps
+      let swapsMade = 0;
+      let blockedBySameDayConflict = 0;
+      let blockedByMaxGamesPerWeek = 0;
+      let blockedByConsecutiveMatchup = 0;
+      let blockedByNoImprovement = 0;
+      const maxIterations = 50;
+
+      for (let iter = 0; iter < maxIterations && violations.length > 0; iter++) {
+        let foundImprovement = false;
+
+        // Take the worst violation and try to fix it
+        const violation = violations[0];
+        const violationGames = violation.games;
+
+        // Try swapping each violation game with other games in the division
+        for (const violationGame of violationGames) {
+          if (foundImprovement) break;
+
+          for (const otherGame of divisionGames) {
+            if (foundImprovement) break;
+            if (otherGame === violationGame) continue;
+            if (otherGame.date === violationGame.date) continue;
+
+            // Don't swap with another game in the same matchup
+            if (getMatchupKey(otherGame) === violation.matchupKey) continue;
+
+            const teams1 = [violationGame.homeTeamId, violationGame.awayTeamId].filter(Boolean) as string[];
+            const teams2 = [otherGame.homeTeamId, otherGame.awayTeamId].filter(Boolean) as string[];
+
+            // Check if swap would create same-day conflicts
+            const allFieldEvents = this.scheduledEvents.filter(
+              (e) => e.eventType === 'game' || e.eventType === 'practice'
+            );
+
+            let wouldCreateSameDayConflict = false;
+            for (const teamId of teams1) {
+              const hasFieldEventOnNewDate = allFieldEvents.some(
+                (e) =>
+                  e !== violationGame &&
+                  e !== otherGame &&
+                  e.date === otherGame.date &&
+                  (e.homeTeamId === teamId || e.awayTeamId === teamId || e.teamId === teamId)
+              );
+              if (hasFieldEventOnNewDate) {
+                wouldCreateSameDayConflict = true;
+                break;
+              }
+            }
+            if (!wouldCreateSameDayConflict) {
+              for (const teamId of teams2) {
+                const hasFieldEventOnNewDate = allFieldEvents.some(
+                  (e) =>
+                    e !== violationGame &&
+                    e !== otherGame &&
+                    e.date === violationGame.date &&
+                    (e.homeTeamId === teamId || e.awayTeamId === teamId || e.teamId === teamId)
+                );
+                if (hasFieldEventOnNewDate) {
+                  wouldCreateSameDayConflict = true;
+                  break;
+                }
+              }
+            }
+
+            if (wouldCreateSameDayConflict) {
+              blockedBySameDayConflict++;
+              continue;
+            }
+
+            // Check if swap would violate maxGamesPerWeek
+            const config = this.divisionConfigs.get(divisionId);
+            const maxGamesPerWeek = config?.maxGamesPerWeek;
+            if (maxGamesPerWeek !== undefined) {
+              const getWeekNumber = (dateStr: string): number => {
+                const date = new Date(dateStr);
+                const seasonStart = new Date(this.season.gamesStartDate || this.season.startDate);
+                const diffTime = date.getTime() - seasonStart.getTime();
+                return Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000));
+              };
+
+              const week1 = getWeekNumber(violationGame.date);
+              const week2 = getWeekNumber(otherGame.date);
+
+              if (week1 !== week2) {
+                const countGamesInWeek = (teamId: string, weekNum: number, excludeGame: typeof violationGame): number => {
+                  return divisionGames.filter(g =>
+                    g !== excludeGame &&
+                    getWeekNumber(g.date) === weekNum &&
+                    (g.homeTeamId === teamId || g.awayTeamId === teamId)
+                  ).length;
+                };
+
+                let wouldExceedMaxGames = false;
+                for (const teamId of teams1) {
+                  const gamesInWeek2 = countGamesInWeek(teamId, week2, violationGame);
+                  if (gamesInWeek2 + 1 > maxGamesPerWeek) {
+                    wouldExceedMaxGames = true;
+                    break;
+                  }
+                }
+                if (!wouldExceedMaxGames) {
+                  for (const teamId of teams2) {
+                    const gamesInWeek1 = countGamesInWeek(teamId, week1, otherGame);
+                    if (gamesInWeek1 + 1 > maxGamesPerWeek) {
+                      wouldExceedMaxGames = true;
+                      break;
+                    }
+                  }
+                }
+
+                if (wouldExceedMaxGames) {
+                  blockedByMaxGamesPerWeek++;
+                  continue;
+                }
+              }
+            }
+
+            // Check if swap would create consecutive matchups (gap <= 1 day)
+            const isSameMatchup = (g1: typeof violationGame, g2: typeof violationGame): boolean => {
+              return getMatchupKey(g1) === getMatchupKey(g2);
+            };
+
+            const wouldCreateConsecutiveMatchup = (): boolean => {
+              for (const game of divisionGames) {
+                if (game === violationGame || game === otherGame) continue;
+
+                if (isSameMatchup(violationGame, game)) {
+                  if (getDayGap(otherGame.date, game.date) <= 1) return true;
+                }
+                if (isSameMatchup(otherGame, game)) {
+                  if (getDayGap(violationGame.date, game.date) <= 1) return true;
+                }
+              }
+              return false;
+            };
+
+            if (wouldCreateConsecutiveMatchup()) {
+              blockedByConsecutiveMatchup++;
+              continue;
+            }
+
+            // Check if swap would hurt short rest balance (games within 2 days)
+            const calculateShortRestDelta = (): number => {
+              const teamGameDates = new Map<string, string[]>();
+              for (const game of divisionGames) {
+                if (game.homeTeamId) {
+                  if (!teamGameDates.has(game.homeTeamId)) teamGameDates.set(game.homeTeamId, []);
+                  teamGameDates.get(game.homeTeamId)!.push(game.date);
+                }
+                if (game.awayTeamId) {
+                  if (!teamGameDates.has(game.awayTeamId)) teamGameDates.set(game.awayTeamId, []);
+                  teamGameDates.get(game.awayTeamId)!.push(game.date);
+                }
+              }
+
+              const violations = new Map<string, number>();
+              for (const [teamId, dates] of teamGameDates) {
+                const sortedDates = [...new Set(dates)].sort();
+                let count = 0;
+                for (let i = 1; i < sortedDates.length; i++) {
+                  const d1 = new Date(sortedDates[i - 1]);
+                  const d2 = new Date(sortedDates[i]);
+                  const gap = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+                  if (gap <= 2) count++;
+                }
+                violations.set(teamId, count);
+              }
+
+              const counts = Array.from(violations.values());
+              if (counts.length === 0) return 0;
+              return Math.max(...counts) - Math.min(...counts);
+            };
+
+            const shortRestDeltaBefore = calculateShortRestDelta();
+
+            // Try the swap
+            const orig1Date = violationGame.date;
+            const orig1Time = violationGame.startTime;
+            const orig1EndTime = violationGame.endTime;
+            const orig2Date = otherGame.date;
+            const orig2Time = otherGame.startTime;
+            const orig2EndTime = otherGame.endTime;
+
+            violationGame.date = orig2Date;
+            violationGame.startTime = orig2Time;
+            violationGame.endTime = orig2EndTime;
+            otherGame.date = orig1Date;
+            otherGame.startTime = orig1Time;
+            otherGame.endTime = orig1EndTime;
+
+            // Check if this improves the matchup spacing
+            const newViolations = findViolations();
+            const shortRestDeltaAfter = calculateShortRestDelta();
+
+            // Accept the swap if:
+            // 1. Matchup spacing improves (fewer violations OR better worst-case gap)
+            // 2. AND short rest balance doesn't get worse (delta doesn't increase)
+            const violationImproved =
+              newViolations.length < violations.length ||
+              (newViolations.length === violations.length &&
+                newViolations[0]?.minGap > violations[0]?.minGap);
+
+            if (violationImproved && shortRestDeltaAfter <= shortRestDeltaBefore) {
+              // Keep the swap
+              const teams1Names = teams1.map(t => {
+                const state = this.teamSchedulingStates.get(t);
+                return state?.teamName || t;
+              }).join(' vs ');
+
+              verboseLog(`  [MatchupSpacing] ${divisionName}: swapped ${teams1Names} from ${orig1Date} to ${orig2Date}`);
+
+              violations = newViolations;
+              swapsMade++;
+              foundImprovement = true;
+            } else {
+              // Revert the swap
+              blockedByNoImprovement++;
+              violationGame.date = orig1Date;
+              violationGame.startTime = orig1Time;
+              violationGame.endTime = orig1EndTime;
+              otherGame.date = orig2Date;
+              otherGame.startTime = orig2Time;
+              otherGame.endTime = orig2EndTime;
+            }
+          }
+        }
+
+        if (!foundImprovement) break;
+      }
+
+      if (swapsMade > 0) {
+        const newWorstGap = violations[0]?.minGap || 0;
+        console.log(`  [MatchupSpacing] ${divisionName}: made ${swapsMade} swap(s), ${violations.length} violations remaining (worst gap now: ${newWorstGap} days)`);
+      } else if (violations.length > 0) {
+        console.log(`  [MatchupSpacing] ${divisionName}: no beneficial swaps found (${violations.length} violations, worst: ${worstGap} days)`);
+      }
+      if (blockedBySameDayConflict > 0 || blockedByMaxGamesPerWeek > 0 || blockedByConsecutiveMatchup > 0 || blockedByNoImprovement > 0) {
+        console.log(`    Blocked by: sameDayConflict=${blockedBySameDayConflict}, maxGamesPerWeek=${blockedByMaxGamesPerWeek}, consecutiveMatchup=${blockedByConsecutiveMatchup}, noImprovement=${blockedByNoImprovement}`);
       }
     }
   }

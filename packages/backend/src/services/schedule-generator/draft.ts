@@ -451,6 +451,7 @@ export function initializeTeamState(
     homeGames: 0,
     awayGames: 0,
     matchupHomeAway: new Map(),
+    matchupDates: new Map(),
     fieldDatesUsed: new Set(),
     cageDatesUsed: new Set(),
     minDaysBetweenEvents: requirements.minDaysBetweenEvents,
@@ -496,6 +497,12 @@ export function updateTeamStateAfterScheduling(
             matchup.away++;
           }
           teamState.matchupHomeAway.set(opponentId, matchup);
+
+          // Update per-opponent game dates tracking for matchup spacing
+          const matchupDates = teamState.matchupDates.get(opponentId) || [];
+          matchupDates.push(event.date);
+          matchupDates.sort();
+          teamState.matchupDates.set(opponentId, matchupDates);
         }
       }
 

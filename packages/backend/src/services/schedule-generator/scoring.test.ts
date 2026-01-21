@@ -21,6 +21,7 @@ function createTeamState(overrides: Partial<TeamSchedulingState> = {}): TeamSche
     homeGames: 0,
     awayGames: 0,
     matchupHomeAway: new Map(),
+    matchupDates: new Map(),
     fieldDatesUsed: new Set(),
     cageDatesUsed: new Set(),
     minDaysBetweenEvents: 1,
