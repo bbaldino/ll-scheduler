@@ -3119,12 +3119,13 @@ export class ScheduleGenerator {
                   continue; // Try next matchup
                 }
 
-                // Check maxGamesPerWeek cap for both teams
+                // Check maxGamesPerWeek cap for both teams (hard limit if set)
                 const divConfig = this.divisionConfigs.get(divisionId);
                 const maxGamesPerWeek = divConfig?.maxGamesPerWeek;
-                if (maxGamesPerWeek !== undefined) {
-                  const homeGamesThisWeek = hState.eventsPerWeek.get(week.weekNumber)?.games || 0;
-                  const awayGamesThisWeek = aState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+                const homeGamesThisWeek = hState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+                const awayGamesThisWeek = aState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+
+                if (maxGamesPerWeek != null) {
                   if (homeGamesThisWeek >= maxGamesPerWeek || awayGamesThisWeek >= maxGamesPerWeek) {
                     continue; // Try next matchup - one of the teams is at max cap
                   }
@@ -4206,15 +4207,9 @@ export class ScheduleGenerator {
               const config = this.divisionConfigs.get(divisionId);
               const maxGamesPerWeek = config?.maxGamesPerWeek;
               if (maxGamesPerWeek !== undefined) {
-                const getWeekNumber = (dateStr: string): number => {
-                  const date = new Date(dateStr);
-                  const seasonStart = new Date(this.season.gamesStartDate || this.season.startDate);
-                  const diffTime = date.getTime() - seasonStart.getTime();
-                  return Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000));
-                };
-
-                const week1 = getWeekNumber(game1.date);
-                const week2 = getWeekNumber(game2.date);
+                // Use proper week definitions to match scheduler's week calculation
+                const week1 = getWeekNumberForDate(game1.date, this.weekDefinitions);
+                const week2 = getWeekNumberForDate(game2.date, this.weekDefinitions);
 
                 // Only need to check if swapping across weeks
                 if (week1 !== week2) {
@@ -4222,7 +4217,7 @@ export class ScheduleGenerator {
                   const countGamesInWeek = (teamId: string, weekNum: number, excludeGame: typeof game1): number => {
                     return divisionGames.filter(g =>
                       g !== excludeGame &&
-                      getWeekNumber(g.date) === weekNum &&
+                      getWeekNumberForDate(g.date, this.weekDefinitions) === weekNum &&
                       (g.homeTeamId === teamId || g.awayTeamId === teamId)
                     ).length;
                   };
@@ -4556,21 +4551,15 @@ export class ScheduleGenerator {
             const config = this.divisionConfigs.get(divisionId);
             const maxGamesPerWeek = config?.maxGamesPerWeek;
             if (maxGamesPerWeek !== undefined) {
-              const getWeekNumber = (dateStr: string): number => {
-                const date = new Date(dateStr);
-                const seasonStart = new Date(this.season.gamesStartDate || this.season.startDate);
-                const diffTime = date.getTime() - seasonStart.getTime();
-                return Math.floor(diffTime / (7 * 24 * 60 * 60 * 1000));
-              };
-
-              const week1 = getWeekNumber(violationGame.date);
-              const week2 = getWeekNumber(otherGame.date);
+              // Use proper week definitions to match scheduler's week calculation
+              const week1 = getWeekNumberForDate(violationGame.date, this.weekDefinitions);
+              const week2 = getWeekNumberForDate(otherGame.date, this.weekDefinitions);
 
               if (week1 !== week2) {
                 const countGamesInWeek = (teamId: string, weekNum: number, excludeGame: typeof violationGame): number => {
                   return divisionGames.filter(g =>
                     g !== excludeGame &&
-                    getWeekNumber(g.date) === weekNum &&
+                    getWeekNumberForDate(g.date, this.weekDefinitions) === weekNum &&
                     (g.homeTeamId === teamId || g.awayTeamId === teamId)
                   ).length;
                 };
