@@ -268,6 +268,7 @@ export default function SeasonsPage() {
       practicesPerWeek: config.practicesPerWeek,
       practiceDurationHours: config.practiceDurationHours,
       practiceArriveBeforeMinutes: config.practiceArriveBeforeMinutes,
+      weekdayPracticeStartTime: config.weekdayPracticeStartTime,
       gamesPerWeek: config.gamesPerWeek,
       maxGamesPerWeek: config.maxGamesPerWeek,
       gameDurationHours: config.gameDurationHours,
@@ -313,6 +314,7 @@ export default function SeasonsPage() {
         practicesPerWeek: configFormData.practicesPerWeek,
         practiceDurationHours: configFormData.practiceDurationHours,
         practiceArriveBeforeMinutes: configFormData.practiceArriveBeforeMinutes,
+        weekdayPracticeStartTime: configFormData.weekdayPracticeStartTime,
         gamesPerWeek: configFormData.gamesPerWeek,
         maxGamesPerWeek: configFormData.maxGamesPerWeek,
         gameDurationHours: configFormData.gameDurationHours,
@@ -650,6 +652,18 @@ export default function SeasonsPage() {
               Leave blank to start games on the season start date. Set a later date to allow practices/cages to be scheduled before games begin.
             </p>
           </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="weekdayPracticeStartTime">Weekday Practice Start Time (optional)</label>
+            <input
+              id="weekdayPracticeStartTime"
+              type="time"
+              value={formData.weekdayPracticeStartTime || ''}
+              onChange={(e) => setFormData({ ...formData, weekdayPracticeStartTime: e.target.value || undefined })}
+            />
+            <p className={styles.helperText}>
+              Earliest time practices can start on weekdays (Mon-Fri). Leave blank to use field availability times. Can be overridden per division.
+            </p>
+          </div>
           <div className={styles.formActions}>
             <button type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Creating...' : 'Create'}
@@ -733,6 +747,16 @@ export default function SeasonsPage() {
                   <option value="completed">Completed</option>
                   <option value="archived">Archived</option>
                 </select>
+              </p>
+              <p>
+                <strong>Weekday Practice Start:</strong>{' '}
+                <input
+                  type="time"
+                  value={season.weekdayPracticeStartTime || ''}
+                  onChange={(e) => handleUpdate(season, { weekdayPracticeStartTime: e.target.value || undefined })}
+                  className={styles.inlineInput}
+                />
+                <span className={styles.helperTextInline}> (earliest practice start on Mon-Fri)</span>
               </p>
               <div className={styles.blackoutDatesSection}>
                 <div className={styles.blackoutDatesHeader}>
@@ -1339,6 +1363,21 @@ export default function SeasonsPage() {
                                       ))}
                                     </select>
                                   </div>
+                                  <div className={styles.formGroup}>
+                                    <label>Weekday Start Time</label>
+                                    <input
+                                      type="time"
+                                      value={configFormData.weekdayPracticeStartTime || ''}
+                                      onChange={(e) =>
+                                        setConfigFormData({
+                                          ...configFormData,
+                                          weekdayPracticeStartTime: e.target.value || undefined,
+                                        })
+                                      }
+                                      placeholder="Use season default"
+                                    />
+                                    <p className={styles.helperText}>Override season setting</p>
+                                  </div>
                                 </div>
                                 <div className={styles.formRow}>
                                   <div className={styles.formGroup}>
@@ -1760,6 +1799,9 @@ export default function SeasonsPage() {
                                   <span>Duration: {existingConfig.practiceDurationHours}h</span>
                                   {existingConfig.practiceArriveBeforeMinutes != null && existingConfig.practiceArriveBeforeMinutes > 0 && (
                                     <span>Arrive: {existingConfig.practiceArriveBeforeMinutes}m before</span>
+                                  )}
+                                  {existingConfig.weekdayPracticeStartTime && (
+                                    <span>Weekday start: {existingConfig.weekdayPracticeStartTime}</span>
                                   )}
                                 </div>
                                 <div className={styles.configDetailRow}>

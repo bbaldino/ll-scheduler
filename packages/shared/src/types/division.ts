@@ -69,6 +69,9 @@ export interface DivisionConfig {
   // Game spacing settings
   gameSpacingEnabled?: boolean; // Enable game spacing constraints (min days between games)
 
+  // Practice timing override (optional, overrides season-level setting)
+  weekdayPracticeStartTime?: string; // Earliest practice start time on weekdays (HH:MM)
+
   createdAt: string;
   updatedAt: string;
 }
@@ -95,6 +98,7 @@ export interface CreateDivisionConfigInput {
   sundayPairedPracticeFieldId?: string;
   sundayPairedPracticeCageId?: string;
   gameSpacingEnabled?: boolean;
+  weekdayPracticeStartTime?: string;
 }
 
 export interface UpdateDivisionConfigInput {
@@ -117,4 +121,5 @@ export interface UpdateDivisionConfigInput {
   sundayPairedPracticeFieldId?: string;
   sundayPairedPracticeCageId?: string;
   gameSpacingEnabled?: boolean;
+  weekdayPracticeStartTime?: string;
 }

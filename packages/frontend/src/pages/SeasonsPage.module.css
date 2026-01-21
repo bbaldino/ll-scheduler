@@ -325,6 +325,11 @@
   margin: 0.25rem 0 0.5rem 0;
 }
 
+.helperTextInline {
+  color: #666;
+  font-size: 0.85em;
+}
+
 .phaseActions {
   display: flex;
   gap: 0.5rem;

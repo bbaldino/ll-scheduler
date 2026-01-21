@@ -1589,6 +1589,19 @@ export class ScheduleGenerator {
       if (config.fieldPreferences) {
         this.scoringContext.fieldPreferences.set(divisionId, config.fieldPreferences);
       }
+
+      // Set up division-level weekday practice start time overrides
+      if (config.weekdayPracticeStartTime) {
+        if (!this.scoringContext.divisionWeekdayPracticeStartTimes) {
+          this.scoringContext.divisionWeekdayPracticeStartTimes = new Map();
+        }
+        this.scoringContext.divisionWeekdayPracticeStartTimes.set(divisionId, config.weekdayPracticeStartTime);
+      }
+    }
+
+    // Set up season-level weekday practice start time
+    if (this.season.weekdayPracticeStartTime) {
+      this.scoringContext.seasonWeekdayPracticeStartTime = this.season.weekdayPracticeStartTime;
     }
 
     // Set up resource capacities (approximate based on availability hours)
@@ -6618,15 +6631,10 @@ export class ScheduleGenerator {
 
     // Get all scheduled games
     const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
-    console.log(`[buildGameWarmupBlocks] Found ${scheduledGames.length} scheduled games`);
-    console.log(`[buildGameWarmupBlocks] cageDivisionCompatibility has ${this.cageDivisionCompatibility.size} entries`);
 
     for (const game of scheduledGames) {
       const config = this.divisionConfigs.get(game.divisionId);
-      if (!config) {
-        console.log(`[buildGameWarmupBlocks] No config for division ${game.divisionId}`);
-        continue;
-      }
+      if (!config) continue;
 
       const arriveBeforeHours = config.gameArriveBeforeHours || 0;
       if (arriveBeforeHours <= 0) {
@@ -6678,21 +6686,11 @@ export class ScheduleGenerator {
       }
     }
 
-    // Log warmup blocks created
+    // Count warmup blocks created for logging
     let totalBlocks = 0;
     for (const blocks of this.scoringContext.gameWarmupBlocks.values()) {
       totalBlocks += blocks.length;
     }
-    console.log(`[buildGameWarmupBlocks] Built ${totalBlocks} warmup blocks across ${this.scoringContext.gameWarmupBlocks.size} date-cage keys`);
-    // Log ALL warmup blocks for 3/9 specifically for debugging
-    for (const [key, blocks] of this.scoringContext.gameWarmupBlocks) {
-      if (key.includes('2026-03-09')) {
-        console.log(`[buildGameWarmupBlocks] 3/9 blocks: ${key} -> ${JSON.stringify(blocks)}`);
-      }
-    }
-    // Also log all Majors games on 3/9
-    const majorsGamesOn309 = scheduledGames.filter(g => g.date === '2026-03-09');
-    console.log(`[buildGameWarmupBlocks] Games on 3/9: ${majorsGamesOn309.map(g => `${g.startTime} div=${g.divisionId}`).join(', ')}`);
 
     if (totalBlocks > 0) {
       this.log('info', 'cage', `Built ${totalBlocks} warmup blocks for cage scheduling`);

@@ -27,6 +27,7 @@ export interface Season {
   endDate: string; // ISO date string - season end
   gamesStartDate?: string; // ISO date string - when games can begin (defaults to startDate if not set)
   blackoutDates?: SeasonBlackout[]; // Dates when no events should be scheduled
+  weekdayPracticeStartTime?: string; // Earliest practice start time on weekdays (HH:MM), e.g., "16:30"
   status: SeasonStatus;
   createdAt: string;
   updatedAt: string;
@@ -40,6 +41,7 @@ export interface CreateSeasonInput {
   endDate: string;
   gamesStartDate?: string;
   blackoutDates?: SeasonBlackout[];
+  weekdayPracticeStartTime?: string;
   copyFromSeasonId?: string; // Optional: copy configuration from previous season
 }
 
@@ -49,6 +51,7 @@ export interface UpdateSeasonInput {
   endDate?: string;
   gamesStartDate?: string;
   blackoutDates?: SeasonBlackout[];
+  weekdayPracticeStartTime?: string;
   status?: SeasonStatus;
 }
 

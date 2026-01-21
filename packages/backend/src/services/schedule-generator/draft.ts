@@ -696,18 +696,32 @@ export function generateCandidatesForTeamEvent(
       }
     }
 
-    // Generate candidates at 30-minute intervals within the slot
+    // Generate candidates at intervals within the slot
     const [startH, startM] = slot.slot.startTime.split(':').map(Number);
     const [endH, endM] = slot.slot.endTime.split(':').map(Number);
-    const slotStartMinutes = startH * 60 + startM;
+    let effectiveStartMinutes = startH * 60 + startM;
     const slotEndMinutes = endH * 60 + endM;
     const durationMinutes = durationHours * 60;
+
+    // For practices on weekdays, adjust the effective start time to honor weekday practice start time
+    // This ensures we generate a candidate at the configured start time (e.g., 16:30) rather than
+    // only at hour boundaries (16:00, 17:00, etc.)
+    if (eventType === 'practice' && slot.slot.dayOfWeek >= 1 && slot.slot.dayOfWeek <= 5) {
+      const weekdayStartTime = getEffectiveWeekdayPracticeStartTime(teamState.divisionId, context);
+      if (weekdayStartTime) {
+        const [wkdayH, wkdayM] = weekdayStartTime.split(':').map(Number);
+        const weekdayStartMinutes = wkdayH * 60 + wkdayM;
+        if (weekdayStartMinutes > effectiveStartMinutes) {
+          effectiveStartMinutes = weekdayStartMinutes;
+        }
+      }
+    }
 
     // Use 60-minute intervals for practices/cages to reduce candidate count
     // (30-min intervals generated too many candidates, slowing down scoring)
     const interval = 60;
     for (
-      let candidateStart = slotStartMinutes;
+      let candidateStart = effectiveStartMinutes;
       candidateStart + durationMinutes <= slotEndMinutes;
       candidateStart += interval
     ) {
@@ -926,6 +940,21 @@ export function timesOverlap(
 }
 
 /**
+ * Get the effective weekday practice start time for a division.
+ * Returns the division-level override if set, otherwise the season-level default.
+ * Returns undefined if no weekday practice start time is configured.
+ */
+function getEffectiveWeekdayPracticeStartTime(divisionId: string, context: ScoringContext): string | undefined {
+  // Check for division-level override first
+  const divisionOverride = context.divisionWeekdayPracticeStartTimes?.get(divisionId);
+  if (divisionOverride) {
+    return divisionOverride;
+  }
+  // Fall back to season-level default
+  return context.seasonWeekdayPracticeStartTime;
+}
+
+/**
  * Check if a cage slot conflicts with any game warmup blocks
  */
 export function hasWarmupConflict(
@@ -945,15 +974,9 @@ export function hasWarmupConflict(
     return false;
   }
 
-  const hasConflict = blocks.some(block =>
+  return blocks.some(block =>
     timesOverlap(block.startTime, block.endTime, startTime, endTime)
   );
-
-  if (hasConflict) {
-    console.log(`[hasWarmupConflict] CONFLICT: cage=${cageId} date=${date} slot=${startTime}-${endTime} overlaps with warmup blocks: ${JSON.stringify(blocks)}`);
-  }
-
-  return hasConflict;
 }
 
 /**

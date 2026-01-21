@@ -49,6 +49,10 @@ export interface ScoringContext {
   eventsByDateTeam?: Map<string, ScheduledEventDraft[]>;
   // Game warmup blocks: "date-cageId" -> warmup windows when cage is blocked for game warmup
   gameWarmupBlocks?: Map<string, WarmupBlock[]>;
+  // Season-level weekday practice start time (HH:MM)
+  seasonWeekdayPracticeStartTime?: string;
+  // Division-level weekday practice start time overrides: divisionId -> HH:MM
+  divisionWeekdayPracticeStartTimes?: Map<string, string>;
 }
 
 /**

@@ -1135,6 +1135,38 @@ export default function CalendarView({
                 </div>
               )}
 
+              {/* Practice time breakdown: arrival vs practice start */}
+              {editingEvent.eventType === 'practice' && (() => {
+                const config = getDivisionConfig(editingEvent.divisionId);
+                const arriveBeforeMinutes = config?.practiceArriveBeforeMinutes || 0;
+                if (arriveBeforeMinutes === 0) return null;
+
+                // Calculate arrival time from the current form start time
+                const startTime = editFormData.startTime || editingEvent.startTime;
+                const [hours, minutes] = startTime.split(':').map(Number);
+                const totalMinutes = hours * 60 + minutes - arriveBeforeMinutes;
+                const arrivalHours = Math.floor(totalMinutes / 60);
+                const arrivalMinutes = totalMinutes % 60;
+                const arrivalTime = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMinutes.toString().padStart(2, '0')}`;
+
+                return (
+                  <div className={styles.formRow}>
+                    <div className={styles.formGroup}>
+                      <label>Arrival Time</label>
+                      <span className={styles.teamDisplay}>
+                        {arrivalTime}
+                      </span>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Practice Starts</label>
+                      <span className={styles.teamDisplay}>
+                        {startTime}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Field selection for games and practices */}
               {(editingEvent.eventType === 'game' || editingEvent.eventType === 'practice') && (
                 <div className={styles.formRow}>
