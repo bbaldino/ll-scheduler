@@ -1207,6 +1207,28 @@ export function removeEventFromContext(
 }
 
 /**
+ * Rebuild the event indexes from scratch
+ * More efficient than incremental updates when many events have been moved
+ */
+export function rebuildEventIndexes(
+  context: ScoringContext,
+  events: ScheduledEventDraft[]
+): void {
+  // Clear existing indexes
+  if (context.eventsByDateResource) {
+    context.eventsByDateResource.clear();
+  }
+  if (context.eventsByDateTeam) {
+    context.eventsByDateTeam.clear();
+  }
+
+  // Rebuild from current event data
+  for (const event of events) {
+    addEventToContext(context, event);
+  }
+}
+
+/**
  * Update resource usage after scheduling an event
  */
 export function updateResourceUsage(
