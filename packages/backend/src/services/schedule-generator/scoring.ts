@@ -1169,6 +1169,44 @@ export function addEventToContext(
 }
 
 /**
+ * Remove an event from the context indexes
+ * Used when swapping/moving events to keep indexes in sync
+ * Note: The date/resourceId/teamIds should be the CURRENT values on the event
+ */
+export function removeEventFromContext(
+  context: ScoringContext,
+  event: ScheduledEventDraft
+): void {
+  // Remove from resource index
+  const resourceId = event.fieldId || event.cageId;
+  if (resourceId && context.eventsByDateResource) {
+    const resourceKey = `${event.date}-${resourceId}`;
+    const events = context.eventsByDateResource.get(resourceKey);
+    if (events) {
+      const idx = events.indexOf(event);
+      if (idx !== -1) {
+        events.splice(idx, 1);
+      }
+    }
+  }
+
+  // Remove from team index
+  if (context.eventsByDateTeam) {
+    const teamIds = [event.teamId, event.homeTeamId, event.awayTeamId].filter(Boolean) as string[];
+    for (const teamId of teamIds) {
+      const teamKey = `${event.date}-${teamId}`;
+      const events = context.eventsByDateTeam.get(teamKey);
+      if (events) {
+        const idx = events.indexOf(event);
+        if (idx !== -1) {
+          events.splice(idx, 1);
+        }
+      }
+    }
+  }
+}
+
+/**
  * Update resource usage after scheduling an event
  */
 export function updateResourceUsage(

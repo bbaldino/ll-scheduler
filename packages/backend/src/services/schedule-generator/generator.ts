@@ -46,6 +46,7 @@ import {
   updateResourceUsage,
   generateSlotKey,
   addEventToContext,
+  removeEventFromContext,
   type ScoringContext,
 } from './scoring.js';
 // Verbose logging - set to true to enable detailed console output
@@ -4240,12 +4241,24 @@ export class ScheduleGenerator {
               const orig2Time = game2.startTime;
               const orig2EndTime = game2.endTime;
 
+              // Remove from indexes BEFORE modifying (uses current date/resource values)
+              if (this.scoringContext) {
+                removeEventFromContext(this.scoringContext, game1);
+                removeEventFromContext(this.scoringContext, game2);
+              }
+
               game1.date = orig2Date;
               game1.startTime = orig2Time;
               game1.endTime = orig2EndTime;
               game2.date = orig1Date;
               game2.startTime = orig1Time;
               game2.endTime = orig1EndTime;
+
+              // Re-add to indexes with new date/resource values
+              if (this.scoringContext) {
+                addEventToContext(this.scoringContext, game1);
+                addEventToContext(this.scoringContext, game2);
+              }
 
               // Recalculate violations
               const newViolations = calculateViolations();
@@ -4269,7 +4282,12 @@ export class ScheduleGenerator {
                 swapsMade++;
                 foundImprovement = true;
               } else {
-                // Revert the swap
+                // Revert the swap - need to update indexes again
+                if (this.scoringContext) {
+                  removeEventFromContext(this.scoringContext, game1);
+                  removeEventFromContext(this.scoringContext, game2);
+                }
+
                 noImprovementCount++;
                 game1.date = orig1Date;
                 game1.startTime = orig1Time;
@@ -4277,6 +4295,11 @@ export class ScheduleGenerator {
                 game2.date = orig2Date;
                 game2.startTime = orig2Time;
                 game2.endTime = orig2EndTime;
+
+                if (this.scoringContext) {
+                  addEventToContext(this.scoringContext, game1);
+                  addEventToContext(this.scoringContext, game2);
+                }
               }
           }
         }
@@ -4599,12 +4622,24 @@ export class ScheduleGenerator {
             const orig2Time = otherGame.startTime;
             const orig2EndTime = otherGame.endTime;
 
+            // Remove from indexes BEFORE modifying
+            if (this.scoringContext) {
+              removeEventFromContext(this.scoringContext, violationGame);
+              removeEventFromContext(this.scoringContext, otherGame);
+            }
+
             violationGame.date = orig2Date;
             violationGame.startTime = orig2Time;
             violationGame.endTime = orig2EndTime;
             otherGame.date = orig1Date;
             otherGame.startTime = orig1Time;
             otherGame.endTime = orig1EndTime;
+
+            // Re-add to indexes with new values
+            if (this.scoringContext) {
+              addEventToContext(this.scoringContext, violationGame);
+              addEventToContext(this.scoringContext, otherGame);
+            }
 
             // Check if this improves the matchup spacing
             const newViolations = findViolations();
@@ -4631,7 +4666,12 @@ export class ScheduleGenerator {
               swapsMade++;
               foundImprovement = true;
             } else {
-              // Revert the swap
+              // Revert the swap - need to update indexes again
+              if (this.scoringContext) {
+                removeEventFromContext(this.scoringContext, violationGame);
+                removeEventFromContext(this.scoringContext, otherGame);
+              }
+
               blockedByNoImprovement++;
               violationGame.date = orig1Date;
               violationGame.startTime = orig1Time;
@@ -4639,6 +4679,11 @@ export class ScheduleGenerator {
               otherGame.date = orig2Date;
               otherGame.startTime = orig2Time;
               otherGame.endTime = orig2EndTime;
+
+              if (this.scoringContext) {
+                addEventToContext(this.scoringContext, violationGame);
+                addEventToContext(this.scoringContext, otherGame);
+              }
             }
           }
         }
@@ -4821,12 +4866,24 @@ export class ScheduleGenerator {
               // Skip this swap if it would create same-day conflicts
               if (wouldCreateSameDayConflict) continue;
 
+              // Remove from indexes BEFORE modifying
+              if (this.scoringContext) {
+                removeEventFromContext(this.scoringContext, game1);
+                removeEventFromContext(this.scoringContext, game2);
+              }
+
               game1.date = orig2Date;
               game1.startTime = orig2Time;
               game1.endTime = orig2EndTime;
               game2.date = orig1Date;
               game2.startTime = orig1Time;
               game2.endTime = orig1EndTime;
+
+              // Re-add to indexes with new values
+              if (this.scoringContext) {
+                addEventToContext(this.scoringContext, game1);
+                addEventToContext(this.scoringContext, game2);
+              }
 
               const newCount = countBackToBack();
 
@@ -4847,13 +4904,23 @@ export class ScheduleGenerator {
                 swapsMade++;
                 foundImprovement = true;
               } else {
-                // Revert
+                // Revert - need to update indexes again
+                if (this.scoringContext) {
+                  removeEventFromContext(this.scoringContext, game1);
+                  removeEventFromContext(this.scoringContext, game2);
+                }
+
                 game1.date = orig1Date;
                 game1.startTime = orig1Time;
                 game1.endTime = orig1EndTime;
                 game2.date = orig2Date;
                 game2.startTime = orig2Time;
                 game2.endTime = orig2EndTime;
+
+                if (this.scoringContext) {
+                  addEventToContext(this.scoringContext, game1);
+                  addEventToContext(this.scoringContext, game2);
+                }
               }
             }
           }
