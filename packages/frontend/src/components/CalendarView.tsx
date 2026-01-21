@@ -11,6 +11,7 @@ import type {
   EventType,
   AvailableSlot,
 } from '@ll-scheduler/shared';
+import { formatTime12Hour, formatTimeRange12Hour } from '../utils/timeFormat';
 import styles from './CalendarView.module.css';
 
 type ViewType = 'month' | 'week' | 'day';
@@ -355,7 +356,7 @@ export default function CalendarView({
   };
 
   const formatEventSummary = (event: ScheduledEvent) => {
-    const time = `${event.startTime}-${event.endTime}`;
+    const time = formatTimeRange12Hour(event.startTime, event.endTime);
     const division = getDivisionName(event.divisionId);
 
     if (event.eventType === 'game') {
@@ -739,7 +740,7 @@ export default function CalendarView({
                           }}
                           title={formatEventSummary(event)}
                         >
-                          {event.startTime} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
+                          {formatTime12Hour(event.startTime)} {event.eventType === 'game' ? '⚾' : event.eventType === 'practice' ? '🏃' : '🏏'}
                         </div>
                       ))}
                     </div>
@@ -752,9 +753,9 @@ export default function CalendarView({
                             <div
                               key={`avail-${slot.resourceId}-${idx}`}
                               className={`${styles.availableSlotItem} ${styles[`available${slot.resourceType.charAt(0).toUpperCase() + slot.resourceType.slice(1)}`]}`}
-                              title={`${slot.resourceName}: ${slot.startTime} - ${slot.endTime}`}
+                              title={`${slot.resourceName}: ${formatTimeRange12Hour(slot.startTime, slot.endTime)}`}
                             >
-                              <span className={styles.availableSlotTime}>{slot.startTime}</span>
+                              <span className={styles.availableSlotTime}>{formatTime12Hour(slot.startTime)}</span>
                               <span className={styles.availableSlotName}>{slot.resourceName}</span>
                             </div>
                           ))}
@@ -849,7 +850,7 @@ export default function CalendarView({
                       <div
                         key={`unused-${slot.resourceId}-${idx}`}
                         className={`${styles.unusedSlot} ${styles[`unused${slot.resourceType.charAt(0).toUpperCase() + slot.resourceType.slice(1)}`]}`}
-                        title={`${slot.resourceName} available: ${slot.startTime} - ${slot.endTime}`}
+                        title={`${slot.resourceName} available: ${formatTimeRange12Hour(slot.startTime, slot.endTime)}`}
                         style={{
                           position: 'absolute',
                           top: `${top}px`,
@@ -879,7 +880,7 @@ export default function CalendarView({
                         overflow: 'hidden',
                       }}
                     >
-                      <div className={styles.eventTime}>{event.startTime}-{event.endTime}</div>
+                      <div className={styles.eventTime}>{formatTimeRange12Hour(event.startTime, event.endTime)}</div>
                       <div className={styles.eventDetails}>
                         {event.eventType === 'game' && (
                           <>
@@ -943,7 +944,7 @@ export default function CalendarView({
                 <div
                   key={`unused-${slot.resourceId}-${idx}`}
                   className={`${styles.unusedSlot} ${styles[`unused${slot.resourceType.charAt(0).toUpperCase() + slot.resourceType.slice(1)}`]}`}
-                  title={`${slot.resourceName} available: ${slot.startTime} - ${slot.endTime}`}
+                  title={`${slot.resourceName} available: ${formatTimeRange12Hour(slot.startTime, slot.endTime)}`}
                   style={{
                     position: 'absolute',
                     top: `${topPos}px`,
@@ -954,7 +955,7 @@ export default function CalendarView({
                   }}
                 >
                   <span className={styles.unusedSlotLabel}>{slot.resourceName}</span>
-                  <span className={styles.unusedSlotTime}>{slot.startTime} - {slot.endTime}</span>
+                  <span className={styles.unusedSlotTime}>{formatTimeRange12Hour(slot.startTime, slot.endTime)}</span>
                 </div>
               );
             })}
@@ -974,7 +975,7 @@ export default function CalendarView({
                 }}
               >
                 <div className={styles.eventTime}>
-                  {event.startTime} - {event.endTime}
+                  {formatTimeRange12Hour(event.startTime, event.endTime)}
                 </div>
                 <div className={styles.eventType}>
                   {event.eventType === 'game' ? 'Game' : event.eventType === 'practice' ? 'Practice' : 'Cage Time'}
@@ -1105,18 +1106,19 @@ export default function CalendarView({
               {editingEvent.eventType === 'game' && (() => {
                 const gameStartTime = getGameStartTime(editingEvent);
                 if (!gameStartTime) return null;
+                const arrivalTime = editFormData.startTime || editingEvent.startTime;
                 return (
                   <div className={styles.formRow}>
                     <div className={styles.formGroup}>
                       <label>Arrival Time</label>
                       <span className={styles.teamDisplay}>
-                        {editFormData.startTime || editingEvent.startTime}
+                        {formatTime12Hour(arrivalTime)}
                       </span>
                     </div>
                     <div className={styles.formGroup}>
                       <label>Game Starts</label>
                       <span className={styles.teamDisplay}>
-                        {gameStartTime}
+                        {formatTime12Hour(gameStartTime)}
                       </span>
                     </div>
                   </div>
@@ -1147,20 +1149,20 @@ export default function CalendarView({
                 const totalMinutes = hours * 60 + minutes - arriveBeforeMinutes;
                 const arrivalHours = Math.floor(totalMinutes / 60);
                 const arrivalMinutes = totalMinutes % 60;
-                const arrivalTime = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMinutes.toString().padStart(2, '0')}`;
+                const arrivalTime24 = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMinutes.toString().padStart(2, '0')}`;
 
                 return (
                   <div className={styles.formRow}>
                     <div className={styles.formGroup}>
                       <label>Arrival Time</label>
                       <span className={styles.teamDisplay}>
-                        {arrivalTime}
+                        {formatTime12Hour(arrivalTime24)}
                       </span>
                     </div>
                     <div className={styles.formGroup}>
                       <label>Practice Starts</label>
                       <span className={styles.teamDisplay}>
-                        {startTime}
+                        {formatTime12Hour(startTime)}
                       </span>
                     </div>
                   </div>

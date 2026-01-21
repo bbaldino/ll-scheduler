@@ -5,6 +5,7 @@ import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
 import { SaveScheduleModal } from '../components/SaveScheduleModal';
 import { RestoreScheduleModal } from '../components/RestoreScheduleModal';
 import ScheduleComparisonModal from '../components/ScheduleComparisonModal';
+import { formatTimeRange12Hour } from '../utils/timeFormat';
 import {
   fetchScheduledEvents,
   createScheduledEvent,
@@ -1149,7 +1150,7 @@ export default function ScheduledEventsPage() {
                               {EVENT_TYPE_LABELS[event.eventType]}
                             </span>
                             <span className={styles.eventTime}>
-                              {event.startTime} - {event.endTime}
+                              {formatTimeRange12Hour(event.startTime, event.endTime)}
                             </span>
                             <span className={`${styles.eventStatus} ${styles[event.status]}`}>
                               {EVENT_STATUS_LABELS[event.status]}

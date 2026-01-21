@@ -1,13 +1,10 @@
 import styles from './AvailabilityForm.module.css';
+import { formatTime12Hour } from '../utils/timeFormat';
 
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-export function formatTime12Hour(time: string): string {
-  const [hours, minutes] = time.split(':').map(Number);
-  const period = hours >= 12 ? 'PM' : 'AM';
-  const displayHours = hours % 12 || 12;
-  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
-}
+// Re-export for backwards compatibility
+export { formatTime12Hour };
 
 export interface AvailabilityFormData {
   dayOfWeek: number;
