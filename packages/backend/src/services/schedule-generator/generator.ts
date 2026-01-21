@@ -1066,6 +1066,8 @@ export class ScheduleGenerator {
       verboseLog('SCHEDULING CAGE SESSIONS');
       verboseLog('-'.repeat(80));
       stepStart = Date.now();
+      // Build warmup blocks from scheduled games before scheduling cage sessions
+      this.buildGameWarmupBlocks();
       await this.scheduleCageSessions();
       console.log(`  scheduleCageSessions: ${Date.now() - stepStart}ms`);
       verboseLog(`✓ Cage sessions scheduled: ${this.scheduledEvents.filter(e => e.eventType === 'cage').length}`);
@@ -6596,6 +6598,77 @@ export class ScheduleGenerator {
       return true;
     }
     return compatibility.includes(divisionId);
+  }
+
+  /**
+   * Build game warmup blocks from scheduled games.
+   * For each game, creates warmup blocks on compatible cages for the period
+   * before the game starts (based on gameArriveBeforeHours).
+   */
+  private buildGameWarmupBlocks(): void {
+    if (!this.scoringContext) return;
+
+    // Initialize the warmup blocks map
+    this.scoringContext.gameWarmupBlocks = new Map();
+
+    // Get all scheduled games
+    const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+
+    for (const game of scheduledGames) {
+      const config = this.divisionConfigs.get(game.divisionId);
+      if (!config) continue;
+
+      const arriveBeforeHours = config.gameArriveBeforeHours || 0;
+      if (arriveBeforeHours <= 0) continue;
+
+      // Only block cages for divisions that have cage time
+      if (!config.cageSessionsPerWeek || config.cageSessionsPerWeek <= 0) continue;
+
+      // Calculate warmup window: (game_start - arrive_before) to game_start
+      const [gameHours, gameMinutes] = game.startTime.split(':').map(Number);
+      const gameStartMinutes = gameHours * 60 + gameMinutes;
+      const warmupStartMinutes = gameStartMinutes - Math.round(arriveBeforeHours * 60);
+
+      // Format times as HH:MM
+      const formatTime = (minutes: number): string => {
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+      };
+
+      const warmupStartTime = formatTime(Math.max(0, warmupStartMinutes));
+      const warmupEndTime = game.startTime;
+
+      // Find all cages compatible with this division
+      for (const [cageId, compatibility] of this.cageDivisionCompatibility) {
+        // Empty compatibility means all divisions allowed
+        const isCompatible = compatibility.length === 0 || compatibility.includes(game.divisionId);
+        if (!isCompatible) continue;
+
+        const key = `${game.date}-${cageId}`;
+        if (!this.scoringContext.gameWarmupBlocks.has(key)) {
+          this.scoringContext.gameWarmupBlocks.set(key, []);
+        }
+
+        // Create a unique game ID for debugging (combining date, time, and teams)
+        const gameId = `${game.date}-${game.startTime}-${game.homeTeamId}-${game.awayTeamId}`;
+
+        this.scoringContext.gameWarmupBlocks.get(key)!.push({
+          startTime: warmupStartTime,
+          endTime: warmupEndTime,
+          gameId,
+        });
+      }
+    }
+
+    // Log warmup blocks created
+    let totalBlocks = 0;
+    for (const blocks of this.scoringContext.gameWarmupBlocks.values()) {
+      totalBlocks += blocks.length;
+    }
+    if (totalBlocks > 0) {
+      this.log('info', 'cage', `Built ${totalBlocks} warmup blocks for cage scheduling`);
+    }
   }
 
   /**

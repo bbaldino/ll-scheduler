@@ -215,7 +215,6 @@ export interface ScoringWeights {
   weekBalance: number; // Prefer meeting weekly requirements evenly
   resourceUtilization: number; // Prefer underutilized resources
   gameDayPreference: number; // Match division's preferred game days
-  timeQuality: number; // Prefer mid-afternoon times (for practices)
   homeAwayBalance: number; // For games: balance home/away assignments across season
   matchupHomeAwayBalance: number; // For games: balance home/away within each specific matchup
   dayGap: number; // Prefer spacing events apart (1 = 2+ day gap, 0.5 = consecutive)
@@ -249,7 +248,6 @@ export const DEFAULT_SCORING_WEIGHTS: ScoringWeights = {
   weekBalance: 100,
   resourceUtilization: 50,
   gameDayPreference: 1000, // Very high weight so required days strongly dominate day selection
-  timeQuality: 30,
   homeAwayBalance: 70,
   matchupHomeAwayBalance: 150, // Strong preference for balanced home/away within each matchup
   dayGap: 400, // Strong preference to avoid back-to-back games
@@ -302,7 +300,6 @@ export interface ScoredCandidate extends PlacementCandidate {
     weekBalance: number;
     resourceUtilization: number;
     gameDayPreference: number;
-    timeQuality: number;
     homeAwayBalance: number;
     matchupHomeAwayBalance: number;
     dayGap: number;

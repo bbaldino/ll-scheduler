@@ -609,6 +609,7 @@ interface CandidateRejectionStats {
   durationTooShort: number;
   resourceConflict: number;
   teamAlreadyHasEvent: number;
+  warmupConflict: number;
   total: number;
 }
 
@@ -630,6 +631,7 @@ export function generateCandidatesForTeamEvent(
     durationTooShort: 0,
     resourceConflict: 0,
     teamAlreadyHasEvent: 0,
+    warmupConflict: 0,
     total: 0,
   };
   const dateStats: Map<string, { slots: number; rejected: string[]; accepted: number }> = new Map();
@@ -721,6 +723,13 @@ export function generateCandidatesForTeamEvent(
         continue;
       }
 
+      // Check for warmup conflicts (only applies to cage events)
+      if (eventType === 'cage' && hasWarmupConflict(slot.resourceId, slot.slot.date, startTime, endTime, context)) {
+        rejectionStats.warmupConflict++;
+        stats.rejected.push('warmup_conflict');
+        continue;
+      }
+
       stats.accepted++;
       candidates.push({
         eventType,
@@ -738,7 +747,7 @@ export function generateCandidatesForTeamEvent(
   }
 
   if (enableLogging) {
-    verboseLog(`      [generateCandidates] Rejection stats: duration=${rejectionStats.durationTooShort}, resourceConflict=${rejectionStats.resourceConflict}, teamHasEvent=${rejectionStats.teamAlreadyHasEvent}`);
+    verboseLog(`      [generateCandidates] Rejection stats: duration=${rejectionStats.durationTooShort}, resourceConflict=${rejectionStats.resourceConflict}, teamHasEvent=${rejectionStats.teamAlreadyHasEvent}, warmupConflict=${rejectionStats.warmupConflict}`);
     verboseLog(`      [generateCandidates] Generated ${candidates.length} candidates`);
 
     // Log per-date breakdown
@@ -899,7 +908,7 @@ function hasTeamTimeConflict(
 /**
  * Check if two time ranges overlap
  */
-function timesOverlap(
+export function timesOverlap(
   start1: string,
   end1: string,
   start2: string,
@@ -914,6 +923,27 @@ function timesOverlap(
   const s2 = toMinutes(start2);
   const e2 = toMinutes(end2);
   return s1 < e2 && s2 < e1;
+}
+
+/**
+ * Check if a cage slot conflicts with any game warmup blocks
+ */
+export function hasWarmupConflict(
+  cageId: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  context: ScoringContext
+): boolean {
+  if (!context.gameWarmupBlocks) return false;
+
+  const key = `${date}-${cageId}`;
+  const blocks = context.gameWarmupBlocks.get(key);
+  if (!blocks || blocks.length === 0) return false;
+
+  return blocks.some(block =>
+    timesOverlap(block.startTime, block.endTime, startTime, endTime)
+  );
 }
 
 /**

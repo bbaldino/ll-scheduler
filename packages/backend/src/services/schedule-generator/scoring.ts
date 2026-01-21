@@ -12,6 +12,16 @@ import { parseLocalDate } from './draft.js';
 export { DEFAULT_SCORING_WEIGHTS };
 
 /**
+ * A warmup block representing a time window when a cage is blocked
+ * due to game warmup activities
+ */
+export interface WarmupBlock {
+  startTime: string;  // HH:MM
+  endTime: string;    // HH:MM
+  gameId: string;     // For debugging/logging
+}
+
+/**
  * Context information needed for scoring
  */
 export interface ScoringContext {
@@ -37,6 +47,8 @@ export interface ScoringContext {
   eventsByDateResource?: Map<string, ScheduledEventDraft[]>;
   // Index for fast team conflict checking: "date-teamId" -> events involving that team on that date
   eventsByDateTeam?: Map<string, ScheduledEventDraft[]>;
+  // Game warmup blocks: "date-cageId" -> warmup windows when cage is blocked for game warmup
+  gameWarmupBlocks?: Map<string, WarmupBlock[]>;
 }
 
 /**
@@ -47,7 +59,6 @@ export interface ScoreBreakdown {
   weekBalance: number;
   resourceUtilization: number;
   gameDayPreference: number;
-  timeQuality: number;
   homeAwayBalance: number;
   matchupHomeAwayBalance: number;
   dayGap: number;
@@ -86,7 +97,6 @@ export function calculatePlacementScore(
     weekBalance: 0,
     resourceUtilization: 0,
     gameDayPreference: 0,
-    timeQuality: 0,
     homeAwayBalance: 0,
     matchupHomeAwayBalance: 0,
     dayGap: 0,
@@ -109,7 +119,6 @@ export function calculatePlacementScore(
   breakdown.daySpread = calculateDaySpreadRaw(candidate.dayOfWeek, teamState) * weights.daySpread;
   breakdown.weekBalance = calculateWeekBalanceRaw(candidate.eventType, candidate.date, teamState, context) * weights.weekBalance;
   breakdown.resourceUtilization = calculateResourceUtilizationRaw(candidate.resourceId, candidate.date, context) * weights.resourceUtilization;
-  breakdown.timeQuality = calculateTimeQualityRaw(candidate.startTime) * weights.timeQuality;
   breakdown.dayGap = calculateDayGapRaw(candidate.date, teamState) * weights.dayGap;
   breakdown.timeAdjacency = calculateTimeAdjacencyRaw(candidate, context) * weights.timeAdjacency;
 
@@ -148,6 +157,12 @@ export function calculatePlacementScore(
     breakdown.backToBackPracticeBalance = calculateBackToBackPracticeBalanceRaw(candidate.date, teamState, context) * weights.backToBackPracticeBalance;
     // Penalize creating large gaps (> 5 days from last practice)
     breakdown.largeGapPenalty = calculateLargeGapPenaltyRaw(candidate.date, teamState) * weights.largeGapPenalty;
+  }
+
+  // Cage-specific factors
+  if (candidate.eventType === 'cage') {
+    // Apply earliestTime for cage sessions - prefer earlier available slots
+    breakdown.earliestTime = calculateEarliestTimeRaw(candidate, context) * weights.earliestTime;
   }
 
   // Binary penalty: same-day event (only for same resource type)
@@ -327,36 +342,6 @@ export function calculateFieldPreferenceRaw(
   // Score from 1.0 (first preference) down to 0.5 (last preference)
   // This ensures any preferred field scores higher than non-preferred
   return 1.0 - (index / preferences.length) * 0.5;
-}
-
-/**
- * Calculate time quality raw score
- * Returns 0-1 where 1 = ideal time (3-6pm), ~0.4 = far from ideal
- */
-export function calculateTimeQualityRaw(startTime: string): number {
-  const [hours, minutes] = startTime.split(':').map(Number);
-  const timeInMinutes = hours * 60 + minutes;
-
-  // Ideal range: 3pm-6pm
-  const idealStart = 15 * 60; // 3pm
-  const idealEnd = 18 * 60; // 6pm
-
-  if (timeInMinutes >= idealStart && timeInMinutes <= idealEnd) {
-    return 1.0;
-  }
-
-  // Calculate distance from ideal range
-  let distance: number;
-  if (timeInMinutes < idealStart) {
-    distance = idealStart - timeInMinutes;
-  } else {
-    distance = timeInMinutes - idealEnd;
-  }
-
-  // Score decreases with distance (max penalty at 4+ hours away)
-  const maxDistance = 4 * 60; // 4 hours
-  const penalty = Math.min(distance / maxDistance, 1);
-  return 1 - penalty * 0.6; // Max 60% penalty, so minimum is 0.4
 }
 
 /**
