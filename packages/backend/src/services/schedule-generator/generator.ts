@@ -5090,8 +5090,8 @@ export class ScheduleGenerator {
             break;
           }
 
-          // Check for conflicts with already scheduled events
-          const hasConflict = this.scheduledEvents.some((event) => {
+          // Check for conflicts with already scheduled events (resource conflicts)
+          const hasResourceConflict = this.scheduledEvents.some((event) => {
             if (event.date !== sunday) return false;
             if (event.fieldId !== fieldId && event.cageId !== cageId) return false;
             // Check time overlap
@@ -5102,8 +5102,23 @@ export class ScheduleGenerator {
             return newStart < eventEnd && newEnd > eventStart;
           });
 
-          if (hasConflict) {
-            verboseLog(`  ${divName}: Time conflict at ${slotStartTime} on ${sunday}, skipping`);
+          if (hasResourceConflict) {
+            verboseLog(`  ${divName}: Resource conflict at ${slotStartTime} on ${sunday}, skipping`);
+            currentStartMinutes += totalDurationMinutes;
+            continue;
+          }
+
+          // Check if either team has a game on this Sunday - games block all other events
+          const t1State = this.teamSchedulingStates.get(team1Id);
+          const t2State = this.teamSchedulingStates.get(team2Id);
+          const team1HasGame = t1State?.gameDates.includes(sunday);
+          const team2HasGame = t2State?.gameDates.includes(sunday);
+
+          if (team1HasGame || team2HasGame) {
+            const t1Name = teams.find((t) => t.id === team1Id)?.name || team1Id;
+            const t2Name = teams.find((t) => t.id === team2Id)?.name || team2Id;
+            const conflictingTeam = team1HasGame ? t1Name : t2Name;
+            verboseLog(`  ${divName}: Skipping pair ${t1Name}/${t2Name} on ${sunday} - ${conflictingTeam} has a game`);
             currentStartMinutes += totalDurationMinutes;
             continue;
           }
@@ -5626,6 +5641,20 @@ export class ScheduleGenerator {
               selectedScore: bestCandidate.score.toFixed(1),
               topCandidatesByDate: topByDate,
             });
+          }
+
+          // Safeguard: Double-check that team doesn't have a game on this date
+          // This should never happen since generateCandidatesForTeamEvent filters out game dates,
+          // but this catches any edge cases that might slip through
+          if (teamState.gameDates.includes(bestCandidate.date)) {
+            this.log('error', 'practice', `BUG: Attempted to schedule practice for ${teamState.teamName} on ${bestCandidate.date} but team has a game that day!`, {
+              teamId: teamState.teamId,
+              teamName: teamState.teamName,
+              date: bestCandidate.date,
+              gameDates: teamState.gameDates,
+              candidateScore: bestCandidate.score,
+            });
+            continue;
           }
 
           // Convert to event draft and add to scheduled events
@@ -6303,6 +6332,20 @@ export class ScheduleGenerator {
             continue;
           }
 
+          // Safeguard: Double-check that team doesn't have a game on this date
+          // This should never happen since generateCandidatesForTeamEvent filters out game dates,
+          // but this catches any edge cases that might slip through
+          if (teamState.gameDates.includes(bestCandidate.date)) {
+            this.log('error', 'cage', `BUG: Attempted to schedule cage session for ${teamState.teamName} on ${bestCandidate.date} but team has a game that day!`, {
+              teamId: teamState.teamId,
+              teamName: teamState.teamName,
+              date: bestCandidate.date,
+              gameDates: teamState.gameDates,
+              candidateScore: bestCandidate.score,
+            });
+            continue;
+          }
+
           // Convert to event draft and add to scheduled events
           const eventDraft = candidateToEventDraft(bestCandidate, teamState.divisionId);
           this.scheduledEvents.push(eventDraft);
@@ -6483,31 +6526,29 @@ export class ScheduleGenerator {
     for (const rs of filteredCageSlots) {
       const dayName = ScheduleGenerator.DAY_NAMES[rs.slot.dayOfWeek];
 
-      // On weekdays, skip days where team already has a practice
-      if (this.isWeekday(rs.slot.dayOfWeek)) {
-        let teamHasPracticeToday = false;
-        if (this.scoringContext?.eventsByDateTeam) {
-          const key = `${rs.slot.date}-${teamId}`;
-          const teamEvents = this.scoringContext.eventsByDateTeam.get(key);
-          teamHasPracticeToday = teamEvents?.some(e => e.eventType === 'practice') ?? false;
-        } else {
-          teamHasPracticeToday = this.scheduledEvents.some(event =>
-            event.date === rs.slot.date &&
-            event.eventType === 'practice' &&
-            event.teamId === teamId
-          );
+      // Skip days where team already has a practice (no cage + practice on same day)
+      let teamHasPracticeToday = false;
+      if (this.scoringContext?.eventsByDateTeam) {
+        const key = `${rs.slot.date}-${teamId}`;
+        const teamEvents = this.scoringContext.eventsByDateTeam.get(key);
+        teamHasPracticeToday = teamEvents?.some(e => e.eventType === 'practice') ?? false;
+      } else {
+        teamHasPracticeToday = this.scheduledEvents.some(event =>
+          event.date === rs.slot.date &&
+          event.eventType === 'practice' &&
+          event.teamId === teamId
+        );
+      }
+      if (teamHasPracticeToday) {
+        skipReasons['has_practice'] = (skipReasons['has_practice'] || 0) + 1;
+        if (skipDetails.length < 10) {
+          skipDetails.push({
+            date: rs.slot.date,
+            cage: rs.resourceName,
+            reason: `${teamName} already has practice on this ${dayName}`,
+          });
         }
-        if (teamHasPracticeToday) {
-          skipReasons['weekday_has_practice'] = (skipReasons['weekday_has_practice'] || 0) + 1;
-          if (skipDetails.length < 10) {
-            skipDetails.push({
-              date: rs.slot.date,
-              cage: rs.resourceName,
-              reason: `${teamName} already has practice on this ${dayName} (weekday rule: no cage + practice on same weekday)`,
-            });
-          }
-          continue;
-        }
+        continue;
       }
 
       // Try to find a time within this availability window
@@ -6520,6 +6561,26 @@ export class ScheduleGenerator {
       );
 
       if (result.time) {
+        // Safeguard: Check that team doesn't have a game on this date
+        const teamStateForCheck = this.teamSchedulingStates.get(teamId);
+        if (teamStateForCheck?.gameDates.includes(rs.slot.date)) {
+          skipReasons['team_has_game'] = (skipReasons['team_has_game'] || 0) + 1;
+          if (skipDetails.length < 10) {
+            skipDetails.push({
+              date: rs.slot.date,
+              cage: rs.resourceName,
+              reason: `${teamName} has a game on this date`,
+            });
+          }
+          this.log('warning', 'cage', `Skipping cage slot for ${teamName} on ${rs.slot.date} - team has a game`, {
+            teamId,
+            teamName,
+            date: rs.slot.date,
+            gameDates: teamStateForCheck.gameDates,
+          });
+          continue;
+        }
+
         verboseLog(`      ✅ Chose slot: ${rs.slot.date} ${result.time.startTime}-${result.time.endTime} at cage ${rs.resourceId}`);
 
         const cageEventDraft = {

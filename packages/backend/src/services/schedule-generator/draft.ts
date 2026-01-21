@@ -640,9 +640,10 @@ export function generateCandidatesForTeamEvent(
   const weekSlots = resourceSlots.filter((rs) => week.dates.includes(rs.slot.date));
 
   // Determine which dates set to check based on event type
-  // Cage events only conflict with other cage events on the same date
-  // Field events (practice) only conflict with other field events on the same date
   const relevantDatesUsed = eventType === 'cage' ? teamState.cageDatesUsed : teamState.fieldDatesUsed;
+  // Also check the OTHER type - practices and cages should not be on the same day
+  // (Exception: Sunday combo practices schedule both, but those are handled separately)
+  const otherDatesUsed = eventType === 'cage' ? teamState.fieldDatesUsed : teamState.cageDatesUsed;
 
   if (enableLogging) {
     verboseLog(`      [generateCandidates] Team ${teamState.teamName}: ${weekSlots.length} slots in week ${week.weekNumber + 1}`);
@@ -671,10 +672,19 @@ export function generateCandidatesForTeamEvent(
     }
 
     // Check if team already has a same-type event on this date
-    // (cage + field on same day is OK, but not two field events or two cage events)
     if (relevantDatesUsed.has(slot.slot.date)) {
       rejectionStats.teamAlreadyHasEvent++;
       stats.rejected.push(`team_has_${eventType}_event`);
+      continue;
+    }
+
+    // Check if team has the OTHER type of event on this date
+    // (practices and cages should not be on the same day, except for Sunday combo practices
+    // which are scheduled separately before this runs)
+    if (otherDatesUsed.has(slot.slot.date)) {
+      rejectionStats.teamAlreadyHasEvent++;
+      const otherType = eventType === 'cage' ? 'practice' : 'cage';
+      stats.rejected.push(`team_has_${otherType}_event`);
       continue;
     }
 
