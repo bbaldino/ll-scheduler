@@ -475,6 +475,70 @@ describe('Schedule Generation Regression Tests', () => {
     });
   });
 
+  describe('Game Count Balance Per Team', () => {
+    it('A: game count delta between teams should be <= 2', () => {
+      const divisionId = divisions.find(d => d.name === 'A')?.id;
+      expect(divisionId).toBeDefined();
+
+      const teamIds = divisionTeamMap.get(divisionId!)!;
+      const teamGames = new Map<string, number>();
+
+      for (const teamId of teamIds) {
+        const count = scheduledGames.filter(g =>
+          g.divisionId === divisionId && (g.homeTeamId === teamId || g.awayTeamId === teamId)
+        ).length;
+        teamGames.set(teamId, count);
+      }
+
+      const counts = Array.from(teamGames.values());
+      const minGames = Math.min(...counts);
+      const maxGames = Math.max(...counts);
+      const delta = maxGames - minGames;
+
+      const summary = Array.from(teamGames.entries())
+        .map(([teamId, count]) => {
+          const team = teams.find(t => t.id === teamId);
+          return `${team?.name || teamId}: ${count}`;
+        })
+        .join(', ');
+
+      console.log(`A game counts: ${summary}, delta=${delta}`);
+
+      expect(delta).toBeLessThanOrEqual(2);
+    });
+
+    it('Majors: game count delta between teams should be <= 2', () => {
+      const divisionId = divisions.find(d => d.name === 'Majors')?.id;
+      expect(divisionId).toBeDefined();
+
+      const teamIds = divisionTeamMap.get(divisionId!)!;
+      const teamGames = new Map<string, number>();
+
+      for (const teamId of teamIds) {
+        const count = scheduledGames.filter(g =>
+          g.divisionId === divisionId && (g.homeTeamId === teamId || g.awayTeamId === teamId)
+        ).length;
+        teamGames.set(teamId, count);
+      }
+
+      const counts = Array.from(teamGames.values());
+      const minGames = Math.min(...counts);
+      const maxGames = Math.max(...counts);
+      const delta = maxGames - minGames;
+
+      const summary = Array.from(teamGames.entries())
+        .map(([teamId, count]) => {
+          const team = teams.find(t => t.id === teamId);
+          return `${team?.name || teamId}: ${count}`;
+        })
+        .join(', ');
+
+      console.log(`Majors game counts: ${summary}, delta=${delta}`);
+
+      expect(delta).toBeLessThanOrEqual(2);
+    });
+  });
+
   describe('Game Spacing (Short Rest) Delta', () => {
     // Majors short rest delta increased from 1 to 2 because short rest rebalancing
     // now respects matchup spacing (won't swap if it creates < 7 day same-matchup gap)

@@ -2720,6 +2720,23 @@ export class ScheduleGenerator {
     const totalGames = this.scheduledEvents.filter((e) => e.eventType === 'game').length;
     verboseLog(`\n✅ Game scheduling complete. Scheduled: ${totalScheduled}, Failed: ${failedToSchedule}`);
 
+    // Report per-team game counts and check for imbalance
+    for (const division of divisionMatchupsList) {
+      const teamGameCounts: Array<{ name: string; games: number }> = [];
+      for (const team of division.teams) {
+        const teamState = this.teamSchedulingStates.get(team.id);
+        if (teamState) {
+          teamGameCounts.push({ name: team.name, games: teamState.gamesScheduled });
+        }
+      }
+      const counts = teamGameCounts.map(t => t.games);
+      const minGames = Math.min(...counts);
+      const maxGames = Math.max(...counts);
+      const delta = maxGames - minGames;
+      const countSummary = teamGameCounts.map(t => `${t.name}:${t.games}`).join(', ');
+      console.log(`  [GameBalance] ${division.divisionName}: ${countSummary} (delta=${delta}${delta > 2 ? ' ⚠️' : ''})`);
+    }
+
     // Report per-team game counts and check for weekly shortfalls
     for (const division of divisionMatchupsList) {
       verboseLog(`\n${division.divisionName} game counts:`);
@@ -2963,6 +2980,15 @@ export class ScheduleGenerator {
             const totalPriorityGames = teamIds.reduce((sum, id) => sum + (priorityGamesPerTeam.get(id) || 0), 0);
             const avgPriorityGames = teamIds.length > 0 ? totalPriorityGames / teamIds.length : 0;
 
+            // Helper to get cumulative games across all priority levels
+            const getCumulativeGames = (teamId: string): number => {
+              let total = 0;
+              for (const [, priorityMap] of gamesPerTeamByPriority) {
+                total += priorityMap.get(teamId) || 0;
+              }
+              return total;
+            };
+
             queue.sort((a, b) => {
               // First: overflow matchups come first (they couldn't fit on higher-priority days)
               const aKey = ScheduleGenerator.createMatchupKey(a.homeTeamId, a.awayTeamId, a.targetWeek);
@@ -2972,7 +2998,22 @@ export class ScheduleGenerator {
               if (aIsOverflow && !bIsOverflow) return -1;
               if (!aIsOverflow && bIsOverflow) return 1;
 
-              // Second: short rest balance - teams with more short rest games go first
+              // Second: CUMULATIVE game fairness - teams with fewer total games go first
+              // This is the primary fairness mechanism to ensure balanced game distribution
+              const aHomeCumulative = getCumulativeGames(a.homeTeamId);
+              const aAwayCumulative = getCumulativeGames(a.awayTeamId);
+              const bHomeCumulative = getCumulativeGames(b.homeTeamId);
+              const bAwayCumulative = getCumulativeGames(b.awayTeamId);
+              // Prioritize matchups where the team with fewer games is involved
+              const aMinCumulative = Math.min(aHomeCumulative, aAwayCumulative);
+              const bMinCumulative = Math.min(bHomeCumulative, bAwayCumulative);
+              if (aMinCumulative !== bMinCumulative) return aMinCumulative - bMinCumulative;
+              // If mins are equal, prefer matchups where both teams have fewer games
+              const aTotalCumulative = aHomeCumulative + aAwayCumulative;
+              const bTotalCumulative = bHomeCumulative + bAwayCumulative;
+              if (aTotalCumulative !== bTotalCumulative) return aTotalCumulative - bTotalCumulative;
+
+              // Third: short rest balance - teams with more short rest games go first
               // This gives them first pick of slots that don't create more short rest
               const aHomeShortRest = this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0;
               const aAwayShortRest = this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0;
@@ -2984,18 +3025,7 @@ export class ScheduleGenerator {
                 return bMaxShortRest - aMaxShortRest; // Higher short rest count goes first
               }
 
-              // Third: team fairness
-              const aHome = priorityGamesPerTeam.get(a.homeTeamId) || 0;
-              const aAway = priorityGamesPerTeam.get(a.awayTeamId) || 0;
-              const bHome = priorityGamesPerTeam.get(b.homeTeamId) || 0;
-              const bAway = priorityGamesPerTeam.get(b.awayTeamId) || 0;
-              const aMin = Math.min(aHome, aAway);
-              const bMin = Math.min(bHome, bAway);
-              if (aMin !== bMin) return aMin - bMin;
-              const aDeficit = (avgPriorityGames - aHome) + (avgPriorityGames - aAway);
-              const bDeficit = (avgPriorityGames - bHome) + (avgPriorityGames - bAway);
-              if (aDeficit !== bDeficit) return bDeficit - aDeficit;
-              return Math.max(aHome, aAway) - Math.max(bHome, bAway);
+              return 0;
             });
 
             // Try to schedule on ANY available day in this tier
@@ -3080,6 +3110,18 @@ export class ScheduleGenerator {
                   if (homeGamesThisWeek >= maxGamesPerWeek || awayGamesThisWeek >= maxGamesPerWeek) {
                     continue; // Try next matchup - one of the teams is at max cap
                   }
+                }
+
+                // Enforce fairness: skip if either team is too far ahead
+                // This works together with the prioritized sorting to ensure no team gets more than 1 game ahead
+                const homeCumulativeGames = getCumulativeGames(matchup.homeTeamId);
+                const awayCumulativeGames = getCumulativeGames(matchup.awayTeamId);
+                const allCumulativeGameCounts = teamIds.map(id => getCumulativeGames(id));
+                const minCumulativeGames = Math.min(...allCumulativeGameCounts);
+                // Use >= because after scheduling, both teams will have +1, so a team at min+1 would become min+2
+                if (homeCumulativeGames >= minCumulativeGames + 1 ||
+                    awayCumulativeGames >= minCumulativeGames + 1) {
+                  continue; // Try next matchup - one of the teams is too far ahead
                 }
 
                 // Found a valid matchup to schedule!
