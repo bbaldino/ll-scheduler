@@ -276,3 +276,54 @@ export interface TeamWeeklyGamesReport {
 export interface EvaluateScheduleRequest {
   seasonId: string;
 }
+
+// Request type for comparing schedules
+export interface CompareSchedulesRequest {
+  seasonId: string;
+  savedScheduleId: string; // Compare current schedule against this saved schedule
+}
+
+// Comparison result for a single metric
+export interface MetricComparison {
+  passed1: boolean; // Did it pass for saved schedule?
+  passed2: boolean; // Did it pass for current schedule?
+  change: 'improved' | 'regressed' | 'unchanged';
+  summary1?: string; // Summary from saved schedule
+  summary2?: string; // Summary from current schedule
+}
+
+// Full schedule comparison result
+export interface ScheduleComparisonResult {
+  timestamp: string;
+  seasonId: string;
+  savedScheduleId: string;
+  savedScheduleName: string;
+
+  // Overall scores
+  overallScore1: number; // Saved schedule score
+  overallScore2: number; // Current schedule score
+  overallScoreDelta: number; // Current - Saved (positive = improved)
+
+  // Per-metric comparisons
+  metrics: {
+    weeklyRequirements: MetricComparison;
+    homeAwayBalance: MetricComparison;
+    constraintViolations: MetricComparison;
+    gameDayPreferences: MetricComparison;
+    gameSpacing: MetricComparison;
+    practiceSpacing: MetricComparison;
+    matchupBalance: MetricComparison;
+    matchupSpacing: MetricComparison;
+    gameSlotEfficiency: MetricComparison;
+    weeklyGamesDistribution: MetricComparison;
+  };
+
+  // Summary counts
+  improvementCount: number;
+  regressionCount: number;
+  unchangedCount: number;
+
+  // Full evaluation results for detailed comparison
+  savedEvaluation: ScheduleEvaluationResult;
+  currentEvaluation: ScheduleEvaluationResult;
+}

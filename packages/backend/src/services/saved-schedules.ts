@@ -306,3 +306,44 @@ export async function deleteSavedSchedule(
 
   return (result.meta.changes ?? 0) > 0;
 }
+
+/**
+ * Get saved schedule events as ScheduledEvent objects
+ * Useful for evaluation without restoring
+ */
+export async function getSavedScheduleEvents(
+  db: D1Database,
+  savedScheduleId: string
+): Promise<ScheduledEvent[]> {
+  // Get the saved schedule to get the season ID
+  const savedSchedule = await getSavedScheduleById(db, savedScheduleId);
+  if (!savedSchedule) {
+    throw new Error('Saved schedule not found');
+  }
+
+  const result = await db
+    .prepare('SELECT * FROM saved_schedule_events WHERE saved_schedule_id = ?')
+    .bind(savedScheduleId)
+    .all<SavedScheduleEventRow>();
+
+  const rows = result.results || [];
+
+  return rows.map((row): ScheduledEvent => ({
+    id: row.original_event_id, // Use original ID for consistency
+    seasonId: savedSchedule.seasonId,
+    divisionId: row.division_id,
+    eventType: row.event_type as ScheduledEvent['eventType'],
+    date: row.date,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    fieldId: row.field_id || undefined,
+    cageId: row.cage_id || undefined,
+    homeTeamId: row.home_team_id || undefined,
+    awayTeamId: row.away_team_id || undefined,
+    teamId: row.team_id || undefined,
+    status: row.status as ScheduledEvent['status'],
+    notes: row.notes || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.created_at,
+  }));
+}

@@ -34,6 +34,8 @@ import type {
   SeasonField,
   SeasonCage,
   GameDayPreference,
+  ScheduleComparisonResult,
+  MetricComparison,
 } from '@ll-scheduler/shared';
 import { listScheduledEvents } from './scheduled-events.js';
 import { getSeasonById } from './seasons.js';
@@ -42,29 +44,21 @@ import { listDivisions } from './divisions.js';
 import { listDivisionConfigsBySeasonId } from './division-configs.js';
 import { listSeasonFields } from './season-fields.js';
 import { listSeasonCages } from './season-cages.js';
+import { getSavedScheduleById, getSavedScheduleEvents } from './saved-schedules.js';
 
 /**
- * Main evaluation function that runs all checks on a schedule
+ * Internal evaluation function that runs all checks on provided events
+ * Used by both evaluateSchedule and evaluateSavedSchedule
  */
-export async function evaluateSchedule(
-  db: D1Database,
-  seasonId: string
-): Promise<ScheduleEvaluationResult> {
-  // Fetch season
-  const season = await getSeasonById(db, seasonId);
-  if (!season) {
-    throw new Error('Season not found');
-  }
-
-  const [events, teams, divisions, divisionConfigs, seasonFields, seasonCages] = await Promise.all([
-    listScheduledEvents(db, { seasonId }),
-    listTeams(db, seasonId),
-    listDivisions(db),
-    listDivisionConfigsBySeasonId(db, seasonId),
-    listSeasonFields(db, seasonId),
-    listSeasonCages(db, seasonId),
-  ]);
-
+function evaluateEvents(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisions: Division[],
+  divisionConfigs: DivisionConfig[],
+  seasonFields: SeasonField[],
+  seasonCages: SeasonCage[],
+  season: Season
+): ScheduleEvaluationResult {
   // Create lookup maps
   const teamMap = new Map(teams.map((t) => [t.id, t]));
   const divisionMap = new Map(divisions.map((d) => [d.id, d]));
@@ -128,7 +122,7 @@ export async function evaluateSchedule(
   return {
     overallScore,
     timestamp: new Date().toISOString(),
-    seasonId,
+    seasonId: season.id,
     weeklyRequirements,
     homeAwayBalance,
     constraintViolations,
@@ -139,6 +133,195 @@ export async function evaluateSchedule(
     matchupSpacing,
     gameSlotEfficiency,
     weeklyGamesDistribution,
+  };
+}
+
+/**
+ * Main evaluation function that runs all checks on a schedule
+ */
+export async function evaluateSchedule(
+  db: D1Database,
+  seasonId: string
+): Promise<ScheduleEvaluationResult> {
+  // Fetch season
+  const season = await getSeasonById(db, seasonId);
+  if (!season) {
+    throw new Error('Season not found');
+  }
+
+  const [events, teams, divisions, divisionConfigs, seasonFields, seasonCages] = await Promise.all([
+    listScheduledEvents(db, { seasonId }),
+    listTeams(db, seasonId),
+    listDivisions(db),
+    listDivisionConfigsBySeasonId(db, seasonId),
+    listSeasonFields(db, seasonId),
+    listSeasonCages(db, seasonId),
+  ]);
+
+  return evaluateEvents(events, teams, divisions, divisionConfigs, seasonFields, seasonCages, season);
+}
+
+/**
+ * Evaluate a saved schedule without restoring it
+ */
+export async function evaluateSavedSchedule(
+  db: D1Database,
+  savedScheduleId: string
+): Promise<ScheduleEvaluationResult> {
+  // Get the saved schedule
+  const savedSchedule = await getSavedScheduleById(db, savedScheduleId);
+  if (!savedSchedule) {
+    throw new Error('Saved schedule not found');
+  }
+
+  // Fetch season
+  const season = await getSeasonById(db, savedSchedule.seasonId);
+  if (!season) {
+    throw new Error('Season not found');
+  }
+
+  // Get saved events and other required data
+  const [events, teams, divisions, divisionConfigs, seasonFields, seasonCages] = await Promise.all([
+    getSavedScheduleEvents(db, savedScheduleId),
+    listTeams(db, savedSchedule.seasonId),
+    listDivisions(db),
+    listDivisionConfigsBySeasonId(db, savedSchedule.seasonId),
+    listSeasonFields(db, savedSchedule.seasonId),
+    listSeasonCages(db, savedSchedule.seasonId),
+  ]);
+
+  return evaluateEvents(events, teams, divisions, divisionConfigs, seasonFields, seasonCages, season);
+}
+
+/**
+ * Compare two metric reports and determine if improved/regressed/unchanged
+ */
+function compareMetric(
+  passed1: boolean,
+  passed2: boolean,
+  summary1?: string,
+  summary2?: string
+): MetricComparison {
+  let change: 'improved' | 'regressed' | 'unchanged';
+  if (passed1 === passed2) {
+    change = 'unchanged';
+  } else if (!passed1 && passed2) {
+    change = 'improved';
+  } else {
+    change = 'regressed';
+  }
+
+  return { passed1, passed2, change, summary1, summary2 };
+}
+
+/**
+ * Compare a saved schedule with the current schedule
+ */
+export async function compareSchedules(
+  db: D1Database,
+  seasonId: string,
+  savedScheduleId: string
+): Promise<ScheduleComparisonResult> {
+  // Get the saved schedule metadata
+  const savedSchedule = await getSavedScheduleById(db, savedScheduleId);
+  if (!savedSchedule) {
+    throw new Error('Saved schedule not found');
+  }
+
+  if (savedSchedule.seasonId !== seasonId) {
+    throw new Error('Saved schedule does not belong to the specified season');
+  }
+
+  // Evaluate both schedules in parallel
+  const [savedEvaluation, currentEvaluation] = await Promise.all([
+    evaluateSavedSchedule(db, savedScheduleId),
+    evaluateSchedule(db, seasonId),
+  ]);
+
+  // Compare each metric
+  const metrics = {
+    weeklyRequirements: compareMetric(
+      savedEvaluation.weeklyRequirements.passed,
+      currentEvaluation.weeklyRequirements.passed,
+      savedEvaluation.weeklyRequirements.summary,
+      currentEvaluation.weeklyRequirements.summary
+    ),
+    homeAwayBalance: compareMetric(
+      savedEvaluation.homeAwayBalance.passed,
+      currentEvaluation.homeAwayBalance.passed,
+      savedEvaluation.homeAwayBalance.summary,
+      currentEvaluation.homeAwayBalance.summary
+    ),
+    constraintViolations: compareMetric(
+      savedEvaluation.constraintViolations.passed,
+      currentEvaluation.constraintViolations.passed,
+      savedEvaluation.constraintViolations.summary,
+      currentEvaluation.constraintViolations.summary
+    ),
+    gameDayPreferences: compareMetric(
+      savedEvaluation.gameDayPreferences.passed,
+      currentEvaluation.gameDayPreferences.passed,
+      savedEvaluation.gameDayPreferences.summary,
+      currentEvaluation.gameDayPreferences.summary
+    ),
+    gameSpacing: compareMetric(
+      savedEvaluation.gameSpacing.passed,
+      currentEvaluation.gameSpacing.passed,
+      savedEvaluation.gameSpacing.summary,
+      currentEvaluation.gameSpacing.summary
+    ),
+    practiceSpacing: compareMetric(
+      savedEvaluation.practiceSpacing.passed,
+      currentEvaluation.practiceSpacing.passed,
+      savedEvaluation.practiceSpacing.summary,
+      currentEvaluation.practiceSpacing.summary
+    ),
+    matchupBalance: compareMetric(
+      savedEvaluation.matchupBalance.passed,
+      currentEvaluation.matchupBalance.passed,
+      savedEvaluation.matchupBalance.summary,
+      currentEvaluation.matchupBalance.summary
+    ),
+    matchupSpacing: compareMetric(
+      savedEvaluation.matchupSpacing.passed,
+      currentEvaluation.matchupSpacing.passed,
+      savedEvaluation.matchupSpacing.summary,
+      currentEvaluation.matchupSpacing.summary
+    ),
+    gameSlotEfficiency: compareMetric(
+      savedEvaluation.gameSlotEfficiency.passed,
+      currentEvaluation.gameSlotEfficiency.passed,
+      savedEvaluation.gameSlotEfficiency.summary,
+      currentEvaluation.gameSlotEfficiency.summary
+    ),
+    weeklyGamesDistribution: compareMetric(
+      savedEvaluation.weeklyGamesDistribution.passed,
+      currentEvaluation.weeklyGamesDistribution.passed,
+      savedEvaluation.weeklyGamesDistribution.summary,
+      currentEvaluation.weeklyGamesDistribution.summary
+    ),
+  };
+
+  // Count improvements, regressions, unchanged
+  const metricList = Object.values(metrics);
+  const improvementCount = metricList.filter((m) => m.change === 'improved').length;
+  const regressionCount = metricList.filter((m) => m.change === 'regressed').length;
+  const unchangedCount = metricList.filter((m) => m.change === 'unchanged').length;
+
+  return {
+    timestamp: new Date().toISOString(),
+    seasonId,
+    savedScheduleId,
+    savedScheduleName: savedSchedule.name,
+    overallScore1: savedEvaluation.overallScore,
+    overallScore2: currentEvaluation.overallScore,
+    overallScoreDelta: currentEvaluation.overallScore - savedEvaluation.overallScore,
+    metrics,
+    improvementCount,
+    regressionCount,
+    unchangedCount,
+    savedEvaluation,
+    currentEvaluation,
   };
 }
 

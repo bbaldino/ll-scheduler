@@ -4,6 +4,7 @@ import CalendarView from '../components/CalendarView';
 import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
 import { SaveScheduleModal } from '../components/SaveScheduleModal';
 import { RestoreScheduleModal } from '../components/RestoreScheduleModal';
+import ScheduleComparisonModal from '../components/ScheduleComparisonModal';
 import {
   fetchScheduledEvents,
   createScheduledEvent,
@@ -74,9 +75,10 @@ export default function ScheduledEventsPage() {
   const [evaluationResult, setEvaluationResult] = useState<ScheduleEvaluationResult | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
 
-  // Save/Restore modal state
+  // Save/Restore/Compare modal state
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
 
   // Available slots state
   const [showAvailableSlots, setShowAvailableSlots] = useState(false);
@@ -537,6 +539,7 @@ export default function ScheduledEventsPage() {
           <button onClick={handleEvaluate} disabled={isEvaluating} title="Evaluate schedule for conflicts and balance issues">
             {isEvaluating ? 'Evaluating...' : 'Evaluate'}
           </button>
+          <button onClick={() => setShowCompareModal(true)} title="Compare current schedule with a saved schedule">Compare</button>
           <button onClick={() => setShowSaveModal(true)} title="Save current schedule">Save</button>
           <button onClick={() => setShowRestoreModal(true)} title="Load or manage saved schedules">Load</button>
           <button onClick={handleExportTeamSnap} title="Export filtered events to TeamSnap CSV format">Export CSV</button>
@@ -1238,6 +1241,13 @@ export default function ScheduledEventsPage() {
             loadEvents();
             alert(`Restored ${restoredCount} events successfully!`);
           }}
+        />
+      )}
+
+      {showCompareModal && (
+        <ScheduleComparisonModal
+          seasonId={currentSeason.id}
+          onClose={() => setShowCompareModal(false)}
         />
       )}
     </div>

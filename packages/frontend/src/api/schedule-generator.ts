@@ -3,6 +3,7 @@ import type {
   GenerateScheduleResult,
   ScheduleEvaluationResult,
   ScheduleGenerationLog,
+  ScheduleComparisonResult,
 } from '@ll-scheduler/shared';
 import { API_BASE } from './config';
 
@@ -62,6 +63,38 @@ export async function evaluateSchedule(
 
   if (!response.ok) {
     throw new Error('Failed to evaluate schedule');
+  }
+
+  return response.json();
+}
+
+export async function evaluateSavedSchedule(
+  savedScheduleId: string
+): Promise<ScheduleEvaluationResult> {
+  const response = await fetch(`${API_BASE}/schedule-generator/evaluate-saved/${savedScheduleId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to evaluate saved schedule');
+  }
+
+  return response.json();
+}
+
+export async function compareSchedules(
+  seasonId: string,
+  savedScheduleId: string
+): Promise<ScheduleComparisonResult> {
+  const response = await fetch(`${API_BASE}/schedule-generator/compare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seasonId, savedScheduleId }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to compare schedules');
   }
 
   return response.json();

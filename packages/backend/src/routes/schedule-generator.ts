@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../index.js';
-import type { GenerateScheduleRequest, EvaluateScheduleRequest } from '@ll-scheduler/shared';
+import type { GenerateScheduleRequest, EvaluateScheduleRequest, CompareSchedulesRequest } from '@ll-scheduler/shared';
 import { generateSchedule } from '../services/schedule-generator/index.js';
-import { evaluateSchedule } from '../services/schedule-evaluator.js';
+import { evaluateSchedule, evaluateSavedSchedule, compareSchedules } from '../services/schedule-evaluator.js';
 import {
   saveScheduleGenerationLog,
   getLatestScheduleGenerationLog,
@@ -52,6 +52,46 @@ router.post('/evaluate', async (c) => {
   } catch (error) {
     console.error('Error evaluating schedule:', error);
     return c.json({ error: 'Failed to evaluate schedule' }, 500);
+  }
+});
+
+// POST /api/schedule-generator/evaluate-saved/:savedScheduleId - Evaluate a saved schedule
+router.post('/evaluate-saved/:savedScheduleId', async (c) => {
+  try {
+    const savedScheduleId = c.req.param('savedScheduleId');
+
+    if (!savedScheduleId) {
+      return c.json({ error: 'savedScheduleId is required' }, 400);
+    }
+
+    const result = await evaluateSavedSchedule(c.env.DB, savedScheduleId);
+    return c.json(result);
+  } catch (error) {
+    console.error('Error evaluating saved schedule:', error);
+    const message = error instanceof Error ? error.message : 'Failed to evaluate saved schedule';
+    return c.json({ error: message }, 500);
+  }
+});
+
+// POST /api/schedule-generator/compare - Compare current schedule with a saved schedule
+router.post('/compare', async (c) => {
+  try {
+    const request: CompareSchedulesRequest = await c.req.json();
+
+    if (!request.seasonId) {
+      return c.json({ error: 'seasonId is required' }, 400);
+    }
+
+    if (!request.savedScheduleId) {
+      return c.json({ error: 'savedScheduleId is required' }, 400);
+    }
+
+    const result = await compareSchedules(c.env.DB, request.seasonId, request.savedScheduleId);
+    return c.json(result);
+  } catch (error) {
+    console.error('Error comparing schedules:', error);
+    const message = error instanceof Error ? error.message : 'Failed to compare schedules';
+    return c.json({ error: message }, 500);
   }
 });
 
