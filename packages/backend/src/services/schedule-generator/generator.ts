@@ -3305,7 +3305,17 @@ export class ScheduleGenerator {
               if (aIsCurrentWeek && !bIsCurrentWeek) return -1;
               if (!aIsCurrentWeek && bIsCurrentWeek) return 1;
 
-              // Third: short rest balance - teams with more short rest games go first
+              // Third: total game balance - prioritize matchups involving teams with fewer total games
+              // This ensures teams that are falling behind get first pick of available slots
+              const aHomeTotalGames = this.teamSchedulingStates.get(a.homeTeamId)?.gamesScheduled || 0;
+              const aAwayTotalGames = this.teamSchedulingStates.get(a.awayTeamId)?.gamesScheduled || 0;
+              const bHomeTotalGames = this.teamSchedulingStates.get(b.homeTeamId)?.gamesScheduled || 0;
+              const bAwayTotalGames = this.teamSchedulingStates.get(b.awayTeamId)?.gamesScheduled || 0;
+              const aTotalMin = Math.min(aHomeTotalGames, aAwayTotalGames);
+              const bTotalMin = Math.min(bHomeTotalGames, bAwayTotalGames);
+              if (aTotalMin !== bTotalMin) return aTotalMin - bTotalMin; // Fewer total games goes first
+
+              // Fourth: short rest balance - teams with more short rest games go first
               // This gives them first pick of slots that don't create more short rest
               const aHomeShortRest = this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0;
               const aAwayShortRest = this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0;
@@ -3317,7 +3327,7 @@ export class ScheduleGenerator {
                 return bMaxShortRest - aMaxShortRest; // Higher short rest count goes first
               }
 
-              // Third: team fairness - prioritize matchups involving teams with fewer games at this priority level
+              // Fifth: team fairness - prioritize matchups involving teams with fewer games at this priority level
               const aHome = priorityGamesPerTeam.get(a.homeTeamId) || 0;
               const aAway = priorityGamesPerTeam.get(a.awayTeamId) || 0;
               const bHome = priorityGamesPerTeam.get(b.homeTeamId) || 0;
