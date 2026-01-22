@@ -11,19 +11,30 @@ const SEASON_ID = '1767680016203-qkoplgifk';
 
 // Generate the 15 Skills & Drills practice events that existed in production
 // These are Saturdays from 15:45-16:45 on the Tball field
+// Using actual production IDs for deterministic ordering
 function generateSkillsDrillsEvents(): ScheduledEvent[] {
-  // Exact Saturday dates from production (queried from D1)
-  const dates = [
-    '2026-02-14', '2026-02-21',
-    '2026-03-07', '2026-03-14', '2026-03-21', '2026-03-28',
-    '2026-04-04', '2026-04-11', '2026-04-18', '2026-04-25',
-    '2026-05-09', '2026-05-16', '2026-05-23', '2026-05-30',
-    '2026-06-06',
+  // Exact event IDs and dates from production (queried from D1)
+  const eventsData = [
+    { id: '1769017947688-62vumfqd2', date: '2026-02-14' },
+    { id: '1769017947727-2akym6dwr', date: '2026-02-21' },
+    { id: '1769017947884-6buw9nbph', date: '2026-03-07' },
+    { id: '1769017947963-d9maxu7c8', date: '2026-03-14' },
+    { id: '1769017948000-tk8t8tsrh', date: '2026-03-21' },
+    { id: '1769017948080-prlzx8zzo', date: '2026-03-28' },
+    { id: '1769017948161-t1tuaaxzr', date: '2026-04-04' },
+    { id: '1769017948240-ion955jp3', date: '2026-04-11' },
+    { id: '1769017948327-pseextiue', date: '2026-04-18' },
+    { id: '1769017948409-dbhzxxf00', date: '2026-04-25' },
+    { id: '1769017948533-qc05ba8hp', date: '2026-05-09' },
+    { id: '1769017948617-mjctm87xg', date: '2026-05-16' },
+    { id: '1769017948658-aoa5qerti', date: '2026-05-23' },
+    { id: '1769017948697-ybcyahb2p', date: '2026-05-30' },
+    { id: '1769017948737-uc3kgk2e7', date: '2026-06-06' },
   ];
   const now = new Date().toISOString();
 
-  return dates.map((date, i) => ({
-    id: `existing-sd-practice-${i + 1}`,
+  return eventsData.map(({ id, date }) => ({
+    id,
     seasonId: SEASON_ID,
     divisionId: SKILLS_DRILLS_DIVISION_ID,
     eventType: 'practice' as const,

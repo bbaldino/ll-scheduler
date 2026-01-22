@@ -1001,11 +1001,14 @@ export class ScheduleGenerator {
       // Log divisions in scheduling order
       console.log(`Divisions (${this.divisions.length}): ${this.divisions.map(d => `${d.name}[${d.id.slice(-8)}]`).join(', ')}`);
 
-      // Log teams per division (sorted by ID for comparison)
+      // Log teams per division (in actual internal order after constructor sorting)
+      const allTeamIds: string[] = [];
       for (const division of this.divisions) {
-        const divTeams = this.teams.filter(t => t.divisionId === division.id).map(t => t.id).sort();
-        console.log(`  ${division.name} teams (${divTeams.length}): ${divTeams.map(id => id.slice(-8)).join(', ')}`);
+        const divTeams = this.teams.filter(t => t.divisionId === division.id);
+        console.log(`  ${division.name} teams (${divTeams.length}): ${divTeams.map(t => `${t.name}[${t.id.slice(-8)}]`).join(', ')}`);
+        allTeamIds.push(...divTeams.map(t => t.id));
       }
+      console.log(`  teams order hash=${this.simpleHash(allTeamIds.join('|'))}`);
 
       // Log division configs
       for (const division of this.divisions) {
