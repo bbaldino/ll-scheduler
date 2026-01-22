@@ -799,6 +799,7 @@ export function generateCandidatesForGame(
   context: ScoringContext
 ): PlacementCandidate[] {
   const candidates: PlacementCandidate[] = [];
+  const fallbackCandidates: PlacementCandidate[] = []; // Used when no candidates meet min day gap
 
   // Filter slots to this week
   const weekSlots = resourceSlots.filter((rs) => week.dates.includes(rs.slot.date));
@@ -854,12 +855,9 @@ export function generateCandidatesForGame(
       return false;
     };
 
-    if (homeTeamState && violatesMinGap(homeTeamState.gameDates, homeMinGap)) {
-      continue;
-    }
-    if (awayTeamState && violatesMinGap(awayTeamState.gameDates, awayMinGap)) {
-      continue;
-    }
+    const slotViolatesMinGap =
+      (homeTeamState && violatesMinGap(homeTeamState.gameDates, homeMinGap)) ||
+      (awayTeamState && violatesMinGap(awayTeamState.gameDates, awayMinGap));
 
     // Skip single-event-only slots that already have an event
     if (slot.singleEventOnly) {
@@ -890,7 +888,7 @@ export function generateCandidatesForGame(
       }
 
       // Use the home/away assignment from the matchup (determined by round-robin)
-      candidates.push({
+      const candidate: PlacementCandidate = {
         eventType: 'game',
         date: slot.slot.date,
         dayOfWeek: slot.slot.dayOfWeek,
@@ -902,11 +900,19 @@ export function generateCandidatesForGame(
         seasonId,
         homeTeamId: matchup.homeTeamId,
         awayTeamId: matchup.awayTeamId,
-      });
+      };
+
+      // Prefer candidates that meet min gap, but keep fallbacks if needed
+      if (slotViolatesMinGap) {
+        fallbackCandidates.push(candidate);
+      } else {
+        candidates.push(candidate);
+      }
     }
   }
 
-  return candidates;
+  // Return regular candidates if any, otherwise fall back to ones that violate min gap
+  return candidates.length > 0 ? candidates : fallbackCandidates;
 }
 
 /**

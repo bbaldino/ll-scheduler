@@ -33,6 +33,14 @@ interface DivisionConfigRow {
   updated_at: string;
 }
 
+// Helper to handle values that might be the string "null" from JSON storage
+function parseNullableValue<T>(value: T | null | string): T | undefined {
+  if (value === null || value === undefined || value === 'null') {
+    return undefined;
+  }
+  return value as T;
+}
+
 function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
   return {
     id: row.id,
@@ -46,7 +54,7 @@ function rowToDivisionConfig(row: DivisionConfigRow): DivisionConfig {
     gameArriveBeforeHours: row.game_arrive_before_hours || undefined,
     practiceArriveBeforeMinutes: row.practice_arrive_before_minutes ?? undefined,
     gameDayPreferences: row.game_day_preferences ? JSON.parse(row.game_day_preferences) : undefined,
-    minConsecutiveDayGap: row.min_consecutive_day_gap || undefined,
+    minConsecutiveDayGap: parseNullableValue(row.min_consecutive_day_gap),
     cageSessionsPerWeek: row.cage_sessions_per_week || undefined,
     cageSessionDurationHours: row.cage_session_duration_hours || undefined,
     fieldPreferences: row.field_preferences ? JSON.parse(row.field_preferences) : undefined,

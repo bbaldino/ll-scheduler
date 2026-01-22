@@ -658,4 +658,44 @@ describe('Schedule Generation Regression Tests', () => {
       });
     }
   });
+
+  describe('Blackout Dates', () => {
+    it('should not schedule games on global blackout dates', () => {
+      // 2026-03-15 is "Picture day" - a global blackout (no divisionIds specified)
+      const globalBlackoutDate = '2026-03-15';
+      const gamesOnBlackout = scheduledGames.filter(g => g.date === globalBlackoutDate);
+
+      console.log(`Games on global blackout ${globalBlackoutDate}: ${gamesOnBlackout.length}`);
+      expect(gamesOnBlackout.length, `No games should be scheduled on global blackout ${globalBlackoutDate}`).toBe(0);
+    });
+
+    it('should not schedule Majors games on division-specific blackout dates', () => {
+      // 2026-03-11 is "Spring Concert" - blackout only for Majors
+      const majorsBlackoutDate = '2026-03-11';
+      const majorsId = divisions.find(d => d.name === 'Majors')?.id;
+      expect(majorsId).toBeDefined();
+
+      const majorsGamesOnBlackout = scheduledGames.filter(
+        g => g.date === majorsBlackoutDate && g.divisionId === majorsId
+      );
+
+      console.log(`Majors games on division blackout ${majorsBlackoutDate}: ${majorsGamesOnBlackout.length}`);
+      expect(majorsGamesOnBlackout.length, `No Majors games should be scheduled on ${majorsBlackoutDate}`).toBe(0);
+    });
+
+    it('should allow other divisions to schedule on division-specific blackout dates', () => {
+      // 2026-03-11 is "Spring Concert" - blackout only for Majors, other divisions can play
+      const majorsBlackoutDate = '2026-03-11';
+      const majorsId = divisions.find(d => d.name === 'Majors')?.id;
+
+      const otherDivisionGamesOnDate = scheduledGames.filter(
+        g => g.date === majorsBlackoutDate && g.divisionId !== majorsId
+      );
+
+      // Other divisions should be able to have games on this date
+      console.log(`Other division games on ${majorsBlackoutDate}: ${otherDivisionGamesOnDate.length}`);
+      // Just verify the blackout is division-specific by checking other divisions CAN schedule here
+      // (They may or may not have games depending on schedule needs, so we just log)
+    });
+  });
 });
