@@ -1037,18 +1037,51 @@ export class ScheduleGenerator {
         console.log(`  hash=${this.simpleHash(existingDetails.join('|'))}`);
       }
 
-      // Log cage availability count
-      console.log(`Cage availabilities: ${this.cageAvailability.length}`);
+      // Log cage availability with hash
+      const cageAvailDetails = this.cageAvailability
+        .map((ca: { seasonCageId: string; dayOfWeek: number; startTime: string; endTime: string }) =>
+          `${ca.seasonCageId.slice(-8)}:d${ca.dayOfWeek}:${ca.startTime}-${ca.endTime}`)
+        .sort();
+      console.log(`Cage availabilities: ${this.cageAvailability.length}, hash=${this.simpleHash(cageAvailDetails.join('|'))}`);
 
-      // Log field overrides count
-      console.log(`Field overrides: ${this.fieldOverrides.length}`);
+      // Log field overrides with hash
+      const fieldOverrideDetails = this.fieldOverrides
+        .map((fo: { seasonFieldId: string; date: string; overrideType: string }) =>
+          `${fo.date}:${fo.seasonFieldId.slice(-8)}:${fo.overrideType}`)
+        .sort();
+      console.log(`Field overrides: ${this.fieldOverrides.length}, hash=${this.simpleHash(fieldOverrideDetails.join('|'))}`);
       if (this.fieldOverrides.length > 0) {
-        const overrideDetails = this.fieldOverrides
-          .map((fo: { seasonFieldId: string; date: string; overrideType: string }) =>
-            `${fo.date}:${fo.seasonFieldId.slice(-8)}:${fo.overrideType}`)
-          .sort();
-        console.log(`  ${overrideDetails.slice(0, 5).join(', ')}${overrideDetails.length > 5 ? '...' : ''}`);
+        console.log(`  ${fieldOverrideDetails.slice(0, 5).join(', ')}${fieldOverrideDetails.length > 5 ? '...' : ''}`);
       }
+
+      // Log cage overrides with hash
+      const cageOverrideDetails = this.cageOverrides
+        .map((co: { seasonCageId: string; date: string; overrideType: string }) =>
+          `${co.date}:${co.seasonCageId.slice(-8)}:${co.overrideType}`)
+        .sort();
+      console.log(`Cage overrides: ${this.cageOverrides.length}, hash=${this.simpleHash(cageOverrideDetails.join('|'))}`);
+
+      // Log season fields with hash
+      const seasonFieldDetails = this.seasonFields
+        .map((sf: { id: string; fieldId: string }) => `${sf.id.slice(-8)}:${sf.fieldId.slice(-8)}`)
+        .sort();
+      console.log(`Season fields: ${this.seasonFields.length}, hash=${this.simpleHash(seasonFieldDetails.join('|'))}`);
+
+      // Log season cages with hash
+      const seasonCageDetails = this.seasonCages
+        .map((sc: { id: string; cageId: string }) => `${sc.id.slice(-8)}:${sc.cageId.slice(-8)}`)
+        .sort();
+      console.log(`Season cages: ${this.seasonCages.length}, hash=${this.simpleHash(seasonCageDetails.join('|'))}`);
+
+      // Log division configs with hash
+      const divConfigDetails = Array.from(this.divisionConfigs.entries())
+        .map(([divId, config]) => `${divId.slice(-8)}:g${config.gamesPerWeek}:p${config.practicesPerWeek}`)
+        .sort();
+      console.log(`Division configs: ${this.divisionConfigs.size}, hash=${this.simpleHash(divConfigDetails.join('|'))}`);
+
+      // Log divisions order hash
+      const divisionOrderDetails = this.divisions.map(d => d.id).join('|');
+      console.log(`Divisions order hash=${this.simpleHash(divisionOrderDetails)}`);
 
       console.log('=== END INPUT FINGERPRINT ===\n');
 
