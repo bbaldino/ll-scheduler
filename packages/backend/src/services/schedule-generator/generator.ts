@@ -658,9 +658,13 @@ export class ScheduleGenerator {
     fieldAvailability: FieldAvailability[],
     cageAvailability: CageAvailability[],
     fieldOverrides: FieldDateOverride[],
-    cageOverrides: CageDateOverride[]
+    cageOverrides: CageDateOverride[],
+    options?: { seed?: number }
   ) {
     this.season = season;
+    if (options?.seed !== undefined) {
+      this.randomSeed = options.seed;
+    }
     this.divisions = divisions; // Already sorted by schedulingOrder from listDivisions
     this.divisionConfigs = new Map(divisionConfigs.map((dc) => [dc.divisionId, dc]));
     this.divisionNames = new Map(divisions.map((d) => [d.id, d.name]));
@@ -1867,6 +1871,14 @@ export class ScheduleGenerator {
         preScheduleHomeAway[team.name] = { home, away, total: home + away };
       }
 
+      // Log pre-scheduling home/away balance in verbose mode
+      verboseLog(`  [PreSchedule] ${divisionName} home/away balance after rebalancing:`);
+      for (const [name, counts] of Object.entries(preScheduleHomeAway)) {
+        const diff = Math.abs(counts.home - counts.away);
+        const status = diff <= 1 ? '✓' : '⚠';
+        verboseLog(`    ${name}: ${counts.home}H/${counts.away}A (diff: ${diff}) ${status}`);
+      }
+
       let homeAwayBalanceSummary = `\nHome/Away balance after matchup generation:`;
       for (const [name, counts] of Object.entries(preScheduleHomeAway)) {
         const diff = Math.abs(counts.home - counts.away);
@@ -3004,15 +3016,6 @@ export class ScheduleGenerator {
             const totalPriorityGames = teamIds.reduce((sum, id) => sum + (priorityGamesPerTeam.get(id) || 0), 0);
             const avgPriorityGames = teamIds.length > 0 ? totalPriorityGames / teamIds.length : 0;
 
-            // Helper to get cumulative games across all priority levels
-            const getCumulativeGames = (teamId: string): number => {
-              let total = 0;
-              for (const [, priorityMap] of gamesPerTeamByPriority) {
-                total += priorityMap.get(teamId) || 0;
-              }
-              return total;
-            };
-
             queue.sort((a, b) => {
               // First: overflow matchups come first (they couldn't fit on higher-priority days)
               const aKey = ScheduleGenerator.createMatchupKey(a.homeTeamId, a.awayTeamId, a.targetWeek);
@@ -3022,22 +3025,7 @@ export class ScheduleGenerator {
               if (aIsOverflow && !bIsOverflow) return -1;
               if (!aIsOverflow && bIsOverflow) return 1;
 
-              // Second: CUMULATIVE game fairness - teams with fewer total games go first
-              // This is the primary fairness mechanism to ensure balanced game distribution
-              const aHomeCumulative = getCumulativeGames(a.homeTeamId);
-              const aAwayCumulative = getCumulativeGames(a.awayTeamId);
-              const bHomeCumulative = getCumulativeGames(b.homeTeamId);
-              const bAwayCumulative = getCumulativeGames(b.awayTeamId);
-              // Prioritize matchups where the team with fewer games is involved
-              const aMinCumulative = Math.min(aHomeCumulative, aAwayCumulative);
-              const bMinCumulative = Math.min(bHomeCumulative, bAwayCumulative);
-              if (aMinCumulative !== bMinCumulative) return aMinCumulative - bMinCumulative;
-              // If mins are equal, prefer matchups where both teams have fewer games
-              const aTotalCumulative = aHomeCumulative + aAwayCumulative;
-              const bTotalCumulative = bHomeCumulative + bAwayCumulative;
-              if (aTotalCumulative !== bTotalCumulative) return aTotalCumulative - bTotalCumulative;
-
-              // Third: short rest balance - teams with more short rest games go first
+              // Second: short rest balance - teams with more short rest games go first
               // This gives them first pick of slots that don't create more short rest
               const aHomeShortRest = this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0;
               const aAwayShortRest = this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0;
@@ -3049,7 +3037,18 @@ export class ScheduleGenerator {
                 return bMaxShortRest - aMaxShortRest; // Higher short rest count goes first
               }
 
-              return 0;
+              // Third: team fairness - prioritize matchups involving teams with fewer games at this priority level
+              const aHome = priorityGamesPerTeam.get(a.homeTeamId) || 0;
+              const aAway = priorityGamesPerTeam.get(a.awayTeamId) || 0;
+              const bHome = priorityGamesPerTeam.get(b.homeTeamId) || 0;
+              const bAway = priorityGamesPerTeam.get(b.awayTeamId) || 0;
+              const aMin = Math.min(aHome, aAway);
+              const bMin = Math.min(bHome, bAway);
+              if (aMin !== bMin) return aMin - bMin;
+              const aDeficit = (avgPriorityGames - aHome) + (avgPriorityGames - aAway);
+              const bDeficit = (avgPriorityGames - bHome) + (avgPriorityGames - bAway);
+              if (aDeficit !== bDeficit) return bDeficit - aDeficit;
+              return Math.max(aHome, aAway) - Math.max(bHome, bAway);
             });
 
             // Try to schedule on ANY available day in this tier
@@ -3900,11 +3899,35 @@ export class ScheduleGenerator {
       }
 
       let overallSwaps = 0;
+      const maxPasses = 10; // Prevent infinite loops
+      // Track swapped games to prevent swapping them back (which would create infinite loops)
+      const swappedGames = new Set<ScheduledGame>();
 
-      // For each imbalanced team, try to find a swap that helps without breaking per-pairing balance
-      for (const { teamId } of imbalancedTeams) {
-        const teamState = this.teamSchedulingStates.get(teamId);
-        const teamName = teamState?.teamName || teamId;
+      // Multi-pass: keep iterating until no more swaps can be made
+      // Swapping to fix one team can create imbalance in another, so we need multiple passes
+      for (let pass = 0; pass < maxPasses; pass++) {
+        let passSwaps = 0;
+
+        // Re-find imbalanced teams at the start of each pass
+        const currentImbalanced: Array<{ teamId: string; imbalance: number }> = [];
+        for (const teamId of allTeamIds) {
+          const imbalance = getTeamImbalance(teamId);
+          if (Math.abs(imbalance) > 1) {
+            currentImbalanced.push({ teamId, imbalance });
+          }
+        }
+
+        if (currentImbalanced.length === 0) {
+          break; // All teams balanced
+        }
+
+        // Sort by absolute imbalance (worst first) to prioritize fixing the most imbalanced teams
+        currentImbalanced.sort((a, b) => Math.abs(b.imbalance) - Math.abs(a.imbalance));
+
+        // For each imbalanced team, try to find a swap that helps without breaking per-pairing balance
+        for (const { teamId } of currentImbalanced) {
+          const teamState = this.teamSchedulingStates.get(teamId);
+          const teamName = teamState?.teamName || teamId;
 
         // Re-check current imbalance - it may have changed due to previous swaps
         const currentImbalance = getTeamImbalance(teamId);
@@ -3921,6 +3944,8 @@ export class ScheduleGenerator {
 
           for (const game of homeGames) {
             if (!game.awayTeamId) continue;
+            // Skip games that were already swapped to prevent swap loops
+            if (swappedGames.has(game)) continue;
 
             const opponentId = game.awayTeamId;
             const opponentImbalance = getTeamImbalance(opponentId);
@@ -3943,9 +3968,10 @@ export class ScheduleGenerator {
             console.log(`      vs ${opponentName}: oppImbalance=${opponentImbalance}->${opponentNewImbalance}, pairBalance=${teamHomesInPair}-${opponentHomesInPair}, newPairDiff=${newPairDiff}`);
 
             // Allow swap if:
-            // 1. Per-pairing balance stays acceptable (diff <= 1)
-            // 2. Opponent's new imbalance is acceptable (within ±1)
-            if (newPairDiff <= 1 && Math.abs(opponentNewImbalance) <= 1) {
+            // 1. Per-pairing balance stays acceptable (diff <= 1 to preserve head-to-head fairness)
+            // 2. Opponent's new imbalance is acceptable (within ±2, relaxed to allow multi-pass fixing)
+            // The multi-pass approach will fix any opponent imbalances created by this swap.
+            if (newPairDiff <= 1 && Math.abs(opponentNewImbalance) <= 2) {
               // Safe to swap
               const temp = game.homeTeamId;
               game.homeTeamId = game.awayTeamId;
@@ -3958,6 +3984,9 @@ export class ScheduleGenerator {
               teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) - 1);
 
               overallSwaps++;
+              passSwaps++;
+              swappedGames.add(game); // Mark as swapped to prevent swap back
+              console.log(`      ✓ Swapped: ${teamName} was home, now away (vs ${opponentName})`);
               verboseLog(`    Swapped game: ${teamName} was home, now away (vs ${opponentName})`);
 
               // Check if this team is now balanced
@@ -3972,6 +4001,8 @@ export class ScheduleGenerator {
 
           for (const game of awayGames) {
             if (!game.homeTeamId) continue;
+            // Skip games that were already swapped to prevent swap loops
+            if (swappedGames.has(game)) continue;
 
             const opponentId = game.homeTeamId;
             const opponentImbalance = getTeamImbalance(opponentId);
@@ -3994,9 +4025,10 @@ export class ScheduleGenerator {
             console.log(`      vs ${opponentName}: oppImbalance=${opponentImbalance}->${opponentNewImbalance}, pairBalance=${teamHomesInPair}-${opponentHomesInPair}, newPairDiff=${newPairDiff}`);
 
             // Allow swap if:
-            // 1. Per-pairing balance stays acceptable (diff <= 1)
-            // 2. Opponent's new imbalance is acceptable (within ±1)
-            if (newPairDiff <= 1 && Math.abs(opponentNewImbalance) <= 1) {
+            // 1. Per-pairing balance stays acceptable (diff <= 1 to preserve head-to-head fairness)
+            // 2. Opponent's new imbalance is acceptable (within ±2, relaxed to allow multi-pass fixing)
+            // The multi-pass approach will fix any opponent imbalances created by this swap.
+            if (newPairDiff <= 1 && Math.abs(opponentNewImbalance) <= 2) {
               // Safe to swap
               const temp = game.homeTeamId;
               game.homeTeamId = game.awayTeamId;
@@ -4009,6 +4041,9 @@ export class ScheduleGenerator {
               teamAwayCount.set(opponentId, (teamAwayCount.get(opponentId) || 0) + 1);
 
               overallSwaps++;
+              passSwaps++;
+              swappedGames.add(game); // Mark as swapped to prevent swap back
+              console.log(`      ✓ Swapped: ${teamName} was away, now home (vs ${opponentName})`);
               verboseLog(`    Swapped game: ${teamName} was away, now home (vs ${opponentName})`);
 
               // Check if this team is now balanced
@@ -4018,6 +4053,14 @@ export class ScheduleGenerator {
             }
           }
         }
+        }
+
+        // If no swaps were made this pass, we've reached a stable state
+        if (passSwaps === 0) {
+          break;
+        }
+
+        console.log(`    [Pass ${pass + 1}] Made ${passSwaps} swaps, continuing...`);
       }
 
       console.log(`  [Rebalancing] Made ${overallSwaps} overall balance swaps`);
@@ -7250,15 +7293,13 @@ export class ScheduleGenerator {
   }
 
   /**
-   * Shuffle an array using Fisher-Yates algorithm
+   * Shuffle an array using Fisher-Yates algorithm with seeded random
    */
   private shuffleArray<T>(array: T[]): T[] {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
+    const result = shuffleWithSeed(array, this.randomSeed);
+    // Advance the seed so subsequent shuffles produce different results
+    this.randomSeed = (this.randomSeed * 1664525 + 1013904223) % 4294967296;
+    return result;
   }
 
   /**

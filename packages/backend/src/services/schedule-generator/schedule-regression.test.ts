@@ -677,7 +677,7 @@ describe('Schedule Generation Regression Tests', () => {
       expect(maxDiff, `A max home/away diff=${maxDiff}`).toBeLessThanOrEqual(2);
     });
 
-    it('Tball: max home/away diff should be <= 3 (current baseline)', () => {
+    it('Tball: max home/away diff should be <= 1', () => {
       const divisionId = divisions.find(d => d.name === 'Tball')?.id;
       expect(divisionId).toBeDefined();
 
@@ -693,7 +693,7 @@ describe('Schedule Generation Regression Tests', () => {
       }
 
       console.log(`Tball home/away: ${breakdown.join(', ')}`);
-      expect(maxDiff, `Tball max home/away diff=${maxDiff}`).toBeLessThanOrEqual(3);
+      expect(maxDiff, `Tball max home/away diff=${maxDiff}`).toBeLessThanOrEqual(1);
     });
   });
 
