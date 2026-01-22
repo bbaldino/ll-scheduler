@@ -1,6 +1,42 @@
 import { describe, it } from 'vitest';
 import { ScheduleGenerator } from './generator.js';
 import fixture from './__fixtures__/spring-2026-prod.json';
+import type { ScheduledEvent } from '@ll-scheduler/shared';
+
+// Skills & Drills constants (from production)
+const SKILLS_DRILLS_DIVISION_ID = '1764044676026-hbwz5ftug';
+const SKILLS_DRILLS_TEAM_ID = '1768029778604-jmyvvwxxa';
+const SKILLS_DRILLS_FIELD_ID = '1767681922967-zybh8fh06';
+const SEASON_ID = '1767680016203-qkoplgifk';
+
+// Generate the 15 Skills & Drills practice events that existed in production
+// These are Saturdays from 15:45-16:45 on the Tball field
+function generateSkillsDrillsEvents(): ScheduledEvent[] {
+  // Exact Saturday dates from production (queried from D1)
+  const dates = [
+    '2026-02-14', '2026-02-21',
+    '2026-03-07', '2026-03-14', '2026-03-21', '2026-03-28',
+    '2026-04-04', '2026-04-11', '2026-04-18', '2026-04-25',
+    '2026-05-09', '2026-05-16', '2026-05-23', '2026-05-30',
+    '2026-06-06',
+  ];
+  const now = new Date().toISOString();
+
+  return dates.map((date, i) => ({
+    id: `existing-sd-practice-${i + 1}`,
+    seasonId: SEASON_ID,
+    divisionId: SKILLS_DRILLS_DIVISION_ID,
+    eventType: 'practice' as const,
+    date,
+    startTime: '15:45',
+    endTime: '16:45',
+    status: 'scheduled' as const,
+    fieldId: SKILLS_DRILLS_FIELD_ID,
+    teamId: SKILLS_DRILLS_TEAM_ID,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
 
 // Conversion functions
 function parseJsonField(value: any, defaultValue: any = []): any {
@@ -107,9 +143,13 @@ function convertCageOverride(row: any) {
 describe('Production Data Gap Analysis', () => {
   it('should analyze game gaps per division with production data', async () => {
     const season = convertSeason(fixture.season);
-    const divisions = fixture.divisions.map(convertDivision).sort((a: any, b: any) => a.schedulingOrder - b.schedulingOrder);
+    // Include ALL divisions for reference, but filter out Skills & Drills for scheduling
+    const allDivisions = fixture.divisions.map(convertDivision).sort((a: any, b: any) => a.schedulingOrder - b.schedulingOrder);
+    const divisionsToSchedule = allDivisions.filter((d: any) => d.id !== SKILLS_DRILLS_DIVISION_ID);
     const divisionConfigs = fixture.divisionConfigs.map(convertDivisionConfig);
-    const teams = fixture.teams.map(convertTeam);
+    // Filter out Skills & Drills teams from scheduling
+    const allTeams = fixture.teams.map(convertTeam);
+    const teamsToSchedule = allTeams.filter((t: any) => t.divisionId !== SKILLS_DRILLS_DIVISION_ID);
     const seasonFields = fixture.seasonFields.map((sf: any) => convertSeasonField(sf, fixture.fields));
     const seasonCages = fixture.seasonCages.map((sc: any) => convertSeasonCage(sc, fixture.cages));
     const fieldAvailabilities = fixture.fieldAvailabilities.map(convertFieldAvailability);
@@ -117,39 +157,47 @@ describe('Production Data Gap Analysis', () => {
     const fieldOverrides = fixture.fieldOverrides.map(convertFieldOverride);
     const cageOverrides = fixture.cageOverrides.map(convertCageOverride);
 
+    // Generate the existing Skills & Drills events (like production had)
+    const existingEvents = generateSkillsDrillsEvents();
+
     console.log('\n=== Production Data Summary ===');
     console.log(`Season: ${season.name}`);
-    console.log(`Divisions: ${divisions.length}`);
-    console.log(`Teams: ${teams.length}`);
+    console.log(`All Divisions: ${allDivisions.length}`);
+    console.log(`Divisions to Schedule (excl. Skills & Drills): ${divisionsToSchedule.length}`);
+    console.log(`Teams to Schedule: ${teamsToSchedule.length}`);
+    console.log(`Pre-existing Skills & Drills events: ${existingEvents.length}`);
     console.log(`Fields: ${seasonFields.length}`);
     console.log(`Field Availabilities: ${fieldAvailabilities.length}`);
     console.log(`Field Overrides: ${fieldOverrides.length}`);
 
-    for (const div of divisions) {
+    for (const div of divisionsToSchedule) {
       const config = divisionConfigs.find((c: any) => c.divisionId === div.id);
-      const divTeams = teams.filter((t: any) => t.divisionId === div.id);
+      const divTeams = teamsToSchedule.filter((t: any) => t.divisionId === div.id);
       console.log(`  ${div.name}: ${divTeams.length} teams, gameSpacing=${config?.gameSpacingEnabled}`);
     }
 
     const generator = new ScheduleGenerator(
-      season, divisions, divisionConfigs, teams, seasonFields, seasonCages,
+      season, divisionsToSchedule, divisionConfigs, teamsToSchedule, seasonFields, seasonCages,
       fieldAvailabilities, cageAvailabilities, fieldOverrides, cageOverrides
     );
+
+    // Initialize with existing Skills & Drills events (to match production conditions)
+    generator.initializeWithExistingEvents(existingEvents);
 
     await generator.generate();
 
     const games = generator.getScheduledEvents().filter((e: any) => e.eventType === 'game');
 
     // Print AA games for comparison with production
-    const aaDiv = divisions.find((d: any) => d.name === 'AA');
+    const aaDiv = divisionsToSchedule.find((d: any) => d.name === 'AA');
     if (aaDiv) {
       const aaGames = games.filter((g: any) => g.divisionId === aaDiv.id).sort((a: any, b: any) =>
         a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)
       );
       console.log('\n=== LOCAL AA Games (for comparison) ===');
       for (const g of aaGames) {
-        const home = teams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
-        const away = teams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
+        const home = teamsToSchedule.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
+        const away = teamsToSchedule.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
         console.log(`${g.date} ${home} vs ${away}`);
       }
     }
@@ -157,9 +205,9 @@ describe('Production Data Gap Analysis', () => {
     console.log('\n=== Game Gap Analysis (Production Data) ===\n');
 
     // Group by division
-    for (const div of divisions) {
+    for (const div of divisionsToSchedule) {
       const config = divisionConfigs.find((c: any) => c.divisionId === div.id);
-      const divTeams = teams.filter((t: any) => t.divisionId === div.id);
+      const divTeams = teamsToSchedule.filter((t: any) => t.divisionId === div.id);
       const divGames = games.filter((g: any) => g.divisionId === div.id);
 
       if (divGames.length === 0) continue;

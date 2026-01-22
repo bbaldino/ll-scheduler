@@ -760,6 +760,19 @@ export class ScheduleGenerator {
   }
 
   /**
+   * Simple hash function for fingerprinting inputs (for determinism verification)
+   */
+  private simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(16).padStart(8, '0');
+  }
+
+  /**
    * Get the week number (1-based) for a given date
    */
   private getWeekNumberForDate(dateStr: string): number {
@@ -972,6 +985,62 @@ export class ScheduleGenerator {
         cageSessionsPerWeek: config.cageSessionsPerWeek,
       })));
       verboseLog('='.repeat(80));
+
+      // === INPUT FINGERPRINT FOR DETERMINISM VERIFICATION ===
+      console.log('\n=== INPUT FINGERPRINT ===');
+      console.log(`Season: ${this.season.id} | ${this.season.startDate} - ${this.season.endDate} | gamesStart: ${this.season.gamesStartDate}`);
+      console.log(`Blackouts: ${JSON.stringify(this.season.blackoutDates?.slice(0, 3))}${(this.season.blackoutDates?.length || 0) > 3 ? '...' : ''} (${this.season.blackoutDates?.length || 0} total)`);
+
+      // Log divisions in scheduling order
+      console.log(`Divisions (${this.divisions.length}): ${this.divisions.map(d => `${d.name}[${d.id.slice(-8)}]`).join(', ')}`);
+
+      // Log teams per division (sorted by ID for comparison)
+      for (const division of this.divisions) {
+        const divTeams = this.teams.filter(t => t.divisionId === division.id).map(t => t.id).sort();
+        console.log(`  ${division.name} teams (${divTeams.length}): ${divTeams.map(id => id.slice(-8)).join(', ')}`);
+      }
+
+      // Log division configs
+      for (const division of this.divisions) {
+        const config = this.divisionConfigs.get(division.id);
+        if (config) {
+          console.log(`  ${division.name} config: g/w=${config.gamesPerWeek}, p/w=${config.practicesPerWeek}, spacing=${config.gameSpacingEnabled}, maxGames=${config.maxGamesPerSeason || 'none'}`);
+        }
+      }
+
+      // Log field availability details (sorted for comparison)
+      const fieldAvailDetails = this.fieldAvailability
+        .map((fa: { seasonFieldId: string; dayOfWeek: number; startTime: string; endTime: string }) =>
+          `${fa.seasonFieldId.slice(-8)}:d${fa.dayOfWeek}:${fa.startTime}-${fa.endTime}`)
+        .sort();
+      console.log(`Field availabilities (${this.fieldAvailability.length}):`);
+      console.log(`  ${fieldAvailDetails.slice(0, 10).join(', ')}${fieldAvailDetails.length > 10 ? '...' : ''}`);
+      console.log(`  hash=${this.simpleHash(fieldAvailDetails.join('|'))}`);
+
+      // Log existing events details
+      console.log(`Existing events to process: ${this.existingEventsToProcess.length}`);
+      if (this.existingEventsToProcess.length > 0) {
+        const existingDetails = this.existingEventsToProcess
+          .map(e => `${e.date}:${e.startTime}:${e.fieldId?.slice(-8) || 'none'}:${e.divisionId?.slice(-8) || 'none'}`)
+          .sort();
+        console.log(`  ${existingDetails.slice(0, 5).join(', ')}${existingDetails.length > 5 ? '...' : ''}`);
+        console.log(`  hash=${this.simpleHash(existingDetails.join('|'))}`);
+      }
+
+      // Log cage availability count
+      console.log(`Cage availabilities: ${this.cageAvailability.length}`);
+
+      // Log field overrides count
+      console.log(`Field overrides: ${this.fieldOverrides.length}`);
+      if (this.fieldOverrides.length > 0) {
+        const overrideDetails = this.fieldOverrides
+          .map((fo: { seasonFieldId: string; date: string; overrideType: string }) =>
+            `${fo.date}:${fo.seasonFieldId.slice(-8)}:${fo.overrideType}`)
+          .sort();
+        console.log(`  ${overrideDetails.slice(0, 5).join(', ')}${overrideDetails.length > 5 ? '...' : ''}`);
+      }
+
+      console.log('=== END INPUT FINGERPRINT ===\n');
 
       // Step 1: Validate prerequisites
       if (!this.validatePrerequisites()) {
