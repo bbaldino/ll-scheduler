@@ -367,7 +367,12 @@ export function buildCompetitionGroups(
         const slotsPerWeek = Math.floor(totalAvailableHoursPerWeek / avgGameSlotHours);
 
         // Sort by weight descending so higher preference divisions are processed first
-        divisionPrefs.sort((a, b) => b.weight - a.weight);
+        divisionPrefs.sort((a, b) => {
+          const weightDiff = b.weight - a.weight;
+          if (weightDiff !== 0) return weightDiff;
+          // Deterministic tiebreaker: sort by division ID
+          return a.divisionId.localeCompare(b.divisionId);
+        });
 
         groups.push({
           dayOfWeek,
@@ -2405,7 +2410,15 @@ export class ScheduleGenerator {
             // Secondary: prefer matchups where the min team has fewer Saturday games
             const aMin = Math.min(aHome, aAway);
             const bMin = Math.min(bHome, bAway);
-            return aMin - bMin;
+            if (aMin !== bMin) return aMin - bMin;
+
+            // Tertiary: use cost to break ties (varies by matchup context)
+            if (a.cost !== b.cost) return a.cost - b.cost;
+
+            // Final deterministic tiebreaker: use hash of matchup key for pseudo-random but deterministic ordering
+            const aKey = [a.matchup.homeTeamId, a.matchup.awayTeamId].sort().join('-');
+            const bKey = [b.matchup.homeTeamId, b.matchup.awayTeamId].sort().join('-');
+            return this.simpleHash(aKey).localeCompare(this.simpleHash(bKey));
           });
 
         const fairnessSortedMatchups = sortedMatchupsWithCosts.map(x => x.matchup);
@@ -3428,7 +3441,14 @@ export class ScheduleGenerator {
               const aDeficit = (avgPriorityGames - aHome) + (avgPriorityGames - aAway);
               const bDeficit = (avgPriorityGames - bHome) + (avgPriorityGames - bAway);
               if (aDeficit !== bDeficit) return bDeficit - aDeficit;
-              return Math.max(aHome, aAway) - Math.max(bHome, bAway);
+              const maxDiff = Math.max(aHome, aAway) - Math.max(bHome, bAway);
+              if (maxDiff !== 0) return maxDiff;
+
+              // Deterministic tiebreaker: use hash of matchup key for pseudo-random but deterministic ordering
+              // This distributes ties more evenly than alphabetical comparison which can create bias
+              const aMatchupKey = [a.homeTeamId, a.awayTeamId].sort().join('-');
+              const bMatchupKey = [b.homeTeamId, b.awayTeamId].sort().join('-');
+              return this.simpleHash(aMatchupKey).localeCompare(this.simpleHash(bMatchupKey));
             });
 
             // Try to schedule on ANY available day in this tier
@@ -4306,7 +4326,12 @@ export class ScheduleGenerator {
         }
 
         // Sort by absolute imbalance (worst first) to prioritize fixing the most imbalanced teams
-        currentImbalanced.sort((a, b) => Math.abs(b.imbalance) - Math.abs(a.imbalance));
+        currentImbalanced.sort((a, b) => {
+          const diff = Math.abs(b.imbalance) - Math.abs(a.imbalance);
+          if (diff !== 0) return diff;
+          // Deterministic tiebreaker: sort by team ID
+          return a.teamId.localeCompare(b.teamId);
+        });
 
         // For each imbalanced team, try to find a swap that helps without breaking per-pairing balance
         for (const { teamId } of currentImbalanced) {
@@ -5644,7 +5669,14 @@ export class ScheduleGenerator {
         }
 
         // Sort by start time and find first available slot
-        fieldSlots.sort((a, b) => a.slot.startTime.localeCompare(b.slot.startTime));
+        fieldSlots.sort((a, b) => {
+          const timeDiff = a.slot.startTime.localeCompare(b.slot.startTime);
+          if (timeDiff !== 0) return timeDiff;
+          // Deterministic tiebreaker: sort by end time, then resource ID
+          const endDiff = a.slot.endTime.localeCompare(b.slot.endTime);
+          if (endDiff !== 0) return endDiff;
+          return a.resourceId.localeCompare(b.resourceId);
+        });
 
         // Get the field's available window for this day
         const dayStart = fieldSlots[0].slot.startTime;
@@ -6765,7 +6797,10 @@ export class ScheduleGenerator {
           const expectedB = week.weekNumber * (configB?.cageSessionsPerWeek || 1);
           const deficitA = expectedA - a.cagesScheduled;
           const deficitB = expectedB - b.cagesScheduled;
-          return deficitB - deficitA;
+          const diff = deficitB - deficitA;
+          if (diff !== 0) return diff;
+          // Deterministic tiebreaker: sort by team ID
+          return a.teamId.localeCompare(b.teamId);
         });
 
       // Rotate starting position based on week number for additional fairness
@@ -6806,7 +6841,10 @@ export class ScheduleGenerator {
             const expectedB = (week.weekNumber + 1) * (configB?.cageSessionsPerWeek || 1);
             const deficitA = expectedA - a.cagesScheduled;
             const deficitB = expectedB - b.cagesScheduled;
-            return deficitB - deficitA;
+            const diff = deficitB - deficitA;
+            if (diff !== 0) return diff;
+            // Deterministic tiebreaker: sort by team ID
+            return a.teamId.localeCompare(b.teamId);
           });
 
         if (stillNeedCages.length === 0) {

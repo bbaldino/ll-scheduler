@@ -143,13 +143,12 @@ function convertCageOverride(row: any) {
 describe('Production Data Gap Analysis', () => {
   it('should analyze game gaps per division with production data', async () => {
     const season = convertSeason(fixture.season);
-    // Include ALL divisions for reference, but filter out Skills & Drills for scheduling
+    // Include ALL divisions (including Skills & Drills) to match production
     const allDivisions = fixture.divisions.map(convertDivision).sort((a: any, b: any) => a.schedulingOrder - b.schedulingOrder);
-    const divisionsToSchedule = allDivisions.filter((d: any) => d.id !== SKILLS_DRILLS_DIVISION_ID);
     const divisionConfigs = fixture.divisionConfigs.map(convertDivisionConfig);
-    // Filter out Skills & Drills teams from scheduling
-    const allTeams = fixture.teams.map(convertTeam);
-    const teamsToSchedule = allTeams.filter((t: any) => t.divisionId !== SKILLS_DRILLS_DIVISION_ID);
+    // Filter out Skills & Drills team to match production (division included but 0 teams)
+    // Production shows "Skills & Drills teams (0):" because it wasn't selected for scheduling
+    const allTeams = fixture.teams.map(convertTeam).filter((t: any) => t.divisionId !== SKILLS_DRILLS_DIVISION_ID);
     const seasonFields = fixture.seasonFields.map((sf: any) => convertSeasonField(sf, fixture.fields));
     const seasonCages = fixture.seasonCages.map((sc: any) => convertSeasonCage(sc, fixture.cages));
     const fieldAvailabilities = fixture.fieldAvailabilities.map(convertFieldAvailability);
@@ -163,21 +162,21 @@ describe('Production Data Gap Analysis', () => {
     console.log('\n=== Production Data Summary ===');
     console.log(`Season: ${season.name}`);
     console.log(`All Divisions: ${allDivisions.length}`);
-    console.log(`Divisions to Schedule (excl. Skills & Drills): ${divisionsToSchedule.length}`);
-    console.log(`Teams to Schedule: ${teamsToSchedule.length}`);
+    console.log(`Divisions to Schedule (excl. Skills & Drills): ${allDivisions.length}`);
+    console.log(`Teams to Schedule: ${allTeams.length}`);
     console.log(`Pre-existing Skills & Drills events: ${existingEvents.length}`);
     console.log(`Fields: ${seasonFields.length}`);
     console.log(`Field Availabilities: ${fieldAvailabilities.length}`);
     console.log(`Field Overrides: ${fieldOverrides.length}`);
 
-    for (const div of divisionsToSchedule) {
+    for (const div of allDivisions) {
       const config = divisionConfigs.find((c: any) => c.divisionId === div.id);
-      const divTeams = teamsToSchedule.filter((t: any) => t.divisionId === div.id);
+      const divTeams = allTeams.filter((t: any) => t.divisionId === div.id);
       console.log(`  ${div.name}: ${divTeams.length} teams, gameSpacing=${config?.gameSpacingEnabled}`);
     }
 
     const generator = new ScheduleGenerator(
-      season, divisionsToSchedule, divisionConfigs, teamsToSchedule, seasonFields, seasonCages,
+      season, allDivisions, divisionConfigs, allTeams, seasonFields, seasonCages,
       fieldAvailabilities, cageAvailabilities, fieldOverrides, cageOverrides
     );
 
@@ -189,15 +188,15 @@ describe('Production Data Gap Analysis', () => {
     const games = generator.getScheduledEvents().filter((e: any) => e.eventType === 'game');
 
     // Print AA games for comparison with production
-    const aaDiv = divisionsToSchedule.find((d: any) => d.name === 'AA');
+    const aaDiv = allDivisions.find((d: any) => d.name === 'AA');
     if (aaDiv) {
       const aaGames = games.filter((g: any) => g.divisionId === aaDiv.id).sort((a: any, b: any) =>
         a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)
       );
       console.log('\n=== LOCAL AA Games (for comparison) ===');
       for (const g of aaGames) {
-        const home = teamsToSchedule.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
-        const away = teamsToSchedule.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
+        const home = allTeams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
+        const away = allTeams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
         console.log(`${g.date} ${home} vs ${away}`);
       }
     }
@@ -205,9 +204,9 @@ describe('Production Data Gap Analysis', () => {
     console.log('\n=== Game Gap Analysis (Production Data) ===\n');
 
     // Group by division
-    for (const div of divisionsToSchedule) {
+    for (const div of allDivisions) {
       const config = divisionConfigs.find((c: any) => c.divisionId === div.id);
-      const divTeams = teamsToSchedule.filter((t: any) => t.divisionId === div.id);
+      const divTeams = allTeams.filter((t: any) => t.divisionId === div.id);
       const divGames = games.filter((g: any) => g.divisionId === div.id);
 
       if (divGames.length === 0) continue;
