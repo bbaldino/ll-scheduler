@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ScheduleGenerator } from './generator.js';
-import fixture from './__fixtures__/spring-2026.json';
+import fixture from './__fixtures__/spring-2026-prod.json';
 import type {
   Season,
   Division,
@@ -114,6 +114,15 @@ function convertSeasonField(row: any, fields: any[]): SeasonField {
     fieldId: row.field_id,
     fieldName: field?.name,
     divisionCompatibility,
+    // Include nested field info for practiceOnly check in slot building
+    field: field ? {
+      id: field.id,
+      name: field.name,
+      divisionCompatibility: parseJsonField(field.division_compatibility, []),
+      practiceOnly: field.practice_only === 1 || field.practice_only === true,
+      createdAt: field.created_at,
+      updatedAt: field.updated_at,
+    } : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

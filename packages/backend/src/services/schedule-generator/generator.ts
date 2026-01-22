@@ -1131,14 +1131,8 @@ export class ScheduleGenerator {
       this.rebalanceScheduledHomeAway();
       console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
 
-      // Step 4c: Rebalance short rest violations across teams
-      // This swaps game dates to balance short rest violations
-      stepStart = Date.now();
-      this.rebalanceShortRest();
-      console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
-
-      // Step 4c2: Reduce back-to-back games for divisions with game spacing enabled
-      // This tries to eliminate 1-day gaps between games
+      // Step 4c: Reduce back-to-back games (1-day gaps)
+      // This tries to eliminate 1-day gaps between games for all divisions
       stepStart = Date.now();
       const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
       this.reduceBackToBackGames(scheduledGames);
@@ -1148,6 +1142,13 @@ export class ScheduleGenerator {
       stepStart = Date.now();
       this.rebalanceMatchupSpacing();
       console.log(`  rebalanceMatchupSpacing: ${Date.now() - stepStart}ms`);
+
+      // Step 4e: Rebalance short rest violations across teams (run LAST)
+      // This swaps game dates to balance short rest violations
+      // Running last ensures the final schedule has balanced short rest delta
+      stepStart = Date.now();
+      this.rebalanceShortRest();
+      console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
 
       // Rebuild fieldDatesUsed from actual scheduled events after rebalancing
       // This is necessary because rebalancing swaps dates directly on events
