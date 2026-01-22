@@ -5032,7 +5032,14 @@ export class ScheduleGenerator {
         const violations: Array<{ matchupKey: string; games: typeof divisionGames; minGap: number }> = [];
         for (const [matchupKey, games] of gamesByMatchup) {
           if (games.length < 2) continue;
-          const sortedGames = [...games].sort((a, b) => a.date.localeCompare(b.date));
+          const sortedGames = [...games].sort((a, b) => {
+            const dateDiff = a.date.localeCompare(b.date);
+            if (dateDiff !== 0) return dateDiff;
+            // Deterministic tiebreaker: sort by start time, then field ID
+            const timeDiff = a.startTime.localeCompare(b.startTime);
+            if (timeDiff !== 0) return timeDiff;
+            return (a.fieldId || '').localeCompare(b.fieldId || '');
+          });
           let minGap = Infinity;
           for (let i = 1; i < sortedGames.length; i++) {
             const gap = getDayGap(sortedGames[i - 1].date, sortedGames[i].date);
@@ -5042,7 +5049,12 @@ export class ScheduleGenerator {
             violations.push({ matchupKey, games: sortedGames, minGap });
           }
         }
-        return violations.sort((a, b) => a.minGap - b.minGap); // Worst violations first
+        return violations.sort((a, b) => {
+          const gapDiff = a.minGap - b.minGap; // Worst violations first
+          if (gapDiff !== 0) return gapDiff;
+          // Deterministic tiebreaker: sort by matchup key
+          return a.matchupKey.localeCompare(b.matchupKey);
+        });
       };
 
       let violations = findViolations();
