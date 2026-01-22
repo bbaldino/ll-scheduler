@@ -104,6 +104,11 @@ function convertSeasonField(row: any, fields: any[]) {
   return {
     id: row.id, seasonId: row.season_id, fieldId: row.field_id, fieldName: field?.name,
     divisionCompatibility: parseJsonField(field?.division_compatibility, []),
+    // Include nested field info for practiceOnly check in slot building
+    field: field ? {
+      name: field.name,
+      practiceOnly: field.practice_only === 1 || field.practice_only === true,
+    } : undefined,
     createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
