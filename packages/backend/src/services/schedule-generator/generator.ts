@@ -701,7 +701,8 @@ export class ScheduleGenerator {
   private existingEventsCount: number = 0; // Track how many existing events were added to scheduledEvents
 
   public initializeWithExistingEvents(existingEvents: ScheduledEvent[]): void {
-    this.existingEventsToProcess = existingEvents;
+    // Sort by ID for deterministic ordering regardless of input order
+    this.existingEventsToProcess = [...existingEvents].sort((a, b) => a.id.localeCompare(b.id));
   }
 
   /**
