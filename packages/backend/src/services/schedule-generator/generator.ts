@@ -3212,7 +3212,14 @@ export class ScheduleGenerator {
               if (aIsOverflow && !bIsOverflow) return -1;
               if (!aIsOverflow && bIsOverflow) return 1;
 
-              // Second: short rest balance - teams with more short rest games go first
+              // Second: prefer matchups targeted for current week over future weeks
+              // This ensures matchups are scheduled in their intended weeks for even distribution
+              const aIsCurrentWeek = a.targetWeek === weekNum;
+              const bIsCurrentWeek = b.targetWeek === weekNum;
+              if (aIsCurrentWeek && !bIsCurrentWeek) return -1;
+              if (!aIsCurrentWeek && bIsCurrentWeek) return 1;
+
+              // Third: short rest balance - teams with more short rest games go first
               // This gives them first pick of slots that don't create more short rest
               const aHomeShortRest = this.teamSchedulingStates.get(a.homeTeamId)?.shortRestGamesCount || 0;
               const aAwayShortRest = this.teamSchedulingStates.get(a.awayTeamId)?.shortRestGamesCount || 0;
@@ -4515,6 +4522,38 @@ export class ScheduleGenerator {
               };
 
               if (wouldViolateMatchupSpacing()) {
+                continue;
+              }
+
+              // Check if swap would create field overlap with OTHER divisions' games
+              // When we swap dates/times, the fieldId stays the same - check if the
+              // new date/time slot is already occupied on that field by another division
+              const wouldCreateFieldConflict = (): boolean => {
+                const allGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+                // Check game1's field at game2's date/time
+                if (game1.fieldId) {
+                  const conflict = allGames.some(g =>
+                    g !== game1 && g !== game2 &&
+                    g.fieldId === game1.fieldId &&
+                    g.date === game2.date &&
+                    g.startTime < game2.endTime && g.endTime > game2.startTime
+                  );
+                  if (conflict) return true;
+                }
+                // Check game2's field at game1's date/time
+                if (game2.fieldId) {
+                  const conflict = allGames.some(g =>
+                    g !== game1 && g !== game2 &&
+                    g.fieldId === game2.fieldId &&
+                    g.date === game1.date &&
+                    g.startTime < game1.endTime && g.endTime > game1.startTime
+                  );
+                  if (conflict) return true;
+                }
+                return false;
+              };
+
+              if (wouldCreateFieldConflict()) {
                 continue;
               }
 

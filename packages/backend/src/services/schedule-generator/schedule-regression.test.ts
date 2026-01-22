@@ -101,21 +101,37 @@ function convertTeam(row: any): Team {
   };
 }
 
-function convertSeasonField(row: any): SeasonField {
+function convertSeasonField(row: any, fields: any[]): SeasonField {
+  // Look up the field to get divisionCompatibility and fieldName
+  const field = fields.find((f: any) => f.id === row.field_id);
+  let divisionCompatibility: string[] = [];
+  if (field?.division_compatibility) {
+    divisionCompatibility = parseJsonField(field.division_compatibility, []);
+  }
   return {
     id: row.id,
     seasonId: row.season_id,
     fieldId: row.field_id,
+    fieldName: field?.name,
+    divisionCompatibility,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function convertSeasonCage(row: any): SeasonCage {
+function convertSeasonCage(row: any, cages: any[]): SeasonCage {
+  // Look up the cage to get divisionCompatibility and cageName
+  const cage = cages.find((c: any) => c.id === row.cage_id);
+  let divisionCompatibility: string[] = [];
+  if (cage?.division_compatibility) {
+    divisionCompatibility = parseJsonField(cage.division_compatibility, []);
+  }
   return {
     id: row.id,
     seasonId: row.season_id,
     cageId: row.cage_id,
+    cageName: cage?.name,
+    divisionCompatibility,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -412,8 +428,8 @@ describe('Schedule Generation Regression Tests', () => {
     divisions = fixture.divisions.map(convertDivision);
     divisionConfigs = fixture.divisionConfigs.map(convertDivisionConfig);
     teams = fixture.teams.map(convertTeam);
-    seasonFields = fixture.seasonFields.map(convertSeasonField);
-    seasonCages = fixture.seasonCages.map(convertSeasonCage);
+    seasonFields = fixture.seasonFields.map(sf => convertSeasonField(sf, fixture.fields));
+    seasonCages = fixture.seasonCages.map(sc => convertSeasonCage(sc, fixture.cages));
     fieldAvailabilities = fixture.fieldAvailabilities.map(convertFieldAvailability);
     cageAvailabilities = fixture.cageAvailabilities.map(convertCageAvailability);
     fieldOverrides = fixture.fieldOverrides.map(convertFieldOverride);
@@ -472,6 +488,47 @@ describe('Schedule Generation Regression Tests', () => {
 
       // Just a check that we have games
       expect(scheduledGames.length).toBeGreaterThan(0);
+    });
+
+    it('should have no field overlaps on any day', () => {
+      const allEvents = generator.getScheduledEvents();
+
+      // Only check events with a fieldId (games and practices, not cage sessions)
+      const fieldEvents = allEvents.filter(e => e.fieldId);
+
+      // Group by date and field
+      const byDateAndField = new Map<string, typeof allEvents>();
+      for (const e of fieldEvents) {
+        const key = `${e.date}|${e.fieldId}`;
+        if (!byDateAndField.has(key)) byDateAndField.set(key, []);
+        byDateAndField.get(key)!.push(e);
+      }
+
+      // Check for overlaps within each date/field combination
+      const overlaps: string[] = [];
+      for (const [key, events] of byDateAndField) {
+        const [date, fieldId] = key.split('|');
+        for (let i = 0; i < events.length; i++) {
+          for (let j = i + 1; j < events.length; j++) {
+            const a = events[i];
+            const b = events[j];
+            if (a.startTime < b.endTime && b.startTime < a.endTime) {
+              const divNameA = divisions.find(d => d.id === a.divisionId)?.name || a.divisionId;
+              const divNameB = divisions.find(d => d.id === b.divisionId)?.name || b.divisionId;
+              overlaps.push(`${date} field ${fieldId}: ${divNameA} (${a.startTime}-${a.endTime}) vs ${divNameB} (${b.startTime}-${b.endTime})`);
+            }
+          }
+        }
+      }
+
+      if (overlaps.length > 0) {
+        console.log('Field overlaps found:');
+        for (const o of overlaps) {
+          console.log(`  ${o}`);
+        }
+      }
+
+      expect(overlaps.length, `Found ${overlaps.length} field overlaps`).toBe(0);
     });
   });
 
