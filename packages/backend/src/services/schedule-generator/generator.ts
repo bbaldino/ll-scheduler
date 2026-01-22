@@ -668,21 +668,22 @@ export class ScheduleGenerator {
     this.divisions = divisions; // Already sorted by schedulingOrder from listDivisions
     this.divisionConfigs = new Map(divisionConfigs.map((dc) => [dc.divisionId, dc]));
     this.divisionNames = new Map(divisions.map((d) => [d.id, d.name]));
-    this.teams = teams;
-    this.seasonFields = seasonFields;
-    this.seasonCages = seasonCages;
-    this.fieldAvailability = fieldAvailability;
-    this.cageAvailability = cageAvailability;
-    this.fieldOverrides = fieldOverrides;
-    this.cageOverrides = cageOverrides;
+    // Sort all input arrays by ID for deterministic ordering regardless of input order
+    this.teams = [...teams].sort((a, b) => a.id.localeCompare(b.id));
+    this.seasonFields = [...seasonFields].sort((a, b) => a.id.localeCompare(b.id));
+    this.seasonCages = [...seasonCages].sort((a, b) => a.id.localeCompare(b.id));
+    this.fieldAvailability = [...fieldAvailability].sort((a, b) => a.id.localeCompare(b.id));
+    this.cageAvailability = [...cageAvailability].sort((a, b) => a.id.localeCompare(b.id));
+    this.fieldOverrides = [...fieldOverrides].sort((a, b) => a.id.localeCompare(b.id));
+    this.cageOverrides = [...cageOverrides].sort((a, b) => a.id.localeCompare(b.id));
 
-    // Build lookup maps
-    for (const sf of seasonFields) {
+    // Build lookup maps (using sorted arrays for deterministic iteration)
+    for (const sf of this.seasonFields) {
       this.seasonFieldToFieldId.set(sf.id, sf.fieldId);
       // Store division compatibility (from the joined Field data)
       this.fieldDivisionCompatibility.set(sf.fieldId, sf.divisionCompatibility || []);
     }
-    for (const sc of seasonCages) {
+    for (const sc of this.seasonCages) {
       this.seasonCageToCageId.set(sc.id, sc.cageId);
       // Store division compatibility (from the joined Cage data)
       this.cageDivisionCompatibility.set(sc.cageId, sc.divisionCompatibility || []);
