@@ -4300,6 +4300,27 @@ export class ScheduleGenerator {
       return;
     }
 
+    // Pre-compute indexes for fast lookups (computed once, used many times)
+    // Index: date+teamId -> has field event
+    const teamDateHasFieldEvent = new Set<string>();
+    for (const e of this.scheduledEvents) {
+      if (e.eventType === 'game' || e.eventType === 'practice') {
+        if (e.homeTeamId) teamDateHasFieldEvent.add(`${e.date}|${e.homeTeamId}`);
+        if (e.awayTeamId) teamDateHasFieldEvent.add(`${e.date}|${e.awayTeamId}`);
+        if (e.teamId) teamDateHasFieldEvent.add(`${e.date}|${e.teamId}`);
+      }
+    }
+
+    // Index: fieldId+date -> list of games (for field conflict check)
+    const gamesByFieldDate = new Map<string, Array<{ startTime: string; endTime: string; game: typeof scheduledGames[0] }>>();
+    for (const game of scheduledGames) {
+      if (game.fieldId) {
+        const key = `${game.fieldId}|${game.date}`;
+        if (!gamesByFieldDate.has(key)) gamesByFieldDate.set(key, []);
+        gamesByFieldDate.get(key)!.push({ startTime: game.startTime, endTime: game.endTime, game });
+      }
+    }
+
     // Group games by division
     const gamesByDivision = new Map<string, typeof scheduledGames>();
     for (const game of scheduledGames) {
@@ -4391,40 +4412,32 @@ export class ScheduleGenerator {
               const teams1 = [game1.homeTeamId, game1.awayTeamId].filter(Boolean) as string[];
               const teams2 = [game2.homeTeamId, game2.awayTeamId].filter(Boolean) as string[];
 
-              // Check if swap would create same-day conflicts
-              // Must check ALL scheduled events (not just this division's games) for field events
-              const allFieldEvents = this.scheduledEvents.filter(
-                (e) => e.eventType === 'game' || e.eventType === 'practice'
-              );
-
+              // Check if swap would create same-day conflicts using pre-computed index
+              // Note: We need to exclude the games being swapped from the check
               let wouldCreateSameDayConflict = false;
               for (const teamId of teams1) {
-                // Check if this team has any field event on the new date (game2.date)
-                const hasFieldEventOnNewDate = allFieldEvents.some(
-                  (e) =>
-                    e !== game1 &&
-                    e !== game2 &&
-                    e.date === game2.date &&
-                    (e.homeTeamId === teamId || e.awayTeamId === teamId || e.teamId === teamId)
-                );
-                if (hasFieldEventOnNewDate) {
-                  wouldCreateSameDayConflict = true;
-                  break;
+                // Check if this team has any OTHER field event on the new date (game2.date)
+                // The index includes game1, so we check if there's more than just game1's entry
+                const key = `${game2.date}|${teamId}`;
+                if (teamDateHasFieldEvent.has(key)) {
+                  // There's something on that date - but is it just game2 (which will move away)?
+                  // If game2 involves this team, then the conflict would be with something else
+                  const game2InvolvesTeam = teams2.includes(teamId);
+                  if (!game2InvolvesTeam) {
+                    wouldCreateSameDayConflict = true;
+                    break;
+                  }
                 }
               }
               if (!wouldCreateSameDayConflict) {
                 for (const teamId of teams2) {
-                  // Check if this team has any field event on the new date (game1.date)
-                  const hasFieldEventOnNewDate = allFieldEvents.some(
-                    (e) =>
-                      e !== game1 &&
-                      e !== game2 &&
-                      e.date === game1.date &&
-                      (e.homeTeamId === teamId || e.awayTeamId === teamId || e.teamId === teamId)
-                  );
-                  if (hasFieldEventOnNewDate) {
-                    wouldCreateSameDayConflict = true;
-                    break;
+                  const key = `${game1.date}|${teamId}`;
+                  if (teamDateHasFieldEvent.has(key)) {
+                    const game1InvolvesTeam = teams1.includes(teamId);
+                    if (!game1InvolvesTeam) {
+                      wouldCreateSameDayConflict = true;
+                      break;
+                    }
                   }
                 }
               }
@@ -4526,29 +4539,33 @@ export class ScheduleGenerator {
               }
 
               // Check if swap would create field overlap with OTHER divisions' games
-              // When we swap dates/times, the fieldId stays the same - check if the
-              // new date/time slot is already occupied on that field by another division
+              // Using pre-computed index for O(1) lookup instead of O(n) filter
               const wouldCreateFieldConflict = (): boolean => {
-                const allGames = this.scheduledEvents.filter(e => e.eventType === 'game');
                 // Check game1's field at game2's date/time
                 if (game1.fieldId) {
-                  const conflict = allGames.some(g =>
-                    g !== game1 && g !== game2 &&
-                    g.fieldId === game1.fieldId &&
-                    g.date === game2.date &&
-                    g.startTime < game2.endTime && g.endTime > game2.startTime
-                  );
-                  if (conflict) return true;
+                  const key = `${game1.fieldId}|${game2.date}`;
+                  const gamesOnField = gamesByFieldDate.get(key);
+                  if (gamesOnField) {
+                    for (const { startTime, endTime, game } of gamesOnField) {
+                      if (game !== game1 && game !== game2 &&
+                          startTime < game2.endTime && endTime > game2.startTime) {
+                        return true;
+                      }
+                    }
+                  }
                 }
                 // Check game2's field at game1's date/time
                 if (game2.fieldId) {
-                  const conflict = allGames.some(g =>
-                    g !== game1 && g !== game2 &&
-                    g.fieldId === game2.fieldId &&
-                    g.date === game1.date &&
-                    g.startTime < game1.endTime && g.endTime > game1.startTime
-                  );
-                  if (conflict) return true;
+                  const key = `${game2.fieldId}|${game1.date}`;
+                  const gamesOnField = gamesByFieldDate.get(key);
+                  if (gamesOnField) {
+                    for (const { startTime, endTime, game } of gamesOnField) {
+                      if (game !== game1 && game !== game2 &&
+                          startTime < game1.endTime && endTime > game1.startTime) {
+                        return true;
+                      }
+                    }
+                  }
                 }
                 return false;
               };
@@ -4669,6 +4686,27 @@ export class ScheduleGenerator {
       return;
     }
 
+    // Pre-compute indexes for fast lookups (computed once, used many times)
+    // Index: date+teamId -> has field event
+    const teamDateHasFieldEvent = new Set<string>();
+    for (const e of this.scheduledEvents) {
+      if (e.eventType === 'game' || e.eventType === 'practice') {
+        if (e.homeTeamId) teamDateHasFieldEvent.add(`${e.date}|${e.homeTeamId}`);
+        if (e.awayTeamId) teamDateHasFieldEvent.add(`${e.date}|${e.awayTeamId}`);
+        if (e.teamId) teamDateHasFieldEvent.add(`${e.date}|${e.teamId}`);
+      }
+    }
+
+    // Index: fieldId+date -> list of games (for field conflict check)
+    const gamesByFieldDate = new Map<string, Array<{ startTime: string; endTime: string; game: typeof scheduledGames[0] }>>();
+    for (const game of scheduledGames) {
+      if (game.fieldId) {
+        const key = `${game.fieldId}|${game.date}`;
+        if (!gamesByFieldDate.has(key)) gamesByFieldDate.set(key, []);
+        gamesByFieldDate.get(key)!.push({ startTime: game.startTime, endTime: game.endTime, game });
+      }
+    }
+
     // Group games by division
     const gamesByDivision = new Map<string, typeof scheduledGames>();
     for (const game of scheduledGames) {
@@ -4770,37 +4808,27 @@ export class ScheduleGenerator {
             const teams1 = [violationGame.homeTeamId, violationGame.awayTeamId].filter(Boolean) as string[];
             const teams2 = [otherGame.homeTeamId, otherGame.awayTeamId].filter(Boolean) as string[];
 
-            // Check if swap would create same-day conflicts
-            const allFieldEvents = this.scheduledEvents.filter(
-              (e) => e.eventType === 'game' || e.eventType === 'practice'
-            );
-
+            // Check if swap would create same-day conflicts using pre-computed index
             let wouldCreateSameDayConflict = false;
             for (const teamId of teams1) {
-              const hasFieldEventOnNewDate = allFieldEvents.some(
-                (e) =>
-                  e !== violationGame &&
-                  e !== otherGame &&
-                  e.date === otherGame.date &&
-                  (e.homeTeamId === teamId || e.awayTeamId === teamId || e.teamId === teamId)
-              );
-              if (hasFieldEventOnNewDate) {
-                wouldCreateSameDayConflict = true;
-                break;
+              const key = `${otherGame.date}|${teamId}`;
+              if (teamDateHasFieldEvent.has(key)) {
+                const otherGameInvolvesTeam = teams2.includes(teamId);
+                if (!otherGameInvolvesTeam) {
+                  wouldCreateSameDayConflict = true;
+                  break;
+                }
               }
             }
             if (!wouldCreateSameDayConflict) {
               for (const teamId of teams2) {
-                const hasFieldEventOnNewDate = allFieldEvents.some(
-                  (e) =>
-                    e !== violationGame &&
-                    e !== otherGame &&
-                    e.date === violationGame.date &&
-                    (e.homeTeamId === teamId || e.awayTeamId === teamId || e.teamId === teamId)
-                );
-                if (hasFieldEventOnNewDate) {
-                  wouldCreateSameDayConflict = true;
-                  break;
+                const key = `${violationGame.date}|${teamId}`;
+                if (teamDateHasFieldEvent.has(key)) {
+                  const violationGameInvolvesTeam = teams1.includes(teamId);
+                  if (!violationGameInvolvesTeam) {
+                    wouldCreateSameDayConflict = true;
+                    break;
+                  }
                 }
               }
             }
@@ -4911,27 +4939,33 @@ export class ScheduleGenerator {
             const shortRestDeltaBefore = calculateShortRestDelta();
 
             // Check if swap would create field overlap with OTHER divisions' games
+            // Using pre-computed index for O(1) lookup instead of O(n) filter
             const wouldCreateFieldConflict = (): boolean => {
-              const allGames = this.scheduledEvents.filter(e => e.eventType === 'game');
               // Check violationGame's field at otherGame's date/time
               if (violationGame.fieldId) {
-                const conflict = allGames.some(g =>
-                  g !== violationGame && g !== otherGame &&
-                  g.fieldId === violationGame.fieldId &&
-                  g.date === otherGame.date &&
-                  g.startTime < otherGame.endTime && g.endTime > otherGame.startTime
-                );
-                if (conflict) return true;
+                const key = `${violationGame.fieldId}|${otherGame.date}`;
+                const gamesOnField = gamesByFieldDate.get(key);
+                if (gamesOnField) {
+                  for (const { startTime, endTime, game } of gamesOnField) {
+                    if (game !== violationGame && game !== otherGame &&
+                        startTime < otherGame.endTime && endTime > otherGame.startTime) {
+                      return true;
+                    }
+                  }
+                }
               }
               // Check otherGame's field at violationGame's date/time
               if (otherGame.fieldId) {
-                const conflict = allGames.some(g =>
-                  g !== violationGame && g !== otherGame &&
-                  g.fieldId === otherGame.fieldId &&
-                  g.date === violationGame.date &&
-                  g.startTime < violationGame.endTime && g.endTime > violationGame.startTime
-                );
-                if (conflict) return true;
+                const key = `${otherGame.fieldId}|${violationGame.date}`;
+                const gamesOnField = gamesByFieldDate.get(key);
+                if (gamesOnField) {
+                  for (const { startTime, endTime, game } of gamesOnField) {
+                    if (game !== violationGame && game !== otherGame &&
+                        startTime < violationGame.endTime && endTime > violationGame.startTime) {
+                      return true;
+                    }
+                  }
+                }
               }
               return false;
             };
