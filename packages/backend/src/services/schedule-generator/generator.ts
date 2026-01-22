@@ -1717,7 +1717,7 @@ export class ScheduleGenerator {
       divisionId: string;
       divisionName: string;
       teams: Team[];
-      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number };
+      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number; maxGamesPerWeek?: number };
       matchups: Array<GameMatchup & { targetWeek: number }>;
     };
 
@@ -1912,7 +1912,7 @@ export class ScheduleGenerator {
         divisionId,
         divisionName,
         teams: divisionTeams,
-        config: { gamesPerWeek: config.gamesPerWeek, gameDurationHours: config.gameDurationHours, gameArriveBeforeHours: config.gameArriveBeforeHours },
+        config: { gamesPerWeek: config.gamesPerWeek, gameDurationHours: config.gameDurationHours, gameArriveBeforeHours: config.gameArriveBeforeHours, maxGamesPerWeek: config.maxGamesPerWeek },
         matchups,
       });
     }
@@ -2938,6 +2938,16 @@ export class ScheduleGenerator {
           const awayTeamState = this.teamSchedulingStates.get(matchup.awayTeamId);
           if (!homeTeamState || !awayTeamState) continue;
 
+          // Check maxGamesPerWeek cap for both teams (hard limit if set)
+          const maxGamesPerWeek = division.config.maxGamesPerWeek;
+          if (maxGamesPerWeek != null) {
+            const homeGamesThisWeek = homeTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+            const awayGamesThisWeek = awayTeamState.eventsPerWeek.get(week.weekNumber)?.games || 0;
+            if (homeGamesThisWeek >= maxGamesPerWeek || awayGamesThisWeek >= maxGamesPerWeek) {
+              continue; // Skip this week - one of the teams is at max cap
+            }
+          }
+
           // Generate candidates (ignoring day preferences - just find any slot)
           const candidates = generateCandidatesForGame(
             matchup,
@@ -3145,7 +3155,7 @@ export class ScheduleGenerator {
       divisionId: string;
       divisionName: string;
       teams: Team[];
-      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number };
+      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number; maxGamesPerWeek?: number };
       matchups: Array<GameMatchup & { targetWeek: number }>;
     }>,
     gameWeeks: WeekDefinition[]
@@ -3527,7 +3537,7 @@ export class ScheduleGenerator {
       divisionId: string;
       divisionName: string;
       teams: Team[];
-      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number };
+      config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number; maxGamesPerWeek?: number };
     }>,
     gameWeeks: WeekDefinition[]
   ): void {
@@ -3626,7 +3636,7 @@ export class ScheduleGenerator {
    */
   private diagnoseRequiredDayShortfall(
     team: Team,
-    division: { divisionId: string; divisionName: string; config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number } },
+    division: { divisionId: string; divisionName: string; config: { gamesPerWeek: number; gameDurationHours: number; gameArriveBeforeHours?: number; maxGamesPerWeek?: number } },
     requiredDayOfWeek: number,
     gameWeeks: WeekDefinition[]
   ): {

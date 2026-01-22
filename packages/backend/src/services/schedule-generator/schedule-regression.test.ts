@@ -659,6 +659,98 @@ describe('Schedule Generation Regression Tests', () => {
     }
   });
 
+  describe('Max Games Per Week', () => {
+    // Helper to get Monday-based week number (matches generator's week calculation)
+    // Uses UTC dates to avoid DST/timezone issues
+    function getWeekNumber(dateStr: string, seasonStartDate: string): number {
+      // Parse dates as UTC noon to avoid DST issues
+      const parseToUTC = (s: string) => {
+        const [y, m, d] = s.split('-').map(Number);
+        return Date.UTC(y, m - 1, d, 12, 0, 0); // noon UTC
+      };
+      const dateMs = parseToUTC(dateStr);
+      const seasonStartMs = parseToUTC(seasonStartDate);
+
+      // Get day of week for season start (0=Sun, 1=Mon, etc)
+      const seasonStartDate_obj = new Date(seasonStartMs);
+      const startDayOfWeek = seasonStartDate_obj.getUTCDay();
+
+      // Adjust to Monday of that week
+      const daysToSubtract = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+      const weekStartMs = seasonStartMs - daysToSubtract * 24 * 60 * 60 * 1000;
+
+      // Calculate week number based on Monday-based weeks
+      const daysDiff = Math.round((dateMs - weekStartMs) / (24 * 60 * 60 * 1000));
+      return Math.floor(daysDiff / 7);
+    }
+
+    it('A division: teams should not exceed 2 games per week', () => {
+      const divisionId = divisions.find(d => d.name === 'A')?.id;
+      expect(divisionId).toBeDefined();
+
+      const divGames = scheduledGames.filter(g => g.divisionId === divisionId);
+      const divTeams = teams.filter(t => t.divisionId === divisionId);
+
+      // Group games by team and week
+      const violations: string[] = [];
+      const violationDetails: string[] = [];
+      for (const team of divTeams) {
+        const teamGames = divGames.filter(g => g.homeTeamId === team.id || g.awayTeamId === team.id);
+        const gamesByWeek = new Map<number, Array<{ date: string; opponent: string }>>();
+
+        for (const game of teamGames) {
+          const weekNum = getWeekNumber(game.date, season.startDate);
+          if (!gamesByWeek.has(weekNum)) gamesByWeek.set(weekNum, []);
+          const opponentId = game.homeTeamId === team.id ? game.awayTeamId : game.homeTeamId;
+          const opponent = divTeams.find(t => t.id === opponentId)?.name || opponentId || 'unknown';
+          gamesByWeek.get(weekNum)!.push({ date: game.date, opponent });
+        }
+
+        for (const [week, games] of gamesByWeek) {
+          if (games.length > 2) {
+            violations.push(`${team.name} has ${games.length} games in week ${week + 1}`);
+            violationDetails.push(`${team.name} week ${week + 1}: ${games.map(g => `${g.date} vs ${g.opponent}`).join(', ')}`);
+          }
+        }
+      }
+
+      console.log(`A division max games violations: ${violations.length > 0 ? violations.join(', ') : 'none'}`);
+      if (violationDetails.length > 0) {
+        console.log(`Violation details:\n  ${violationDetails.join('\n  ')}`);
+      }
+      expect(violations.length, `Violations: ${violations.join(', ')}`).toBe(0);
+    });
+
+    it('Tball division: teams should not exceed 1 game per week', () => {
+      const divisionId = divisions.find(d => d.name === 'Tball')?.id;
+      expect(divisionId).toBeDefined();
+
+      const divGames = scheduledGames.filter(g => g.divisionId === divisionId);
+      const divTeams = teams.filter(t => t.divisionId === divisionId);
+
+      // Group games by team and week
+      const violations: string[] = [];
+      for (const team of divTeams) {
+        const teamGames = divGames.filter(g => g.homeTeamId === team.id || g.awayTeamId === team.id);
+        const gamesByWeek = new Map<number, number>();
+
+        for (const game of teamGames) {
+          const weekNum = getWeekNumber(game.date, season.startDate);
+          gamesByWeek.set(weekNum, (gamesByWeek.get(weekNum) || 0) + 1);
+        }
+
+        for (const [week, count] of gamesByWeek) {
+          if (count > 1) {
+            violations.push(`${team.name} has ${count} games in week ${week + 1}`);
+          }
+        }
+      }
+
+      console.log(`Tball division max games violations: ${violations.length > 0 ? violations.join(', ') : 'none'}`);
+      expect(violations.length, `Violations: ${violations.join(', ')}`).toBe(0);
+    });
+  });
+
   describe('Blackout Dates', () => {
     it('should not schedule games on global blackout dates', () => {
       // 2026-03-15 is "Picture day" - a global blackout (no divisionIds specified)
