@@ -2975,9 +2975,11 @@ export class ScheduleGenerator {
         // Round-robin through divisions, letting each pick from ANY day in their available groups
         let scheduledThisTier = 0;
         let continueScheduling = true;
+        let roundNum = 0;
 
         while (continueScheduling) {
           continueScheduling = false;
+          roundNum++;
 
           // Go through divisions in rotated order
           for (const divisionId of divisionList) {
@@ -2985,7 +2987,11 @@ export class ScheduleGenerator {
             if (!divData) continue;
 
             const queue = divisionMatchupQueues.get(divisionId);
-            if (!queue || queue.length === 0) continue;
+            const divName = this.divisionNames.get(divisionId) || divisionId;
+
+            if (!queue || queue.length === 0) {
+              continue;
+            }
 
             // Get all groups (days) this division can use
             const availableGroups = divisionToGroups.get(divisionId) || [];
@@ -3069,10 +3075,11 @@ export class ScheduleGenerator {
                 !this.isDateBlockedForDivision(rs.slot.date, 'game', divisionId)
               );
 
-              if (daySlots.length === 0) continue;
+              if (daySlots.length === 0) {
+                continue;
+              }
 
               // Try matchups until one succeeds
-              const divName = this.divisionNames.get(divisionId) || divisionId;
               let scheduledMatchup: (GameMatchup & { targetWeek: number }) | null = null;
               let scheduledMatchupIndex = -1;
               let bestCandidate: ReturnType<typeof calculatePlacementScore> | null = null;
@@ -3131,18 +3138,6 @@ export class ScheduleGenerator {
                   }
                 }
 
-                // Enforce fairness: skip if either team is too far ahead
-                // This works together with the prioritized sorting to ensure no team gets more than 1 game ahead
-                const homeCumulativeGames = getCumulativeGames(matchup.homeTeamId);
-                const awayCumulativeGames = getCumulativeGames(matchup.awayTeamId);
-                const allCumulativeGameCounts = teamIds.map(id => getCumulativeGames(id));
-                const minCumulativeGames = Math.min(...allCumulativeGameCounts);
-                // Use >= because after scheduling, both teams will have +1, so a team at min+1 would become min+2
-                if (homeCumulativeGames >= minCumulativeGames + 1 ||
-                    awayCumulativeGames >= minCumulativeGames + 1) {
-                  continue; // Try next matchup - one of the teams is too far ahead
-                }
-
                 // Found a valid matchup to schedule!
                 scheduledMatchup = matchup;
                 scheduledMatchupIndex = matchupIndex;
@@ -3184,7 +3179,6 @@ export class ScheduleGenerator {
               scheduledMatchupKeys.add(matchupKey);
 
               // Log
-              const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
               const homeTeam = divData.teams.find((t) => t.id === matchup.homeTeamId);
               const awayTeam = divData.teams.find((t) => t.id === matchup.awayTeamId);
               console.log(
