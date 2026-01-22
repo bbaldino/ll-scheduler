@@ -1078,10 +1078,8 @@ export function compareCandidatesForTiebreak(a: ScoredCandidate, b: ScoredCandid
   const timeCompare = a.startTime.localeCompare(b.startTime);
   if (timeCompare !== 0) return timeCompare;
 
-  // Then by resource ID (fieldId or cageId)
-  const aResource = a.fieldId || a.cageId || '';
-  const bResource = b.fieldId || b.cageId || '';
-  return aResource.localeCompare(bResource);
+  // Then by resource ID
+  return a.resourceId.localeCompare(b.resourceId);
 }
 
 /**

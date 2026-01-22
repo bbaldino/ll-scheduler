@@ -3,7 +3,7 @@ import { ScheduleGenerator } from './generator.js';
 import fixture from './__fixtures__/spring-2026-prod.json';
 
 // Conversion functions
-function parseJsonField(value: any, defaultValue: any = []) {
+function parseJsonField(value: any, defaultValue: any = []): any {
   if (value === null || value === undefined || value === 'null') return defaultValue;
   if (typeof value === 'string') { try { return JSON.parse(value); } catch { return defaultValue; } }
   return value;
@@ -107,11 +107,11 @@ function convertCageOverride(row: any) {
 describe('Production Data Gap Analysis', () => {
   it('should analyze game gaps per division with production data', async () => {
     const season = convertSeason(fixture.season);
-    const divisions = fixture.divisions.map(convertDivision).sort((a, b) => a.schedulingOrder - b.schedulingOrder);
+    const divisions = fixture.divisions.map(convertDivision).sort((a: any, b: any) => a.schedulingOrder - b.schedulingOrder);
     const divisionConfigs = fixture.divisionConfigs.map(convertDivisionConfig);
     const teams = fixture.teams.map(convertTeam);
-    const seasonFields = fixture.seasonFields.map(sf => convertSeasonField(sf, fixture.fields));
-    const seasonCages = fixture.seasonCages.map(sc => convertSeasonCage(sc, fixture.cages));
+    const seasonFields = fixture.seasonFields.map((sf: any) => convertSeasonField(sf, fixture.fields));
+    const seasonCages = fixture.seasonCages.map((sc: any) => convertSeasonCage(sc, fixture.cages));
     const fieldAvailabilities = fixture.fieldAvailabilities.map(convertFieldAvailability);
     const cageAvailabilities = fixture.cageAvailabilities.map(convertCageAvailability);
     const fieldOverrides = fixture.fieldOverrides.map(convertFieldOverride);
@@ -126,8 +126,8 @@ describe('Production Data Gap Analysis', () => {
     console.log(`Field Overrides: ${fieldOverrides.length}`);
 
     for (const div of divisions) {
-      const config = divisionConfigs.find(c => c.divisionId === div.id);
-      const divTeams = teams.filter(t => t.divisionId === div.id);
+      const config = divisionConfigs.find((c: any) => c.divisionId === div.id);
+      const divTeams = teams.filter((t: any) => t.divisionId === div.id);
       console.log(`  ${div.name}: ${divTeams.length} teams, gameSpacing=${config?.gameSpacingEnabled}`);
     }
 
@@ -138,18 +138,18 @@ describe('Production Data Gap Analysis', () => {
 
     await generator.generate();
 
-    const games = generator.getScheduledEvents().filter(e => e.eventType === 'game');
+    const games = generator.getScheduledEvents().filter((e: any) => e.eventType === 'game');
 
     // Print AA games for comparison with production
-    const aaDiv = divisions.find(d => d.name === 'AA');
+    const aaDiv = divisions.find((d: any) => d.name === 'AA');
     if (aaDiv) {
-      const aaGames = games.filter(g => g.divisionId === aaDiv.id).sort((a, b) =>
+      const aaGames = games.filter((g: any) => g.divisionId === aaDiv.id).sort((a: any, b: any) =>
         a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)
       );
       console.log('\n=== LOCAL AA Games (for comparison) ===');
       for (const g of aaGames) {
-        const home = teams.find(t => t.id === g.homeTeamId)?.name || g.homeTeamId;
-        const away = teams.find(t => t.id === g.awayTeamId)?.name || g.awayTeamId;
+        const home = teams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
+        const away = teams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
         console.log(`${g.date} ${home} vs ${away}`);
       }
     }
@@ -158,9 +158,9 @@ describe('Production Data Gap Analysis', () => {
 
     // Group by division
     for (const div of divisions) {
-      const config = divisionConfigs.find(c => c.divisionId === div.id);
-      const divTeams = teams.filter(t => t.divisionId === div.id);
-      const divGames = games.filter(g => g.divisionId === div.id);
+      const config = divisionConfigs.find((c: any) => c.divisionId === div.id);
+      const divTeams = teams.filter((t: any) => t.divisionId === div.id);
+      const divGames = games.filter((g: any) => g.divisionId === div.id);
 
       if (divGames.length === 0) continue;
 
@@ -173,8 +173,8 @@ describe('Production Data Gap Analysis', () => {
       const teamGapDetails = new Map<string, { min: number; gapList: Array<{gap: number, dates: string}> }>();
 
       for (const team of divTeams) {
-        const teamGames = divGames.filter(g => g.homeTeamId === team.id || g.awayTeamId === team.id);
-        const dates = [...new Set(teamGames.map(g => g.date))].sort();
+        const teamGames = divGames.filter((g: any) => g.homeTeamId === team.id || g.awayTeamId === team.id);
+        const dates = [...new Set(teamGames.map((g: any) => g.date))].sort();
 
         const gapList: Array<{gap: number, dates: string}> = [];
         for (let i = 1; i < dates.length; i++) {
@@ -185,12 +185,12 @@ describe('Production Data Gap Analysis', () => {
           gapCounts.set(gap, (gapCounts.get(gap) || 0) + 1);
         }
 
-        const minGap = gapList.length > 0 ? Math.min(...gapList.map(g => g.gap)) : Infinity;
+        const minGap = gapList.length > 0 ? Math.min(...gapList.map((g: {gap: number}) => g.gap)) : Infinity;
         teamGapDetails.set(team.name, { min: minGap, gapList });
       }
 
       // Find overall min gap
-      const allGaps = Array.from(gapCounts.keys()).sort((a, b) => a - b);
+      const allGaps = Array.from(gapCounts.keys()).sort((a: number, b: number) => a - b);
       const minGap = allGaps.length > 0 ? allGaps[0] : 'N/A';
 
       console.log(`  Min gap across all teams: ${minGap} days`);
@@ -208,7 +208,7 @@ describe('Production Data Gap Analysis', () => {
       if (spacingEnabled && typeof minGap === 'number' && minGap <= 2) {
         console.log(`  Specific short gaps:`);
         for (const [teamName, data] of teamGapDetails) {
-          const shortGaps = data.gapList.filter(g => g.gap <= 2);
+          const shortGaps = data.gapList.filter((g: {gap: number}) => g.gap <= 2);
           if (shortGaps.length > 0) {
             console.log(`    ${teamName}:`);
             for (const sg of shortGaps) {

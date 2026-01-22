@@ -1,0 +1,1796 @@
+{
+  "metadata": {
+    "exportedAt": "2026-01-22T20:16:59.846Z",
+    "seasonId": "1767680016203-qkoplgifk",
+    "seasonName": "Spring 2026"
+  },
+  "season": {
+    "id": "1767680016203-qkoplgifk",
+    "name": "Spring 2026",
+    "start_date": "2026-02-02",
+    "end_date": "2026-06-06",
+    "status": "draft",
+    "created_at": "2026-01-06T06:13:36.204Z",
+    "updated_at": "2026-01-22T06:52:37.895Z",
+    "games_start_date": "2026-03-07",
+    "blackout_dates": "[{\"date\":\"2026-02-02\",\"endDate\":\"2026-02-13\",\"divisionIds\":[\"1764044661933-gc04sqs6e\",\"1764044134510-tkpok8n9q\"],\"reason\":\"Late start\"},{\"date\":\"2026-02-07\",\"reason\":\"Manual upper division practice scheduling\",\"divisionIds\":[\"1764044670033-ypiflrvz3\",\"1764044665707-akrniol85\",\"1764044681226-xujbgtx1j\"]},{\"date\":\"2026-02-07\",\"blockedEventTypes\":[\"practice\",\"cage\"],\"reason\":\"Opening day (no practices/cages)\"},{\"date\":\"2026-02-14\",\"divisionIds\":[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\",\"1764044665707-akrniol85\"],\"reason\":\"Manual upper division practice scheduling\"},{\"date\":\"2026-02-16\",\"reason\":\"President's Day\"},{\"date\":\"2026-02-21\",\"divisionIds\":[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\",\"1764044665707-akrniol85\"],\"reason\":\"Manual upper division practice scheduling\"},{\"date\":\"2026-02-28\",\"divisionIds\":[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\",\"1764044665707-akrniol85\"],\"reason\":\"Manual upper division practice scheduling\"},{\"date\":\"2026-02-28\",\"reason\":\"Umpire Clinic\"},{\"date\":\"2026-03-11\",\"reason\":\"Spring Concert\",\"divisionIds\":[\"1764044681226-xujbgtx1j\"]},{\"date\":\"2026-03-15\",\"reason\":\"Picture day\"},{\"date\":\"2026-04-13\",\"reason\":\"Spring break (practice and cage ok)\",\"endDate\":\"2026-04-14\",\"blockedEventTypes\":[\"game\"]},{\"date\":\"2026-04-15\",\"endDate\":\"2026-04-17\",\"reason\":\"Spring break (nothing)\"},{\"date\":\"2026-04-18\",\"endDate\":\"2026-04-19\",\"blockedEventTypes\":[\"game\"],\"reason\":\"Spring break (practice and cage ok)\"},{\"date\":\"2026-04-23\",\"reason\":\"Price Open House\",\"divisionIds\":[\"1764044681226-xujbgtx1j\"]},{\"date\":\"2026-05-02\",\"reason\":\"Hit-A-thon\",\"endDate\":\"2026-05-03\"},{\"date\":\"2026-05-13\",\"reason\":\"Finale Concert\",\"divisionIds\":[\"1764044681226-xujbgtx1j\"]},{\"date\":\"2026-05-14\",\"reason\":\"Maker Fair\"},{\"date\":\"2026-05-20\",\"reason\":\"Cambrian District Elementary Band and Choir Festival\",\"divisionIds\":[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\"]},{\"date\":\"2026-05-22\",\"divisionIds\":[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\",\"1764044665707-akrniol85\"],\"endDate\":\"2026-06-06\",\"reason\":\"A/Tball only\"},{\"date\":\"2026-05-23\",\"endDate\":\"2026-05-25\",\"reason\":\"Memorial Day\"}]",
+    "weekday_practice_start_time": "16:30"
+  },
+  "divisions": [
+    {
+      "id": "1764044681226-xujbgtx1j",
+      "name": "Majors",
+      "created_at": "2025-11-25T04:24:41.226Z",
+      "updated_at": "2026-01-16T04:48:39.773Z",
+      "scheduling_order": 0
+    },
+    {
+      "id": "1764044670033-ypiflrvz3",
+      "name": "AAA",
+      "created_at": "2025-11-25T04:24:30.033Z",
+      "updated_at": "2026-01-16T04:48:39.773Z",
+      "scheduling_order": 1
+    },
+    {
+      "id": "1764044665707-akrniol85",
+      "name": "AA",
+      "created_at": "2025-11-25T04:24:25.707Z",
+      "updated_at": "2026-01-16T04:48:39.773Z",
+      "scheduling_order": 2
+    },
+    {
+      "id": "1764044134510-tkpok8n9q",
+      "name": "Tball",
+      "created_at": "2025-11-25T04:15:34.510Z",
+      "updated_at": "2026-01-16T04:48:39.773Z",
+      "scheduling_order": 3
+    },
+    {
+      "id": "1764044661933-gc04sqs6e",
+      "name": "A",
+      "created_at": "2025-11-25T04:24:21.933Z",
+      "updated_at": "2026-01-16T04:48:39.773Z",
+      "scheduling_order": 4
+    },
+    {
+      "id": "1764044676026-hbwz5ftug",
+      "name": "Skills & Drills",
+      "created_at": "2025-11-25T04:24:36.027Z",
+      "updated_at": "2026-01-16T04:48:39.773Z",
+      "scheduling_order": 5
+    }
+  ],
+  "divisionConfigs": [
+    {
+      "id": "1767740820383-hncg1d2hc",
+      "division_id": "1764044681226-xujbgtx1j",
+      "season_id": "1767680016203-qkoplgifk",
+      "practices_per_week": 2,
+      "practice_duration_hours": 2,
+      "games_per_week": 2,
+      "game_duration_hours": 2,
+      "game_arrive_before_hours": 1,
+      "game_day_preferences": "[{\"dayOfWeek\":6,\"priority\":\"required\"},{\"dayOfWeek\":1,\"priority\":\"acceptable\"},{\"dayOfWeek\":2,\"priority\":\"preferred\"},{\"dayOfWeek\":3,\"priority\":\"preferred\"},{\"dayOfWeek\":4,\"priority\":\"preferred\"},{\"dayOfWeek\":5,\"priority\":\"acceptable\"},{\"dayOfWeek\":0,\"priority\":\"avoid\"}]",
+      "min_consecutive_day_gap": "null",
+      "cage_sessions_per_week": 2,
+      "cage_session_duration_hours": 2,
+      "field_preferences": "[\"1767681929950-nbdn6ki0p\",\"1764572875765-y77nwmg8w\",\"1764572851019-na471t3y3\",\"1764048692234-znsdx6yrv\"]",
+      "game_week_overrides": "[{\"weekNumber\":1,\"gamesPerWeek\":1},{\"weekNumber\":7,\"gamesPerWeek\":0},{\"weekNumber\":9,\"gamesPerWeek\":1}]",
+      "max_games_per_season": 18,
+      "sunday_paired_practice_enabled": 1,
+      "sunday_paired_practice_duration_hours": 2.6666666666666665,
+      "sunday_paired_practice_field_id": "1767681929950-nbdn6ki0p",
+      "sunday_paired_practice_cage_id": "1764573073199-n1flj6kpm",
+      "game_spacing_enabled": 1,
+      "created_at": "2026-01-06T23:07:00.383Z",
+      "updated_at": "2026-01-20T07:08:57.755Z",
+      "practice_arrive_before_minutes": 10,
+      "max_games_per_week": null,
+      "weekday_practice_start_time": null
+    },
+    {
+      "id": "1767740873729-mxpxm4kbj",
+      "division_id": "1764044670033-ypiflrvz3",
+      "season_id": "1767680016203-qkoplgifk",
+      "practices_per_week": 2,
+      "practice_duration_hours": 2,
+      "games_per_week": 2,
+      "game_duration_hours": 2,
+      "game_arrive_before_hours": 1,
+      "game_day_preferences": "[{\"dayOfWeek\":6,\"priority\":\"required\"},{\"dayOfWeek\":1,\"priority\":\"acceptable\"},{\"dayOfWeek\":2,\"priority\":\"preferred\"},{\"dayOfWeek\":3,\"priority\":\"preferred\"},{\"dayOfWeek\":4,\"priority\":\"preferred\"},{\"dayOfWeek\":5,\"priority\":\"acceptable\"},{\"dayOfWeek\":0,\"priority\":\"avoid\"}]",
+      "min_consecutive_day_gap": "null",
+      "cage_sessions_per_week": 2,
+      "cage_session_duration_hours": 2,
+      "field_preferences": "[\"1767681938704-w5a8l1r0f\",\"1767681929950-nbdn6ki0p\",\"1764048692234-znsdx6yrv\",\"1764572875765-y77nwmg8w\"]",
+      "game_week_overrides": "[{\"weekNumber\":1,\"gamesPerWeek\":1},{\"weekNumber\":7,\"gamesPerWeek\":0},{\"weekNumber\":9,\"gamesPerWeek\":1}]",
+      "max_games_per_season": 18,
+      "sunday_paired_practice_enabled": 1,
+      "sunday_paired_practice_duration_hours": 2.6666666666666665,
+      "sunday_paired_practice_field_id": "1767681938704-w5a8l1r0f",
+      "sunday_paired_practice_cage_id": "1764573064753-ioliy0ywm",
+      "game_spacing_enabled": 1,
+      "created_at": "2026-01-06T23:07:53.729Z",
+      "updated_at": "2026-01-20T07:09:08.978Z",
+      "practice_arrive_before_minutes": 10,
+      "max_games_per_week": null,
+      "weekday_practice_start_time": null
+    },
+    {
+      "id": "1767741075042-wfq95ag7i",
+      "division_id": "1764044665707-akrniol85",
+      "season_id": "1767680016203-qkoplgifk",
+      "practices_per_week": 2,
+      "practice_duration_hours": 2,
+      "games_per_week": 2,
+      "game_duration_hours": 2,
+      "game_arrive_before_hours": 1,
+      "game_day_preferences": "[{\"dayOfWeek\":6,\"priority\":\"required\"},{\"dayOfWeek\":1,\"priority\":\"acceptable\"},{\"dayOfWeek\":2,\"priority\":\"preferred\"},{\"dayOfWeek\":3,\"priority\":\"preferred\"},{\"dayOfWeek\":4,\"priority\":\"preferred\"},{\"dayOfWeek\":5,\"priority\":\"acceptable\"},{\"dayOfWeek\":0,\"priority\":\"avoid\"}]",
+      "min_consecutive_day_gap": "null",
+      "cage_sessions_per_week": 2,
+      "cage_session_duration_hours": 2,
+      "field_preferences": "[\"1767681947962-7yragh5cu\",\"1767681938704-w5a8l1r0f\",\"1764048692234-znsdx6yrv\",\"1764572851019-na471t3y3\"]",
+      "game_week_overrides": "[{\"weekNumber\":1,\"gamesPerWeek\":1},{\"weekNumber\":7,\"gamesPerWeek\":0},{\"weekNumber\":9,\"gamesPerWeek\":1}]",
+      "max_games_per_season": 18,
+      "sunday_paired_practice_enabled": 1,
+      "sunday_paired_practice_duration_hours": 2.6666666666666665,
+      "sunday_paired_practice_field_id": "1767681947962-7yragh5cu",
+      "sunday_paired_practice_cage_id": "1764573057677-iq8i45o0c",
+      "game_spacing_enabled": 1,
+      "created_at": "2026-01-06T23:11:15.042Z",
+      "updated_at": "2026-01-20T07:09:19.280Z",
+      "practice_arrive_before_minutes": 10,
+      "max_games_per_week": null,
+      "weekday_practice_start_time": null
+    },
+    {
+      "id": "1767741132227-sqrbfzhnj",
+      "division_id": "1764044661933-gc04sqs6e",
+      "season_id": "1767680016203-qkoplgifk",
+      "practices_per_week": 1,
+      "practice_duration_hours": 1,
+      "games_per_week": 2,
+      "game_duration_hours": 1,
+      "game_arrive_before_hours": 1,
+      "game_day_preferences": "[{\"dayOfWeek\":6,\"priority\":\"required\"},{\"dayOfWeek\":1,\"priority\":\"acceptable\"},{\"dayOfWeek\":2,\"priority\":\"preferred\"},{\"dayOfWeek\":3,\"priority\":\"preferred\"},{\"dayOfWeek\":4,\"priority\":\"preferred\"},{\"dayOfWeek\":5,\"priority\":\"acceptable\"},{\"dayOfWeek\":0,\"priority\":\"avoid\"}]",
+      "min_consecutive_day_gap": "null",
+      "cage_sessions_per_week": 0,
+      "cage_session_duration_hours": 0,
+      "field_preferences": "[\"1767681922967-zybh8fh06\",\"1767681947962-7yragh5cu\",\"1767681567939-6p67mb5mj\",\"1767681573895-t4k68nbpu\",\"1767681579745-g4ktd0uy5\",\"1764572851019-na471t3y3\"]",
+      "game_week_overrides": "[{\"weekNumber\":1,\"gamesPerWeek\":1},{\"weekNumber\":7,\"gamesPerWeek\":0}]",
+      "max_games_per_season": null,
+      "sunday_paired_practice_enabled": 0,
+      "sunday_paired_practice_duration_hours": "null",
+      "sunday_paired_practice_field_id": "null",
+      "sunday_paired_practice_cage_id": "null",
+      "game_spacing_enabled": 0,
+      "created_at": "2026-01-06T23:12:12.227Z",
+      "updated_at": "2026-01-20T06:59:52.046Z",
+      "practice_arrive_before_minutes": 10,
+      "max_games_per_week": 2,
+      "weekday_practice_start_time": null
+    },
+    {
+      "id": "1767741490838-d2ocw69ks",
+      "division_id": "1764044134510-tkpok8n9q",
+      "season_id": "1767680016203-qkoplgifk",
+      "practices_per_week": 1,
+      "practice_duration_hours": 1,
+      "games_per_week": 1,
+      "game_duration_hours": 1,
+      "game_arrive_before_hours": 0.5,
+      "game_day_preferences": "[{\"dayOfWeek\":6,\"priority\":\"required\"},{\"dayOfWeek\":1,\"priority\":\"acceptable\"},{\"dayOfWeek\":2,\"priority\":\"preferred\"},{\"dayOfWeek\":3,\"priority\":\"preferred\"},{\"dayOfWeek\":4,\"priority\":\"preferred\"},{\"dayOfWeek\":5,\"priority\":\"acceptable\"},{\"dayOfWeek\":0,\"priority\":\"avoid\"}]",
+      "min_consecutive_day_gap": "null",
+      "cage_sessions_per_week": "null",
+      "cage_session_duration_hours": "null",
+      "field_preferences": "[\"1767681922967-zybh8fh06\",\"1767681947962-7yragh5cu\",\"1767681567939-6p67mb5mj\",\"1767681573895-t4k68nbpu\",\"1767681579745-g4ktd0uy5\",\"1764572851019-na471t3y3\"]",
+      "game_week_overrides": "[{\"weekNumber\":7,\"gamesPerWeek\":0}]",
+      "max_games_per_season": null,
+      "sunday_paired_practice_enabled": 0,
+      "sunday_paired_practice_duration_hours": "null",
+      "sunday_paired_practice_field_id": "null",
+      "sunday_paired_practice_cage_id": "null",
+      "game_spacing_enabled": 0,
+      "created_at": "2026-01-06T23:18:10.838Z",
+      "updated_at": "2026-01-20T06:59:42.299Z",
+      "practice_arrive_before_minutes": 10,
+      "max_games_per_week": 1,
+      "weekday_practice_start_time": null
+    }
+  ],
+  "teams": [
+    {
+      "id": "1767741968246-otxho5yf2",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044681226-xujbgtx1j",
+      "name": "Team 1",
+      "created_at": "2026-01-06T23:26:08.246Z",
+      "updated_at": "2026-01-06T23:26:08.246Z"
+    },
+    {
+      "id": "1767741968252-4zt355587",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044681226-xujbgtx1j",
+      "name": "Team 2",
+      "created_at": "2026-01-06T23:26:08.252Z",
+      "updated_at": "2026-01-06T23:26:08.252Z"
+    },
+    {
+      "id": "1767741968252-5m80xphit",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044681226-xujbgtx1j",
+      "name": "Team 3",
+      "created_at": "2026-01-06T23:26:08.252Z",
+      "updated_at": "2026-01-06T23:26:08.252Z"
+    },
+    {
+      "id": "1767741968252-opgr39von",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044681226-xujbgtx1j",
+      "name": "Team 4",
+      "created_at": "2026-01-06T23:26:08.252Z",
+      "updated_at": "2026-01-06T23:26:08.252Z"
+    },
+    {
+      "id": "1767741968252-sr339mwlu",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044681226-xujbgtx1j",
+      "name": "Team 5",
+      "created_at": "2026-01-06T23:26:08.252Z",
+      "updated_at": "2026-01-06T23:26:08.252Z"
+    },
+    {
+      "id": "1767741968252-i4w2iyfzb",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044681226-xujbgtx1j",
+      "name": "Team 6",
+      "created_at": "2026-01-06T23:26:08.252Z",
+      "updated_at": "2026-01-06T23:26:08.252Z"
+    },
+    {
+      "id": "1767741986549-oe424zzx2",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044670033-ypiflrvz3",
+      "name": "Team 1",
+      "created_at": "2026-01-06T23:26:26.549Z",
+      "updated_at": "2026-01-06T23:26:26.549Z"
+    },
+    {
+      "id": "1767741986560-8ypk4mnba",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044670033-ypiflrvz3",
+      "name": "Team 2",
+      "created_at": "2026-01-06T23:26:26.560Z",
+      "updated_at": "2026-01-06T23:26:26.560Z"
+    },
+    {
+      "id": "1767741986560-5i77219mm",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044670033-ypiflrvz3",
+      "name": "Team 3",
+      "created_at": "2026-01-06T23:26:26.560Z",
+      "updated_at": "2026-01-06T23:26:26.560Z"
+    },
+    {
+      "id": "1767741986561-ky0t332ww",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044670033-ypiflrvz3",
+      "name": "Team 4",
+      "created_at": "2026-01-06T23:26:26.561Z",
+      "updated_at": "2026-01-06T23:26:26.561Z"
+    },
+    {
+      "id": "1767741986561-gwyiow8oa",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044670033-ypiflrvz3",
+      "name": "Team 5",
+      "created_at": "2026-01-06T23:26:26.561Z",
+      "updated_at": "2026-01-06T23:26:26.561Z"
+    },
+    {
+      "id": "1767741986561-hu21ts5z9",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044670033-ypiflrvz3",
+      "name": "Team 6",
+      "created_at": "2026-01-06T23:26:26.561Z",
+      "updated_at": "2026-01-06T23:26:26.561Z"
+    },
+    {
+      "id": "1767742000318-na44mfz4l",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044665707-akrniol85",
+      "name": "Team 1",
+      "created_at": "2026-01-06T23:26:40.318Z",
+      "updated_at": "2026-01-06T23:26:40.318Z"
+    },
+    {
+      "id": "1767742000324-4yv2n5hq5",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044665707-akrniol85",
+      "name": "Team 2",
+      "created_at": "2026-01-06T23:26:40.324Z",
+      "updated_at": "2026-01-06T23:26:40.324Z"
+    },
+    {
+      "id": "1767742000324-r1qt06rg7",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044665707-akrniol85",
+      "name": "Team 3",
+      "created_at": "2026-01-06T23:26:40.324Z",
+      "updated_at": "2026-01-06T23:26:40.324Z"
+    },
+    {
+      "id": "1767742000324-rnccjvh21",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044665707-akrniol85",
+      "name": "Team 4",
+      "created_at": "2026-01-06T23:26:40.324Z",
+      "updated_at": "2026-01-06T23:26:40.324Z"
+    },
+    {
+      "id": "1767742000324-030smcngq",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044665707-akrniol85",
+      "name": "Team 5",
+      "created_at": "2026-01-06T23:26:40.324Z",
+      "updated_at": "2026-01-06T23:26:40.324Z"
+    },
+    {
+      "id": "1767742000324-g5027jgtj",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044665707-akrniol85",
+      "name": "Team 6",
+      "created_at": "2026-01-06T23:26:40.324Z",
+      "updated_at": "2026-01-06T23:26:40.324Z"
+    },
+    {
+      "id": "1767742062521-wp8j4dp9p",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044661933-gc04sqs6e",
+      "name": "Team 1",
+      "created_at": "2026-01-06T23:27:42.521Z",
+      "updated_at": "2026-01-06T23:27:42.521Z"
+    },
+    {
+      "id": "1767742062534-svx0ce2ff",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044661933-gc04sqs6e",
+      "name": "Team 2",
+      "created_at": "2026-01-06T23:27:42.534Z",
+      "updated_at": "2026-01-06T23:27:42.534Z"
+    },
+    {
+      "id": "1767742062534-g00u1zjik",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044661933-gc04sqs6e",
+      "name": "Team 3",
+      "created_at": "2026-01-06T23:27:42.534Z",
+      "updated_at": "2026-01-06T23:27:42.534Z"
+    },
+    {
+      "id": "1767742062534-gfiksiyie",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044661933-gc04sqs6e",
+      "name": "Team 4",
+      "created_at": "2026-01-06T23:27:42.534Z",
+      "updated_at": "2026-01-06T23:27:42.534Z"
+    },
+    {
+      "id": "1767742062561-2l5te88tw",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044661933-gc04sqs6e",
+      "name": "Team 5",
+      "created_at": "2026-01-06T23:27:42.561Z",
+      "updated_at": "2026-01-06T23:27:42.561Z"
+    },
+    {
+      "id": "1767742062562-qoeptt0qm",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044661933-gc04sqs6e",
+      "name": "Team 6",
+      "created_at": "2026-01-06T23:27:42.562Z",
+      "updated_at": "2026-01-06T23:27:42.562Z"
+    },
+    {
+      "id": "1767742116440-l4kx7i1nn",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044134510-tkpok8n9q",
+      "name": "Team 1",
+      "created_at": "2026-01-06T23:28:36.440Z",
+      "updated_at": "2026-01-06T23:28:36.440Z"
+    },
+    {
+      "id": "1767742116447-z63yh0g0p",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044134510-tkpok8n9q",
+      "name": "Team 2",
+      "created_at": "2026-01-06T23:28:36.447Z",
+      "updated_at": "2026-01-06T23:28:36.447Z"
+    },
+    {
+      "id": "1767742116447-l6mojxm43",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044134510-tkpok8n9q",
+      "name": "Team 3",
+      "created_at": "2026-01-06T23:28:36.447Z",
+      "updated_at": "2026-01-06T23:28:36.447Z"
+    },
+    {
+      "id": "1767742116447-kh9zp3nw7",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044134510-tkpok8n9q",
+      "name": "Team 4",
+      "created_at": "2026-01-06T23:28:36.447Z",
+      "updated_at": "2026-01-06T23:28:36.447Z"
+    },
+    {
+      "id": "1767742116447-1e54wmy7r",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044134510-tkpok8n9q",
+      "name": "Team 5",
+      "created_at": "2026-01-06T23:28:36.447Z",
+      "updated_at": "2026-01-06T23:28:36.447Z"
+    },
+    {
+      "id": "1767742116447-fq8wajosb",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044134510-tkpok8n9q",
+      "name": "Team 6",
+      "created_at": "2026-01-06T23:28:36.447Z",
+      "updated_at": "2026-01-06T23:28:36.447Z"
+    },
+    {
+      "id": "1768029778604-jmyvvwxxa",
+      "season_id": "1767680016203-qkoplgifk",
+      "division_id": "1764044676026-hbwz5ftug",
+      "name": "Team 1",
+      "created_at": "2026-01-10T07:22:58.605Z",
+      "updated_at": "2026-01-10T07:22:58.605Z"
+    }
+  ],
+  "fields": [
+    {
+      "id": "1764048692234-znsdx6yrv",
+      "name": "Doerr Park",
+      "division_compatibility": "[\"1764044665707-akrniol85\",\"1764044670033-ypiflrvz3\"]",
+      "created_at": "2025-11-25T05:31:32.234Z",
+      "updated_at": "2026-01-07T05:59:11.844Z",
+      "practice_only": 1
+    },
+    {
+      "id": "1764572851019-na471t3y3",
+      "name": "Paul Moore",
+      "division_compatibility": "[\"1764044661933-gc04sqs6e\",\"1764044665707-akrniol85\",\"1764044676026-hbwz5ftug\",\"1764044134510-tkpok8n9q\"]",
+      "created_at": "2025-12-01T07:07:31.019Z",
+      "updated_at": "2026-01-07T05:59:12.757Z",
+      "practice_only": 1
+    },
+    {
+      "id": "1764572875765-y77nwmg8w",
+      "name": "Butcher Park",
+      "division_compatibility": "[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\"]",
+      "created_at": "2025-12-01T07:07:55.765Z",
+      "updated_at": "2026-01-07T05:59:10.772Z",
+      "practice_only": 1
+    },
+    {
+      "id": "1767681567939-6p67mb5mj",
+      "name": "Sartorette Field 1",
+      "division_compatibility": "[\"1764044661933-gc04sqs6e\",\"1764044676026-hbwz5ftug\",\"1764044134510-tkpok8n9q\"]",
+      "created_at": "2026-01-06T06:39:27.939Z",
+      "updated_at": "2026-01-07T05:59:13.891Z",
+      "practice_only": 1
+    },
+    {
+      "id": "1767681573895-t4k68nbpu",
+      "name": "Sartorette Field 2",
+      "division_compatibility": "[\"1764044661933-gc04sqs6e\",\"1764044676026-hbwz5ftug\",\"1764044134510-tkpok8n9q\"]",
+      "created_at": "2026-01-06T06:39:33.895Z",
+      "updated_at": "2026-01-07T05:59:14.705Z",
+      "practice_only": 1
+    },
+    {
+      "id": "1767681579745-g4ktd0uy5",
+      "name": "Sartorette Field 3",
+      "division_compatibility": "[\"1764044661933-gc04sqs6e\",\"1764044676026-hbwz5ftug\",\"1764044134510-tkpok8n9q\"]",
+      "created_at": "2026-01-06T06:39:39.745Z",
+      "updated_at": "2026-01-07T05:59:15.392Z",
+      "practice_only": 1
+    },
+    {
+      "id": "1767681922967-zybh8fh06",
+      "name": "Steindorf Tball Field",
+      "division_compatibility": "[\"1764044661933-gc04sqs6e\",\"1764044676026-hbwz5ftug\",\"1764044134510-tkpok8n9q\"]",
+      "created_at": "2026-01-06T06:45:22.967Z",
+      "updated_at": "2026-01-06T06:46:06.931Z",
+      "practice_only": 0
+    },
+    {
+      "id": "1767681929950-nbdn6ki0p",
+      "name": "Steindorf Majors Field",
+      "division_compatibility": "[\"1764044681226-xujbgtx1j\",\"1764044670033-ypiflrvz3\"]",
+      "created_at": "2026-01-06T06:45:29.950Z",
+      "updated_at": "2026-01-06T06:46:54.160Z",
+      "practice_only": 0
+    },
+    {
+      "id": "1767681938704-w5a8l1r0f",
+      "name": "Steindorf AAA Field",
+      "division_compatibility": "[\"1764044670033-ypiflrvz3\",\"1764044665707-akrniol85\"]",
+      "created_at": "2026-01-06T06:45:38.704Z",
+      "updated_at": "2026-01-06T06:46:40.657Z",
+      "practice_only": 0
+    },
+    {
+      "id": "1767681947962-7yragh5cu",
+      "name": "Steindorf AA Field",
+      "division_compatibility": "[\"1764044676026-hbwz5ftug\",\"1764044134510-tkpok8n9q\",\"1764044661933-gc04sqs6e\",\"1764044665707-akrniol85\"]",
+      "created_at": "2026-01-06T06:45:47.962Z",
+      "updated_at": "2026-01-06T06:46:23.758Z",
+      "practice_only": 0
+    }
+  ],
+  "cages": [
+    {
+      "id": "1764573057677-iq8i45o0c",
+      "name": "Steindorf A/AA Cages",
+      "division_compatibility": "[\"1764044661933-gc04sqs6e\",\"1764044665707-akrniol85\"]",
+      "created_at": "2025-12-01T07:10:57.677Z",
+      "updated_at": "2026-01-19T04:19:10.288Z"
+    },
+    {
+      "id": "1764573064753-ioliy0ywm",
+      "name": "Steindorf AAA Cages",
+      "division_compatibility": "[\"1764044670033-ypiflrvz3\"]",
+      "created_at": "2025-12-01T07:11:04.753Z",
+      "updated_at": "2026-01-19T04:19:14.966Z"
+    },
+    {
+      "id": "1764573073199-n1flj6kpm",
+      "name": "Steindorf Majors Cages",
+      "division_compatibility": "[\"1764044681226-xujbgtx1j\"]",
+      "created_at": "2025-12-01T07:11:13.199Z",
+      "updated_at": "2026-01-19T04:19:24.458Z"
+    }
+  ],
+  "seasonFields": [
+    {
+      "id": "1767681045946-3h7xnjzs9",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1764572875765-y77nwmg8w",
+      "created_at": "2026-01-06T06:30:45.946Z",
+      "updated_at": "2026-01-06T06:30:45.946Z"
+    },
+    {
+      "id": "1767681046572-cjtt5vzf1",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1764048692234-znsdx6yrv",
+      "created_at": "2026-01-06T06:30:46.572Z",
+      "updated_at": "2026-01-06T06:30:46.572Z"
+    },
+    {
+      "id": "1767681046943-x3u1gzhn2",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1764572851019-na471t3y3",
+      "created_at": "2026-01-06T06:30:46.943Z",
+      "updated_at": "2026-01-06T06:30:46.943Z"
+    },
+    {
+      "id": "1767681625339-y5d49big8",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681567939-6p67mb5mj",
+      "created_at": "2026-01-06T06:40:25.339Z",
+      "updated_at": "2026-01-06T06:40:25.339Z"
+    },
+    {
+      "id": "1767681625825-hckxkbstg",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681573895-t4k68nbpu",
+      "created_at": "2026-01-06T06:40:25.825Z",
+      "updated_at": "2026-01-06T06:40:25.825Z"
+    },
+    {
+      "id": "1767681626197-e2jwmmet1",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681579745-g4ktd0uy5",
+      "created_at": "2026-01-06T06:40:26.197Z",
+      "updated_at": "2026-01-06T06:40:26.197Z"
+    },
+    {
+      "id": "1767682024218-24taugel8",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681947962-7yragh5cu",
+      "created_at": "2026-01-06T06:47:04.218Z",
+      "updated_at": "2026-01-06T06:47:04.218Z"
+    },
+    {
+      "id": "1767682024593-k288nansf",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681938704-w5a8l1r0f",
+      "created_at": "2026-01-06T06:47:04.593Z",
+      "updated_at": "2026-01-06T06:47:04.593Z"
+    },
+    {
+      "id": "1767682024877-98nl02002",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681929950-nbdn6ki0p",
+      "created_at": "2026-01-06T06:47:04.877Z",
+      "updated_at": "2026-01-06T06:47:04.877Z"
+    },
+    {
+      "id": "1767682025138-eid8ovw9n",
+      "season_id": "1767680016203-qkoplgifk",
+      "field_id": "1767681922967-zybh8fh06",
+      "created_at": "2026-01-06T06:47:05.138Z",
+      "updated_at": "2026-01-06T06:47:05.138Z"
+    }
+  ],
+  "seasonCages": [
+    {
+      "id": "1767682476207-cwt5oacp9",
+      "season_id": "1767680016203-qkoplgifk",
+      "cage_id": "1764573057677-iq8i45o0c",
+      "created_at": "2026-01-06T06:54:36.207Z",
+      "updated_at": "2026-01-06T06:54:36.207Z"
+    },
+    {
+      "id": "1767682476622-4swx6t6dd",
+      "season_id": "1767680016203-qkoplgifk",
+      "cage_id": "1764573064753-ioliy0ywm",
+      "created_at": "2026-01-06T06:54:36.622Z",
+      "updated_at": "2026-01-06T06:54:36.622Z"
+    },
+    {
+      "id": "1767682476903-w5m48o0q3",
+      "season_id": "1767680016203-qkoplgifk",
+      "cage_id": "1764573073199-n1flj6kpm",
+      "created_at": "2026-01-06T06:54:36.903Z",
+      "updated_at": "2026-01-06T06:54:36.903Z"
+    }
+  ],
+  "fieldAvailabilities": [
+    {
+      "id": "1767681711863-4f323572r",
+      "season_field_id": "1767681046572-cjtt5vzf1",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:41:51.863Z",
+      "updated_at": "2026-01-12T04:38:21.934Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681786652-okuvc05wd",
+      "season_field_id": "1767681046943-x3u1gzhn2",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:06.652Z",
+      "updated_at": "2026-01-12T04:38:32.864Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681820080-eweyqnnee",
+      "season_field_id": "1767681625339-y5d49big8",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:40.080Z",
+      "updated_at": "2026-01-12T04:46:14.050Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681821489-lrs1308p5",
+      "season_field_id": "1767681625339-y5d49big8",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:41.489Z",
+      "updated_at": "2026-01-12T04:46:17.577Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681821940-94e5d1674",
+      "season_field_id": "1767681625339-y5d49big8",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:41.940Z",
+      "updated_at": "2026-01-12T04:46:20.769Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681822327-n4pkp10wc",
+      "season_field_id": "1767681625339-y5d49big8",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:42.327Z",
+      "updated_at": "2026-01-12T04:46:25.149Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681822761-sp2tpmojj",
+      "season_field_id": "1767681625339-y5d49big8",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:42.761Z",
+      "updated_at": "2026-01-12T04:46:29.312Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681829825-gkeksziyi",
+      "season_field_id": "1767681625825-hckxkbstg",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:49.825Z",
+      "updated_at": "2026-01-12T04:46:55.804Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681829847-b8asyw1wg",
+      "season_field_id": "1767681625825-hckxkbstg",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:49.847Z",
+      "updated_at": "2026-01-12T04:46:59.544Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681829860-mk724phow",
+      "season_field_id": "1767681625825-hckxkbstg",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:49.860Z",
+      "updated_at": "2026-01-12T04:47:03.246Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681829871-sr26t07ul",
+      "season_field_id": "1767681625825-hckxkbstg",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:49.871Z",
+      "updated_at": "2026-01-12T04:47:19.681Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681829882-l5t6r7tsr",
+      "season_field_id": "1767681625825-hckxkbstg",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:49.882Z",
+      "updated_at": "2026-01-12T04:47:23.042Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681835456-dr7catcqe",
+      "season_field_id": "1767681626197-e2jwmmet1",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:55.456Z",
+      "updated_at": "2026-01-12T04:47:31.640Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681835471-za6xhiy4r",
+      "season_field_id": "1767681626197-e2jwmmet1",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:55.471Z",
+      "updated_at": "2026-01-12T04:47:35.662Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681835480-nuj7s6gnl",
+      "season_field_id": "1767681626197-e2jwmmet1",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:55.480Z",
+      "updated_at": "2026-01-12T04:47:39.462Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681835487-vs0ekmviq",
+      "season_field_id": "1767681626197-e2jwmmet1",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:55.487Z",
+      "updated_at": "2026-01-12T04:47:44.315Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681835497-f44lslvjb",
+      "season_field_id": "1767681626197-e2jwmmet1",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:43:55.497Z",
+      "updated_at": "2026-01-12T04:47:50.966Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682224543-nh1xwgkw7",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:50:24.543Z",
+      "updated_at": "2026-01-12T04:47:59.660Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682224965-44vx2ux8u",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:50:24.965Z",
+      "updated_at": "2026-01-12T04:48:03.833Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682225331-lqc2dy0r2",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:50:25.331Z",
+      "updated_at": "2026-01-12T04:48:07.714Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682226349-ippql9f6f",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:50:26.349Z",
+      "updated_at": "2026-01-12T04:48:11.229Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682227068-68rjl3nfm",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:50:27.068Z",
+      "updated_at": "2026-01-12T04:48:14.973Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682235092-p7ph8m69z",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:50:35.092Z",
+      "updated_at": "2026-01-12T04:15:46.626Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682424107-rrl023n6h",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:53:44.107Z",
+      "updated_at": "2026-01-06T06:53:44.107Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682424129-m2bsm5432",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:44.129Z",
+      "updated_at": "2026-01-12T04:48:28.057Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682424145-vvbqtq016",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:44.145Z",
+      "updated_at": "2026-01-12T04:48:32.131Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682424161-dnfhd0tya",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:44.161Z",
+      "updated_at": "2026-01-12T04:48:35.300Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682424175-tmpli6mlr",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:44.175Z",
+      "updated_at": "2026-01-12T04:48:38.628Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682424209-qtau0naz9",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:44.209Z",
+      "updated_at": "2026-01-12T04:48:42.482Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682432966-y2vb3qniy",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:53:52.966Z",
+      "updated_at": "2026-01-06T06:53:52.966Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682432975-yhgb3iny7",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:52.975Z",
+      "updated_at": "2026-01-12T04:48:51.304Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682432992-sdwo422gs",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:52.992Z",
+      "updated_at": "2026-01-12T04:48:54.700Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682433003-m30f0mojr",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:53.003Z",
+      "updated_at": "2026-01-12T04:48:59.248Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682433013-oijkfnch0",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:53.013Z",
+      "updated_at": "2026-01-12T04:49:04.400Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682433025-rbrtzwpmu",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:53:53.025Z",
+      "updated_at": "2026-01-12T04:49:09.242Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682455797-11grtx837",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:54:15.797Z",
+      "updated_at": "2026-01-06T06:54:15.797Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682455827-iwndht7nz",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:15.827Z",
+      "updated_at": "2026-01-12T04:49:19.928Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682455857-5qg8b2uc5",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:15.857Z",
+      "updated_at": "2026-01-12T04:49:24.638Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682455883-y1083mqgb",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:15.883Z",
+      "updated_at": "2026-01-12T04:49:28.260Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682455912-ohxz96zjz",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:15.912Z",
+      "updated_at": "2026-01-12T04:49:32.067Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682455936-l81js3l8u",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:15.936Z",
+      "updated_at": "2026-01-12T04:49:36.668Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682455947-6ukdthzb9",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "day_of_week": 6,
+      "start_time": "08:30",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:54:15.947Z",
+      "updated_at": "2026-01-20T04:47:19.482Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767826479525-nzawz74cv",
+      "season_field_id": "1767682024218-24taugel8",
+      "day_of_week": 6,
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "created_at": "2026-01-07T22:54:39.525Z",
+      "updated_at": "2026-01-19T19:57:12.550Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767826491962-v53nyaqbi",
+      "season_field_id": "1767682024593-k288nansf",
+      "day_of_week": 6,
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "created_at": "2026-01-07T22:54:51.962Z",
+      "updated_at": "2026-01-19T19:57:20.727Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767826500662-6do5l5an8",
+      "season_field_id": "1767682024877-98nl02002",
+      "day_of_week": 6,
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "created_at": "2026-01-07T22:55:00.662Z",
+      "updated_at": "2026-01-19T19:57:28.139Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768190892276-1uhzkxdld",
+      "season_field_id": "1767681045946-3h7xnjzs9",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-12T04:08:12.276Z",
+      "updated_at": "2026-01-12T04:38:08.501Z",
+      "single_event_only": 1
+    }
+  ],
+  "cageAvailabilities": [
+    {
+      "id": "1767682486606-wf3rexkim",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:46.606Z",
+      "updated_at": "2026-01-13T20:49:18.561Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682487952-yr6vw5n13",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:47.952Z",
+      "updated_at": "2026-01-13T20:49:21.252Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682488182-n8w997vyf",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:48.182Z",
+      "updated_at": "2026-01-13T20:49:27.389Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682488397-bnivtxley",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:48.397Z",
+      "updated_at": "2026-01-13T20:49:30.131Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682488726-pesk8cobl",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:54:48.726Z",
+      "updated_at": "2026-01-13T20:49:33.281Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682495942-ilhv3jl2b",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 6,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:54:55.942Z",
+      "updated_at": "2026-01-06T06:54:55.942Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682496408-ea6o2d38e",
+      "season_cage_id": "1767682476207-cwt5oacp9",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:54:56.408Z",
+      "updated_at": "2026-01-06T06:54:56.408Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682500502-1spnz7rt2",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:55:00.502Z",
+      "updated_at": "2026-01-06T06:55:00.502Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682500516-s6lut0ih2",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:00.516Z",
+      "updated_at": "2026-01-21T19:24:19.393Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682500534-vkbrfh1g6",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:00.534Z",
+      "updated_at": "2026-01-21T19:24:21.770Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682500572-o9hk3slub",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:00.572Z",
+      "updated_at": "2026-01-21T19:24:24.029Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682500582-4cf4ia91h",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:00.582Z",
+      "updated_at": "2026-01-21T19:24:26.569Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682500593-zvev5lhlk",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:00.593Z",
+      "updated_at": "2026-01-21T19:24:29.256Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682500603-2z07lruhc",
+      "season_cage_id": "1767682476622-4swx6t6dd",
+      "day_of_week": 6,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:55:00.603Z",
+      "updated_at": "2026-01-06T06:55:00.603Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682504646-v74pcsxhc",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 0,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:55:04.647Z",
+      "updated_at": "2026-01-06T06:55:04.647Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682504670-tqxcmhzdq",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 1,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:04.670Z",
+      "updated_at": "2026-01-13T20:49:40.565Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682504687-w83dixnb5",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 2,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:04.687Z",
+      "updated_at": "2026-01-13T20:49:42.905Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682504703-4pyafxk2d",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 3,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:04.703Z",
+      "updated_at": "2026-01-13T20:49:45.153Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682504723-18mgzko6d",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 4,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:04.723Z",
+      "updated_at": "2026-01-13T20:49:47.558Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682504739-j6d01o2yr",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 5,
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "created_at": "2026-01-06T06:55:04.739Z",
+      "updated_at": "2026-01-13T20:49:49.893Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682504752-s6vbbk4ea",
+      "season_cage_id": "1767682476903-w5m48o0q3",
+      "day_of_week": 6,
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "created_at": "2026-01-06T06:55:04.752Z",
+      "updated_at": "2026-01-06T06:55:04.752Z",
+      "single_event_only": 0
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "id": "1767681661841-0rikgwodk",
+      "season_field_id": "1767681045946-3h7xnjzs9",
+      "date": "2026-03-05",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:41:01.841Z",
+      "updated_at": "2026-01-12T04:45:12.183Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681675374-sntnyjzjn",
+      "season_field_id": "1767681045946-3h7xnjzs9",
+      "date": "2026-03-26",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:41:15.374Z",
+      "updated_at": "2026-01-12T04:45:16.070Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681687238-dp8r4hu6y",
+      "season_field_id": "1767681045946-3h7xnjzs9",
+      "date": "2026-05-11",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:41:27.238Z",
+      "updated_at": "2026-01-12T04:45:19.596Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681699929-rjpw3tye0",
+      "season_field_id": "1767681045946-3h7xnjzs9",
+      "date": "2026-06-01",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:41:39.929Z",
+      "updated_at": "2026-01-12T04:45:25.546Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681724042-4vh0hpef4",
+      "season_field_id": "1767681046572-cjtt5vzf1",
+      "date": "2026-03-30",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:42:04.042Z",
+      "updated_at": "2026-01-12T04:44:52.213Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681746022-0w51fcr3u",
+      "season_field_id": "1767681046572-cjtt5vzf1",
+      "date": "2026-04-20",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:42:26.022Z",
+      "updated_at": "2026-01-12T04:44:56.505Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681758419-i0jaifrn2",
+      "season_field_id": "1767681046572-cjtt5vzf1",
+      "date": "2026-05-11",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:42:38.419Z",
+      "updated_at": "2026-01-12T04:45:01.223Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681769918-mopb10twf",
+      "season_field_id": "1767681046572-cjtt5vzf1",
+      "date": "2026-05-25",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:42:49.918Z",
+      "updated_at": "2026-01-12T04:45:05.866Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767681797775-zhghvy5jt",
+      "season_field_id": "1767681046943-x3u1gzhn2",
+      "date": "2026-05-12",
+      "override_type": "added",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "",
+      "created_at": "2026-01-06T06:43:17.775Z",
+      "updated_at": "2026-01-12T04:44:41.530Z",
+      "single_event_only": 1
+    },
+    {
+      "id": "1767682410168-s3vgom3yb",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-05-14",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "Maker Fair",
+      "created_at": "2026-01-06T06:53:30.168Z",
+      "updated_at": "2026-01-06T06:53:30.168Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682424229-4jncbdkgo",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-05-14",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "Maker Fair",
+      "created_at": "2026-01-06T06:53:44.229Z",
+      "updated_at": "2026-01-06T06:53:44.229Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682433046-18enfcnoo",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-05-14",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "Maker Fair",
+      "created_at": "2026-01-06T06:53:53.046Z",
+      "updated_at": "2026-01-06T06:53:53.046Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682451196-ct6rxuh2r",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-06-03",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "Graduation",
+      "created_at": "2026-01-06T06:54:11.196Z",
+      "updated_at": "2026-01-06T06:54:11.196Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1767682455959-byj1i8e1d",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "date": "2026-05-14",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "Maker Fair",
+      "created_at": "2026-01-06T06:54:15.959Z",
+      "updated_at": "2026-01-06T06:54:15.959Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768200166060-mdekd9tgx",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-03-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "11:00",
+      "reason": "Opening Day Ceremony",
+      "created_at": "2026-01-12T06:42:46.060Z",
+      "updated_at": "2026-01-19T20:15:50.414Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768351888752-l6rvj1t7m",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-03-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "11:00",
+      "reason": "Opening Day Ceremony",
+      "created_at": "2026-01-14T00:51:28.752Z",
+      "updated_at": "2026-01-19T20:15:24.729Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768351900700-xbhao47jo",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-03-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "11:00",
+      "reason": "Opening Day Ceremony",
+      "created_at": "2026-01-14T00:51:40.700Z",
+      "updated_at": "2026-01-19T20:15:31.912Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768351915061-ptuwxch82",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "date": "2026-03-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "11:00",
+      "reason": "Opening Day Ceremony",
+      "created_at": "2026-01-14T00:51:55.061Z",
+      "updated_at": "2026-01-19T20:15:59.489Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768755925280-48q5eg199",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-02-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:05:25.280Z",
+      "updated_at": "2026-01-19T20:05:24.245Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768755947994-lj9j03sae",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-02-14",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:05:47.994Z",
+      "updated_at": "2026-01-19T20:05:33.070Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768755961891-tm5bxrw7p",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-02-21",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:06:01.891Z",
+      "updated_at": "2026-01-19T20:05:37.915Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768755978624-sbdeyiicq",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-02-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:06:18.624Z",
+      "updated_at": "2026-01-19T20:06:01.126Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768755987831-rj8b9gi3o",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-02-14",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:06:27.831Z",
+      "updated_at": "2026-01-19T20:06:05.331Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768756004238-89xjy0u5l",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-02-21",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:06:44.238Z",
+      "updated_at": "2026-01-19T20:07:10.693Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768756025864-p1xj652ic",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-02-14",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:07:05.864Z",
+      "updated_at": "2026-01-19T20:06:21.846Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768756034300-7qbt4x0e4",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-02-21",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-18T17:07:14.300Z",
+      "updated_at": "2026-01-19T20:06:25.955Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768853210651-m9b3j9yb3",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-02-07",
+      "override_type": "blackout",
+      "start_time": "08:00",
+      "end_time": "18:00",
+      "reason": "Manually scheduled",
+      "created_at": "2026-01-19T20:06:50.651Z",
+      "updated_at": "2026-01-19T20:06:50.651Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854688895-mowtb1vtr",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-05-01",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:31:28.895Z",
+      "updated_at": "2026-01-19T20:31:28.895Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854700492-m1kyw3ls2",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-05-08",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:31:40.492Z",
+      "updated_at": "2026-01-19T20:31:40.492Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854742774-jkrzeb94n",
+      "season_field_id": "1767682024218-24taugel8",
+      "date": "2026-05-15",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:32:22.774Z",
+      "updated_at": "2026-01-19T20:32:22.774Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854759453-4t43czaco",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-05-01",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:32:39.453Z",
+      "updated_at": "2026-01-19T20:32:39.453Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854769860-r122ppizn",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-05-15",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:32:49.860Z",
+      "updated_at": "2026-01-19T20:32:49.860Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854787358-12q8q9g4r",
+      "season_field_id": "1767682024593-k288nansf",
+      "date": "2026-05-08",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:33:07.358Z",
+      "updated_at": "2026-01-19T20:33:07.358Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854805492-mn8x5361y",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-05-01",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:33:25.492Z",
+      "updated_at": "2026-01-19T20:33:25.492Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854816759-rfd4j084j",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-05-08",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:33:36.759Z",
+      "updated_at": "2026-01-19T20:33:36.759Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854826461-tpx2oyzye",
+      "season_field_id": "1767682024877-98nl02002",
+      "date": "2026-05-15",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:33:46.461Z",
+      "updated_at": "2026-01-19T20:33:46.461Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854838957-oua0bfubf",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "date": "2026-05-01",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:33:58.957Z",
+      "updated_at": "2026-01-19T20:33:58.957Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854847584-4bwucozm8",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "date": "2026-05-08",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:34:07.584Z",
+      "updated_at": "2026-01-19T20:34:07.584Z",
+      "single_event_only": 0
+    },
+    {
+      "id": "1768854856225-yax3m5o8a",
+      "season_field_id": "1767682025138-eid8ovw9n",
+      "date": "2026-05-15",
+      "override_type": "blackout",
+      "start_time": "16:00",
+      "end_time": "20:00",
+      "reason": "A/TBall Takeover",
+      "created_at": "2026-01-19T20:34:16.225Z",
+      "updated_at": "2026-01-19T20:34:16.225Z",
+      "single_event_only": 0
+    }
+  ],
+  "cageOverrides": [],
+  "teamConstraints": []
+}
