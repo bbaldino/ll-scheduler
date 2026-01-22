@@ -78,6 +78,7 @@ import {
   calculateDaysBetween,
   rebalanceMatchupsHomeAway,
   hasWarmupConflict,
+  compareCandidatesForTiebreak,
 } from './draft.js';
 
 /**
@@ -2573,7 +2574,11 @@ export class ScheduleGenerator {
                     const scoredCandidates = dateCandidates.map((c) =>
                       calculatePlacementScore(c, homeTeamState, this.scoringContext!, spilloverWeights)
                     );
-                    scoredCandidates.sort((a, b) => b.score - a.score);
+                    scoredCandidates.sort((a, b) => {
+                      const scoreDiff = b.score - a.score;
+                      if (scoreDiff !== 0) return scoreDiff;
+                      return compareCandidatesForTiebreak(a, b);
+                    });
                     const best = scoredCandidates[0];
 
                     // Accept if no severe penalty
@@ -2601,7 +2606,11 @@ export class ScheduleGenerator {
                     const scored = dayCandidates.map(c =>
                       calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
                     );
-                    scored.sort((a, b) => b.score - a.score);
+                    scored.sort((a, b) => {
+                      const scoreDiff = b.score - a.score;
+                      if (scoreDiff !== 0) return scoreDiff;
+                      return compareCandidatesForTiebreak(a, b);
+                    });
                     const best = scored[0];
                     // Only return if no hard constraint violation
                     return best && best.score > -500000 ? best : undefined;
@@ -2638,7 +2647,11 @@ export class ScheduleGenerator {
                       const scored = nonPriorityDays.map(c =>
                         calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
                       );
-                      scored.sort((a, b) => b.score - a.score);
+                      scored.sort((a, b) => {
+                        const scoreDiff = b.score - a.score;
+                        if (scoreDiff !== 0) return scoreDiff;
+                        return compareCandidatesForTiebreak(a, b);
+                      });
                       if (scored[0] && scored[0].score > -500000) {
                         bestCandidate = scored[0];
                         this.log('warning', 'game', `Non-priority day selected for ${homeTeam.name} vs ${awayTeam.name}`, {
@@ -2653,7 +2666,11 @@ export class ScheduleGenerator {
                   const scoredCandidates = filteredCandidates.map((c) =>
                     calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
                   );
-                  scoredCandidates.sort((a, b) => b.score - a.score);
+                  scoredCandidates.sort((a, b) => {
+                    const scoreDiff = b.score - a.score;
+                    if (scoreDiff !== 0) return scoreDiff;
+                    return compareCandidatesForTiebreak(a, b);
+                  });
                   bestCandidate = scoredCandidates[0];
                 }
 
@@ -2968,7 +2985,11 @@ export class ScheduleGenerator {
           const scoredCandidates = candidates.map(c =>
             calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
           );
-          scoredCandidates.sort((a, b) => b.score - a.score);
+          scoredCandidates.sort((a, b) => {
+            const scoreDiff = b.score - a.score;
+            if (scoreDiff !== 0) return scoreDiff;
+            return compareCandidatesForTiebreak(a, b);
+          });
           const bestCandidate = scoredCandidates[0];
 
           // Accept if not a hard constraint violation
@@ -3401,7 +3422,11 @@ export class ScheduleGenerator {
                 const scoredCandidates = candidates.map((c) =>
                   calculatePlacementScore(c, hState, this.scoringContext!, this.scoringWeights)
                 );
-                scoredCandidates.sort((a, b) => b.score - a.score);
+                scoredCandidates.sort((a, b) => {
+                  const scoreDiff = b.score - a.score;
+                  if (scoreDiff !== 0) return scoreDiff;
+                  return compareCandidatesForTiebreak(a, b);
+                });
                 const candidate = scoredCandidates[0];
 
                 // Check for hard constraint violations

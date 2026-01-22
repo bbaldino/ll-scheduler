@@ -1053,10 +1053,35 @@ export function selectBestCandidate(
     const scored = calculatePlacementScore(candidate, teamState, context, weights);
     if (best === null || scored.score > best.score) {
       best = scored;
+    } else if (scored.score === best.score) {
+      // Deterministic tiebreaker: compare by date, then startTime, then resourceId
+      const tiebreaker = compareCandidatesForTiebreak(scored, best);
+      if (tiebreaker < 0) {
+        best = scored;
+      }
     }
   }
 
   return best;
+}
+
+/**
+ * Deterministic tiebreaker for candidates with equal scores.
+ * Returns negative if a should come before b, positive if b should come before a.
+ */
+export function compareCandidatesForTiebreak(a: ScoredCandidate, b: ScoredCandidate): number {
+  // Compare by date first
+  const dateCompare = a.date.localeCompare(b.date);
+  if (dateCompare !== 0) return dateCompare;
+
+  // Then by start time
+  const timeCompare = a.startTime.localeCompare(b.startTime);
+  if (timeCompare !== 0) return timeCompare;
+
+  // Then by resource ID (fieldId or cageId)
+  const aResource = a.fieldId || a.cageId || '';
+  const bResource = b.fieldId || b.cageId || '';
+  return aResource.localeCompare(bResource);
 }
 
 /**
@@ -1099,12 +1124,21 @@ export function selectBestCandidateTwoPhase(
   let bestDateScore = -Infinity;
   const bestByDate = new Map<string, ScoredCandidate>();
 
-  for (const [date, dateCandidates] of byDate) {
-    // Find best candidate on this date (using full score)
+  // Sort dates for deterministic iteration order
+  const sortedDates = Array.from(byDate.keys()).sort();
+
+  for (const date of sortedDates) {
+    const dateCandidates = byDate.get(date)!;
+    // Find best candidate on this date (using full score with deterministic tiebreaker)
     let bestOnDate: ScoredCandidate | null = null;
     for (const c of dateCandidates) {
       if (!bestOnDate || c.score > bestOnDate.score) {
         bestOnDate = c;
+      } else if (c.score === bestOnDate.score) {
+        // Deterministic tiebreaker
+        if (compareCandidatesForTiebreak(c, bestOnDate) < 0) {
+          bestOnDate = c;
+        }
       }
     }
 
@@ -1121,6 +1155,12 @@ export function selectBestCandidateTwoPhase(
       if (dateSelectionScore > bestDateScore) {
         bestDateScore = dateSelectionScore;
         bestDate = date;
+      } else if (dateSelectionScore === bestDateScore && bestDate !== null) {
+        // Deterministic tiebreaker for equal date selection scores: earlier date wins
+        if (date < bestDate) {
+          bestDateScore = dateSelectionScore;
+          bestDate = date;
+        }
       }
     }
   }
