@@ -1828,6 +1828,15 @@ export class ScheduleGenerator {
 
       verboseLog(`  Total matchups assigned: ${matchups.length}`);
 
+      // Log pre-scheduling matchup counts per team (for debugging game balance)
+      const preMatchupCounts = new Map<string, number>();
+      for (const team of divisionTeams) {
+        const count = matchups.filter(m => m.homeTeamId === team.id || m.awayTeamId === team.id).length;
+        preMatchupCounts.set(team.name, count);
+      }
+      const matchupCountSummary = Array.from(preMatchupCounts.entries()).map(([name, count]) => `${name}:${count}`).join(', ');
+      console.log(`  [PreMatchups] ${divisionName}: ${matchups.length} matchups, per-team: ${matchupCountSummary}`);
+
       // Rebalance home/away for matchups to ensure all teams have balanced assignments
       const rebalanceResult = rebalanceMatchupsHomeAway(matchups, teamIds);
       verboseLog(`  Rebalancing: ${rebalanceResult.phase1Swaps} Phase 1 swaps, ${rebalanceResult.phase2Swaps} Phase 2 swaps`);
@@ -2745,6 +2754,184 @@ export class ScheduleGenerator {
         this.divisionNames
       );
     } // end division loop
+
+    // ============ GAME COUNT REBALANCING ============
+    // After all scheduling, try to rebalance game counts for divisions with delta > 1
+    // by scheduling remaining matchups for underrepresented teams
+    for (const division of divisionMatchupsList) {
+      // Calculate current game counts
+      const teamGameCounts = new Map<string, number>();
+      for (const team of division.teams) {
+        const teamState = this.teamSchedulingStates.get(team.id);
+        teamGameCounts.set(team.id, teamState?.gamesScheduled || 0);
+      }
+
+      const counts = Array.from(teamGameCounts.values());
+      const minGames = Math.min(...counts);
+      const maxGames = Math.max(...counts);
+      const delta = maxGames - minGames;
+
+      if (delta <= 1) continue; // Already balanced
+
+      // Find teams with min games
+      const minGameTeams = new Set<string>();
+      for (const [teamId, games] of teamGameCounts.entries()) {
+        if (games === minGames) minGameTeams.add(teamId);
+      }
+
+      // Find unscheduled matchups involving min-game teams
+      // Use a simpler approach: count scheduled games per pairing, compare to expected matchups per pairing
+      const scheduledPairings = new Map<string, number>(); // pairingKey -> count of scheduled games
+      for (const event of this.scheduledEvents) {
+        if (event.eventType === 'game' && event.divisionId === division.divisionId && event.homeTeamId && event.awayTeamId) {
+          // Create pairing key (sorted team IDs so order doesn't matter)
+          const pairingKey = [event.homeTeamId, event.awayTeamId].sort().join('-');
+          scheduledPairings.set(pairingKey, (scheduledPairings.get(pairingKey) || 0) + 1);
+        }
+      }
+
+      // Count expected matchups per pairing
+      const expectedPairings = new Map<string, number>();
+      for (const m of division.matchups) {
+        const pairingKey = [m.homeTeamId, m.awayTeamId].sort().join('-');
+        expectedPairings.set(pairingKey, (expectedPairings.get(pairingKey) || 0) + 1);
+      }
+
+      // Find pairings that have fewer scheduled games than expected matchups
+      // Only include matchups where:
+      // 1. At least one team has minGames
+      // 2. The OTHER team won't exceed maxGames after scheduling
+      const unscheduledMatchups: Array<typeof division.matchups[0]> = [];
+      for (const m of division.matchups) {
+        const pairingKey = [m.homeTeamId, m.awayTeamId].sort().join('-');
+        const scheduled = scheduledPairings.get(pairingKey) || 0;
+        const expected = expectedPairings.get(pairingKey) || 0;
+        if (scheduled < expected) {
+          const homeGames = teamGameCounts.get(m.homeTeamId) || 0;
+          const awayGames = teamGameCounts.get(m.awayTeamId) || 0;
+          const homeIsMin = minGameTeams.has(m.homeTeamId);
+          const awayIsMin = minGameTeams.has(m.awayTeamId);
+
+          // At least one team should have min games
+          if (!homeIsMin && !awayIsMin) continue;
+
+          // The other team shouldn't exceed maxGames after scheduling
+          // (We're trying to reduce delta, not increase it)
+          if (homeIsMin && awayGames >= maxGames) continue;
+          if (awayIsMin && homeGames >= maxGames) continue;
+
+          // Mark one matchup as "used" by incrementing scheduled count
+          scheduledPairings.set(pairingKey, scheduled + 1);
+          unscheduledMatchups.push(m);
+        }
+      }
+
+      if (unscheduledMatchups.length === 0) continue;
+
+      console.log(`  [GameRebalance] ${division.divisionName}: delta=${delta}, found ${unscheduledMatchups.length} eligible unscheduled matchups`);
+
+      // Get total game slot hours for this division
+      const totalGameSlotHours = division.config.gameDurationHours + (division.config.gameArriveBeforeHours || 0);
+
+      // Try to schedule unscheduled matchups on any available slot
+      let rebalanceScheduled = 0;
+      for (const matchup of unscheduledMatchups) {
+        // Find any week with available slots
+        for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
+          const week = gameWeeks[weekNum];
+          const weekDatesSet = new Set(week.dates);
+
+          // Get slots for this week
+          const weekSlots = this.gameFieldSlots.filter(rs =>
+            weekDatesSet.has(rs.slot.date) &&
+            this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId) &&
+            !this.isDateBlockedForDivision(rs.slot.date, 'game', division.divisionId)
+          );
+
+          if (weekSlots.length === 0) continue;
+
+          const homeTeamState = this.teamSchedulingStates.get(matchup.homeTeamId);
+          const awayTeamState = this.teamSchedulingStates.get(matchup.awayTeamId);
+          if (!homeTeamState || !awayTeamState) continue;
+
+          // Generate candidates (ignoring day preferences - just find any slot)
+          const candidates = generateCandidatesForGame(
+            matchup,
+            weekSlots,
+            week,
+            totalGameSlotHours,
+            this.season.id,
+            this.scoringContext!
+          );
+
+          if (candidates.length === 0) continue;
+
+          // Score candidates and find best
+          const scoredCandidates = candidates.map(c =>
+            calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
+          );
+          scoredCandidates.sort((a, b) => b.score - a.score);
+          const bestCandidate = scoredCandidates[0];
+
+          // Accept if not a hard constraint violation
+          if (bestCandidate && bestCandidate.score > -500000) {
+            const eventDraft = candidateToEventDraft(bestCandidate, division.divisionId);
+            this.scheduledEvents.push(eventDraft);
+            addEventToContext(this.scoringContext!, eventDraft);
+
+            // Update team states
+            updateTeamStateAfterScheduling(homeTeamState, eventDraft, week.weekNumber, true, awayTeamState.teamId, false);
+            updateTeamStateAfterScheduling(awayTeamState, eventDraft, week.weekNumber, false, homeTeamState.teamId, false);
+
+            // Update resource usage
+            updateResourceUsage(this.scoringContext!, bestCandidate.resourceId, bestCandidate.date, totalGameSlotHours);
+
+            rebalanceScheduled++;
+            totalScheduled++;
+
+            const homeTeam = division.teams.find(t => t.id === matchup.homeTeamId);
+            const awayTeam = division.teams.find(t => t.id === matchup.awayTeamId);
+            console.log(`    [GameRebalance] Scheduled ${homeTeam?.name} vs ${awayTeam?.name} → ${bestCandidate.date} ${bestCandidate.startTime}`);
+
+            // Check if delta is now <= 1
+            const newDelta = Math.max(
+              homeTeamState.gamesScheduled,
+              awayTeamState.gamesScheduled
+            ) - Math.min(
+              ...Array.from(teamGameCounts.keys()).map(id =>
+                this.teamSchedulingStates.get(id)?.gamesScheduled || 0
+              )
+            );
+
+            // Recalculate delta properly
+            const newCounts = division.teams.map(t =>
+              this.teamSchedulingStates.get(t.id)?.gamesScheduled || 0
+            );
+            const newMin = Math.min(...newCounts);
+            const newMax = Math.max(...newCounts);
+            const actualNewDelta = newMax - newMin;
+
+            if (actualNewDelta <= 1) {
+              console.log(`    [GameRebalance] Delta now ${actualNewDelta}, stopping rebalancing`);
+              break;
+            }
+
+            break; // Move to next unscheduled matchup
+          }
+        }
+
+        // Check if we've achieved balance
+        const currentCounts = division.teams.map(t =>
+          this.teamSchedulingStates.get(t.id)?.gamesScheduled || 0
+        );
+        const currentDelta = Math.max(...currentCounts) - Math.min(...currentCounts);
+        if (currentDelta <= 1) break;
+      }
+
+      if (rebalanceScheduled > 0) {
+        console.log(`    [GameRebalance] ${division.divisionName}: scheduled ${rebalanceScheduled} additional game(s)`);
+      }
+    }
 
     // Report summary
     const totalGames = this.scheduledEvents.filter((e) => e.eventType === 'game').length;
