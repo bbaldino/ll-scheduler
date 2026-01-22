@@ -4095,7 +4095,7 @@ export class ScheduleGenerator {
       let overallSwaps = 0;
       const maxPasses = 10; // Prevent infinite loops
       // Track swapped games to prevent swapping them back (which would create infinite loops)
-      const swappedGames = new Set<ScheduledGame>();
+      const swappedGames = new Set<ScheduledEventDraft>();
 
       // Multi-pass: keep iterating until no more swaps can be made
       // Swapping to fix one team can create imbalance in another, so we need multiple passes
@@ -4909,6 +4909,36 @@ export class ScheduleGenerator {
             };
 
             const shortRestDeltaBefore = calculateShortRestDelta();
+
+            // Check if swap would create field overlap with OTHER divisions' games
+            const wouldCreateFieldConflict = (): boolean => {
+              const allGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+              // Check violationGame's field at otherGame's date/time
+              if (violationGame.fieldId) {
+                const conflict = allGames.some(g =>
+                  g !== violationGame && g !== otherGame &&
+                  g.fieldId === violationGame.fieldId &&
+                  g.date === otherGame.date &&
+                  g.startTime < otherGame.endTime && g.endTime > otherGame.startTime
+                );
+                if (conflict) return true;
+              }
+              // Check otherGame's field at violationGame's date/time
+              if (otherGame.fieldId) {
+                const conflict = allGames.some(g =>
+                  g !== violationGame && g !== otherGame &&
+                  g.fieldId === otherGame.fieldId &&
+                  g.date === violationGame.date &&
+                  g.startTime < violationGame.endTime && g.endTime > violationGame.startTime
+                );
+                if (conflict) return true;
+              }
+              return false;
+            };
+
+            if (wouldCreateFieldConflict()) {
+              continue;
+            }
 
             // Try the swap
             const orig1Date = violationGame.date;
