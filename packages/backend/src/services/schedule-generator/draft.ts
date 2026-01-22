@@ -837,6 +837,30 @@ export function generateCandidatesForGame(
       continue;
     }
 
+    // Check minimum day gap between games for teams with game spacing enabled
+    const candidateDate = new Date(slot.slot.date);
+    const homeMinGap = homeTeamState?.minDaysBetweenEvents || 0;
+    const awayMinGap = awayTeamState?.minDaysBetweenEvents || 0;
+
+    const violatesMinGap = (gameDates: string[], minGap: number): boolean => {
+      if (minGap <= 0) return false;
+      for (const dateStr of gameDates) {
+        const gameDate = new Date(dateStr);
+        const daysDiff = Math.abs(Math.round((candidateDate.getTime() - gameDate.getTime()) / (1000 * 60 * 60 * 24)));
+        if (daysDiff > 0 && daysDiff < minGap) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (homeTeamState && violatesMinGap(homeTeamState.gameDates, homeMinGap)) {
+      continue;
+    }
+    if (awayTeamState && violatesMinGap(awayTeamState.gameDates, awayMinGap)) {
+      continue;
+    }
+
     // Skip single-event-only slots that already have an event
     if (slot.singleEventOnly) {
       const key = `${slot.slot.date}-${slot.resourceId}`;

@@ -1528,7 +1528,8 @@ export class ScheduleGenerator {
           ? Math.floor(config.cageSessionsPerWeek * cageWeeks)
           : 0,
         // Only apply min day gap when game spacing is enabled for this division
-        minDaysBetweenEvents: config.gameSpacingEnabled ? (config.minConsecutiveDayGap || 0) : 0,
+        // Default to 2 days minimum gap when game spacing is enabled (eliminates back-to-back day games)
+        minDaysBetweenEvents: config.gameSpacingEnabled ? (config.minConsecutiveDayGap || 2) : 0,
         scheduledEventDates: [],
       });
     }
