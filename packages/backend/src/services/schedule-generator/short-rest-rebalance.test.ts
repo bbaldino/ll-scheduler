@@ -102,21 +102,35 @@ function convertTeam(row: any): Team {
   };
 }
 
-function convertSeasonField(row: any): SeasonField {
+function convertSeasonField(row: any, fields: any[]): SeasonField {
+  const field = fields.find((f: any) => f.id === row.field_id);
+  let divisionCompatibility: string[] = [];
+  if (field?.division_compatibility) {
+    divisionCompatibility = parseJsonField(field.division_compatibility, []);
+  }
   return {
     id: row.id,
     seasonId: row.season_id,
     fieldId: row.field_id,
+    fieldName: field?.name,
+    divisionCompatibility,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function convertSeasonCage(row: any): SeasonCage {
+function convertSeasonCage(row: any, cages: any[]): SeasonCage {
+  const cage = cages.find((c: any) => c.id === row.cage_id);
+  let divisionCompatibility: string[] = [];
+  if (cage?.division_compatibility) {
+    divisionCompatibility = parseJsonField(cage.division_compatibility, []);
+  }
   return {
     id: row.id,
     seasonId: row.season_id,
     cageId: row.cage_id,
+    cageName: cage?.name,
+    divisionCompatibility,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -232,11 +246,12 @@ describe('Short Rest Rebalancing with Real Data', () => {
   beforeAll(() => {
     // Convert fixture data to application types
     season = convertSeason(fixture.season);
-    divisions = fixture.divisions.map(convertDivision);
+    // Sort divisions by schedulingOrder (lower = higher priority, scheduled first)
+    divisions = fixture.divisions.map(convertDivision).sort((a, b) => a.schedulingOrder - b.schedulingOrder);
     divisionConfigs = fixture.divisionConfigs.map(convertDivisionConfig);
     teams = fixture.teams.map(convertTeam);
-    seasonFields = fixture.seasonFields.map(convertSeasonField);
-    seasonCages = fixture.seasonCages.map(convertSeasonCage);
+    seasonFields = fixture.seasonFields.map((sf) => convertSeasonField(sf, fixture.fields));
+    seasonCages = fixture.seasonCages.map((sc) => convertSeasonCage(sc, fixture.cages));
     fieldAvailabilities = fixture.fieldAvailabilities.map(convertFieldAvailability);
     cageAvailabilities = fixture.cageAvailabilities.map(convertCageAvailability);
     fieldOverrides = fixture.fieldOverrides.map(convertFieldOverride);
@@ -244,7 +259,7 @@ describe('Short Rest Rebalancing with Real Data', () => {
   });
 
   it('should have short rest delta <= 1 for all game-spacing divisions after generation', async () => {
-    // Create the generator with a fixed seed for deterministic results
+    // Create the generator
     const generator = new ScheduleGenerator(
       season,
       divisions,
@@ -255,8 +270,7 @@ describe('Short Rest Rebalancing with Real Data', () => {
       fieldAvailabilities,
       cageAvailabilities,
       fieldOverrides,
-      cageOverrides,
-      { seed: 12345 }
+      cageOverrides
     );
 
     // Generate the schedule
@@ -306,8 +320,7 @@ describe('Short Rest Rebalancing with Real Data', () => {
       fieldAvailabilities,
       cageAvailabilities,
       fieldOverrides,
-      cageOverrides,
-      { seed: 12345 }
+      cageOverrides
     );
 
     const result = await generator.generate();

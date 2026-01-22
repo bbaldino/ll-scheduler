@@ -425,7 +425,8 @@ describe('Schedule Generation Regression Tests', () => {
   beforeAll(async () => {
     // Convert fixture data to application types
     season = convertSeason(fixture.season);
-    divisions = fixture.divisions.map(convertDivision);
+    // Sort divisions by schedulingOrder (lower = higher priority, scheduled first)
+    divisions = fixture.divisions.map(convertDivision).sort((a, b) => a.schedulingOrder - b.schedulingOrder);
     divisionConfigs = fixture.divisionConfigs.map(convertDivisionConfig);
     teams = fixture.teams.map(convertTeam);
     seasonFields = fixture.seasonFields.map(sf => convertSeasonField(sf, fixture.fields));
@@ -533,149 +534,58 @@ describe('Schedule Generation Regression Tests', () => {
   });
 
   describe('Game Count Balance Per Team', () => {
-    it('A: game count delta between teams should be <= 2', () => {
-      const divisionId = divisions.find(d => d.name === 'A')?.id;
-      expect(divisionId).toBeDefined();
+    for (const divName of ['A', 'AA', 'AAA', 'Majors', 'Tball']) {
+      it(`${divName}: game count delta between teams should be <= 1`, () => {
+        const divisionId = divisions.find(d => d.name === divName)?.id;
+        expect(divisionId).toBeDefined();
 
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const teamGames = new Map<string, number>();
+        const teamIds = divisionTeamMap.get(divisionId!)!;
+        const teamGames = new Map<string, number>();
 
-      for (const teamId of teamIds) {
-        const count = scheduledGames.filter(g =>
-          g.divisionId === divisionId && (g.homeTeamId === teamId || g.awayTeamId === teamId)
-        ).length;
-        teamGames.set(teamId, count);
-      }
+        for (const teamId of teamIds) {
+          const count = scheduledGames.filter(g =>
+            g.divisionId === divisionId && (g.homeTeamId === teamId || g.awayTeamId === teamId)
+          ).length;
+          teamGames.set(teamId, count);
+        }
 
-      const counts = Array.from(teamGames.values());
-      const minGames = Math.min(...counts);
-      const maxGames = Math.max(...counts);
-      const delta = maxGames - minGames;
+        const counts = Array.from(teamGames.values());
+        const minGames = Math.min(...counts);
+        const maxGames = Math.max(...counts);
+        const delta = maxGames - minGames;
 
-      const summary = Array.from(teamGames.entries())
-        .map(([teamId, count]) => {
-          const team = teams.find(t => t.id === teamId);
-          return `${team?.name || teamId}: ${count}`;
-        })
-        .join(', ');
+        const summary = Array.from(teamGames.entries())
+          .map(([teamId, count]) => {
+            const team = teams.find(t => t.id === teamId);
+            return `${team?.name || teamId}: ${count}`;
+          })
+          .join(', ');
 
-      console.log(`A game counts: ${summary}, delta=${delta}`);
+        console.log(`${divName} game counts: ${summary}, delta=${delta}`);
 
-      expect(delta).toBeLessThanOrEqual(2);
-    });
-
-    it('Majors: game count delta between teams should be <= 2', () => {
-      const divisionId = divisions.find(d => d.name === 'Majors')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const teamGames = new Map<string, number>();
-
-      for (const teamId of teamIds) {
-        const count = scheduledGames.filter(g =>
-          g.divisionId === divisionId && (g.homeTeamId === teamId || g.awayTeamId === teamId)
-        ).length;
-        teamGames.set(teamId, count);
-      }
-
-      const counts = Array.from(teamGames.values());
-      const minGames = Math.min(...counts);
-      const maxGames = Math.max(...counts);
-      const delta = maxGames - minGames;
-
-      const summary = Array.from(teamGames.entries())
-        .map(([teamId, count]) => {
-          const team = teams.find(t => t.id === teamId);
-          return `${team?.name || teamId}: ${count}`;
-        })
-        .join(', ');
-
-      console.log(`Majors game counts: ${summary}, delta=${delta}`);
-
-      expect(delta).toBeLessThanOrEqual(2);
-    });
+        expect(delta, `${divName} game count delta`).toBeLessThanOrEqual(1);
+      });
+    }
   });
 
   describe('Game Spacing (Short Rest) Delta', () => {
-    // Majors short rest delta increased from 1 to 2 because short rest rebalancing
-    // now respects matchup spacing (won't swap if it creates < 7 day same-matchup gap)
-    it('Majors: short rest delta should be <= 2 (trade-off for matchup spacing)', () => {
-      const divisionId = divisions.find(d => d.name === 'Majors')?.id;
-      expect(divisionId).toBeDefined();
+    for (const divName of ['A', 'AA', 'AAA', 'Majors', 'Tball']) {
+      it(`${divName}: short rest delta should be <= 1`, () => {
+        const divisionId = divisions.find(d => d.name === divName)?.id;
+        expect(divisionId).toBeDefined();
 
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const violations = calculateShortRestViolations(scheduledGames, teamIds);
-      const delta = getShortRestDelta(violations);
+        const teamIds = divisionTeamMap.get(divisionId!)!;
+        const violations = calculateShortRestViolations(scheduledGames, teamIds);
+        const delta = getShortRestDelta(violations);
 
-      const summary = Array.from(violations.entries())
-        .map(([id, count]) => `${teams.find(t => t.id === id)?.name}: ${count}`)
-        .join(', ');
+        const summary = Array.from(violations.entries())
+          .map(([id, count]) => `${teams.find(t => t.id === id)?.name}: ${count}`)
+          .join(', ');
 
-      expect(delta, `Majors short rest delta=${delta} [${summary}]`).toBeLessThanOrEqual(2);
-    });
-
-    it('AAA: short rest delta should be <= 1', () => {
-      const divisionId = divisions.find(d => d.name === 'AAA')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const violations = calculateShortRestViolations(scheduledGames, teamIds);
-      const delta = getShortRestDelta(violations);
-
-      const summary = Array.from(violations.entries())
-        .map(([id, count]) => `${teams.find(t => t.id === id)?.name}: ${count}`)
-        .join(', ');
-
-      expect(delta, `AAA short rest delta=${delta} [${summary}]`).toBeLessThanOrEqual(1);
-    });
-
-    it('AA: short rest delta should be <= 1', () => {
-      const divisionId = divisions.find(d => d.name === 'AA')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const violations = calculateShortRestViolations(scheduledGames, teamIds);
-      const delta = getShortRestDelta(violations);
-
-      const summary = Array.from(violations.entries())
-        .map(([id, count]) => `${teams.find(t => t.id === id)?.name}: ${count}`)
-        .join(', ');
-
-      expect(delta, `AA short rest delta=${delta} [${summary}]`).toBeLessThanOrEqual(1);
-    });
-
-    it('A: short rest delta should be <= 1', () => {
-      const divisionId = divisions.find(d => d.name === 'A')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const violations = calculateShortRestViolations(scheduledGames, teamIds);
-      const delta = getShortRestDelta(violations);
-
-      const summary = Array.from(violations.entries())
-        .map(([id, count]) => `${teams.find(t => t.id === id)?.name}: ${count}`)
-        .join(', ');
-
-      expect(delta, `A short rest delta=${delta} [${summary}]`).toBeLessThanOrEqual(1);
-    });
-
-    // Tball has fewer games per week (1 vs 2) which can lead to less flexibility
-    // Current baseline: delta <= 2, goal is to improve to <= 1
-    it('Tball: short rest delta should be <= 2 (current baseline)', () => {
-      const divisionId = divisions.find(d => d.name === 'Tball')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const violations = calculateShortRestViolations(scheduledGames, teamIds);
-      const delta = getShortRestDelta(violations);
-
-      const summary = Array.from(violations.entries())
-        .map(([id, count]) => `${teams.find(t => t.id === id)?.name}: ${count}`)
-        .join(', ');
-
-      console.log(`Tball short rest: delta=${delta}, [${summary}]`);
-      expect(delta, `Tball short rest delta=${delta} [${summary}]`).toBeLessThanOrEqual(2);
-    });
+        console.log(`${divName} short rest: delta=${delta}, [${summary}]`);
+        expect(delta, `${divName} short rest delta=${delta} [${summary}]`).toBeLessThanOrEqual(1);
+      });
+    }
   });
 
   describe('Same-Day Game Conflicts', () => {
@@ -693,11 +603,7 @@ describe('Schedule Generation Regression Tests', () => {
   });
 
   describe('Home/Away Balance', () => {
-    // Per-division home/away balance tests
-    // Upper divisions (Majors/AAA/AA) should have strict balance
-    // A and Tball have more games and sharing constraints may cause some imbalance
-
-    for (const divName of ['Majors', 'AAA', 'AA']) {
+    for (const divName of ['A', 'AA', 'AAA', 'Majors', 'Tball']) {
       it(`${divName}: all teams should have home/away diff <= 1`, () => {
         const divisionId = divisions.find(d => d.name === divName)?.id;
         expect(divisionId).toBeDefined();
@@ -705,53 +611,20 @@ describe('Schedule Generation Regression Tests', () => {
         const teamIds = divisionTeamMap.get(divisionId!)!;
         const balance = calculateHomeAwayBalance(scheduledGames, teamIds);
 
+        const breakdown: string[] = [];
         const violations: string[] = [];
         for (const [teamId, b] of balance) {
+          const team = teams.find(t => t.id === teamId);
+          breakdown.push(`${team?.name}: ${b.home}H/${b.away}A`);
           if (b.diff > 1) {
-            const team = teams.find(t => t.id === teamId);
             violations.push(`${team?.name}: ${b.home}H/${b.away}A (diff=${b.diff})`);
           }
         }
 
+        console.log(`${divName} home/away: ${breakdown.join(', ')}`);
         expect(violations, `${divName} home/away imbalances: ${violations.join(', ')}`).toHaveLength(0);
       });
     }
-
-    // A and Tball share fields and have more scheduling constraints
-    // Current baseline allows up to 3 diff, goal is to improve to ≤1
-    it('A: max home/away diff should be <= 2 (current baseline)', () => {
-      const divisionId = divisions.find(d => d.name === 'A')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const balance = calculateHomeAwayBalance(scheduledGames, teamIds);
-
-      let maxDiff = 0;
-      for (const [_, b] of balance) {
-        maxDiff = Math.max(maxDiff, b.diff);
-      }
-
-      expect(maxDiff, `A max home/away diff=${maxDiff}`).toBeLessThanOrEqual(2);
-    });
-
-    it('Tball: max home/away diff should be <= 1', () => {
-      const divisionId = divisions.find(d => d.name === 'Tball')?.id;
-      expect(divisionId).toBeDefined();
-
-      const teamIds = divisionTeamMap.get(divisionId!)!;
-      const balance = calculateHomeAwayBalance(scheduledGames, teamIds);
-
-      let maxDiff = 0;
-      const breakdown: string[] = [];
-      for (const [teamId, b] of balance) {
-        const team = teams.find(t => t.id === teamId);
-        breakdown.push(`${team?.name}: ${b.home}H/${b.away}A`);
-        maxDiff = Math.max(maxDiff, b.diff);
-      }
-
-      console.log(`Tball home/away: ${breakdown.join(', ')}`);
-      expect(maxDiff, `Tball max home/away diff=${maxDiff}`).toBeLessThanOrEqual(1);
-    });
   });
 
   describe('Matchup Home/Away Balance', () => {
@@ -770,88 +643,19 @@ describe('Schedule Generation Regression Tests', () => {
   });
 
   describe('Matchup Spacing', () => {
-    // These tests document current behavior - update thresholds as improvements are made
-    // minSpacing of -1 means no matchups with multiple games were found (data issue)
+    for (const divName of ['A', 'AA', 'AAA', 'Majors', 'Tball']) {
+      it(`${divName}: matchup spacing should be >= 7 days`, () => {
+        const divisionId = divisions.find(d => d.name === divName)?.id;
+        expect(divisionId).toBeDefined();
 
-    it('Majors: matchup spacing should be >= 7 days', () => {
-      const divisionId = divisions.find(d => d.name === 'Majors')?.id;
-      expect(divisionId).toBeDefined();
+        const { minSpacing, violations, hasMatchups } = calculateMatchupSpacing(scheduledGames, divisionId!);
 
-      const { minSpacing, violations, hasMatchups } = calculateMatchupSpacing(scheduledGames, divisionId!);
+        const summary = violations.map(v => `${v.teams}: gaps=${v.gaps.join(',')}`).join('; ');
+        console.log(`${divName} matchup spacing: min=${minSpacing}, hasMatchups=${hasMatchups}, violations: ${summary || 'none'}`);
 
-      const summary = violations.map(v => `${v.teams}: gaps=${v.gaps.join(',')}`).join('; ');
-      console.log(`Majors matchup spacing: min=${minSpacing}, hasMatchups=${hasMatchups}, violations: ${summary || 'none'}`);
-
-      if (hasMatchups) {
-        expect(minSpacing, `Majors min matchup spacing=${minSpacing}`).toBeGreaterThanOrEqual(7);
-      } else {
-        console.log('  WARNING: No matchups with multiple games found for Majors - check fixture data');
-      }
-    });
-
-    it('AAA: matchup spacing should be >= 7 days', () => {
-      const divisionId = divisions.find(d => d.name === 'AAA')?.id;
-      expect(divisionId).toBeDefined();
-
-      const { minSpacing, violations, hasMatchups } = calculateMatchupSpacing(scheduledGames, divisionId!);
-
-      const summary = violations.map(v => `${v.teams}: gaps=${v.gaps.join(',')}`).join('; ');
-      console.log(`AAA matchup spacing: min=${minSpacing}, hasMatchups=${hasMatchups}, violations: ${summary || 'none'}`);
-
-      if (hasMatchups) {
-        expect(minSpacing, `AAA min matchup spacing=${minSpacing}`).toBeGreaterThanOrEqual(7);
-      } else {
-        console.log('  WARNING: No matchups with multiple games found for AAA - check fixture data');
-      }
-    });
-
-    it('AA: matchup spacing should be >= 7 days', () => {
-      const divisionId = divisions.find(d => d.name === 'AA')?.id;
-      expect(divisionId).toBeDefined();
-
-      const { minSpacing, violations, hasMatchups } = calculateMatchupSpacing(scheduledGames, divisionId!);
-
-      const summary = violations.map(v => `${v.teams}: gaps=${v.gaps.join(',')}`).join('; ');
-      console.log(`AA matchup spacing: min=${minSpacing}, hasMatchups=${hasMatchups}, violations: ${summary || 'none'}`);
-
-      if (hasMatchups) {
-        expect(minSpacing, `AA min matchup spacing=${minSpacing}`).toBeGreaterThanOrEqual(7);
-      } else {
-        console.log('  WARNING: No matchups with multiple games found for AA - check fixture data');
-      }
-    });
-
-    // A has competition group constraints that make spacing harder
-    // Matchup spacing scoring helps but randomness still causes variability
-    // Improved from >= 2 days to >= 4 days with matchup spacing scoring
-    it('A: matchup spacing should be >= 4 days (improved from 2)', () => {
-      const divisionId = divisions.find(d => d.name === 'A')?.id;
-      expect(divisionId).toBeDefined();
-
-      const { minSpacing, violations, hasMatchups } = calculateMatchupSpacing(scheduledGames, divisionId!);
-
-      const summary = violations.map(v => `${v.teams}: gaps=${v.gaps.join(',')}`).join('; ');
-      console.log(`A matchup spacing: min=${minSpacing}, hasMatchups=${hasMatchups}, violations: ${summary || 'none'}`);
-
-      expect(hasMatchups, 'A should have matchups with multiple games').toBe(true);
-      // Target is >= 7 days but competition group constraints + randomness cause variability
-      // Typically achieves 5-8 days but can hit 4-5 days in worst case
-      expect(minSpacing, `A min matchup spacing=${minSpacing}`).toBeGreaterThanOrEqual(4);
-    });
-
-    it('Tball: matchup spacing (current baseline >= 3 days)', () => {
-      const divisionId = divisions.find(d => d.name === 'Tball')?.id;
-      expect(divisionId).toBeDefined();
-
-      const { minSpacing, violations, hasMatchups } = calculateMatchupSpacing(scheduledGames, divisionId!);
-
-      const summary = violations.map(v => `${v.teams}: gaps=${v.gaps.join(',')}`).join('; ');
-      console.log(`Tball matchup spacing: min=${minSpacing}, hasMatchups=${hasMatchups}, violations: ${summary || 'none'}`);
-
-      expect(hasMatchups, 'Tball should have matchups with multiple games').toBe(true);
-      // Current baseline: minSpacing around 3 days
-      // TODO: Improve to >= 7 days
-      expect(minSpacing, `Tball min matchup spacing=${minSpacing}`).toBeGreaterThanOrEqual(3);
-    });
+        expect(hasMatchups, `${divName} should have matchups with multiple games`).toBe(true);
+        expect(minSpacing, `${divName} min matchup spacing=${minSpacing}`).toBeGreaterThanOrEqual(7);
+      });
+    }
   });
 });

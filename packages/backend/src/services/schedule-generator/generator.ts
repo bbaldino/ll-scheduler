@@ -59,7 +59,6 @@ function verboseLog(...args: unknown[]): void {
 
 import {
   rotateArray,
-  shuffleWithSeed,
   generateWeekDefinitions,
   initializeTeamState,
   updateTeamStateAfterScheduling,
@@ -643,7 +642,6 @@ export class ScheduleGenerator {
   private scoringContext: ScoringContext | null = null;
   private scoringWeights: ScoringWeights = DEFAULT_SCORING_WEIGHTS;
   private weekDefinitions: WeekDefinition[] = [];
-  private randomSeed: number = Date.now();
 
   // Day names for logging
   private static readonly DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -658,13 +656,9 @@ export class ScheduleGenerator {
     fieldAvailability: FieldAvailability[],
     cageAvailability: CageAvailability[],
     fieldOverrides: FieldDateOverride[],
-    cageOverrides: CageDateOverride[],
-    options?: { seed?: number }
+    cageOverrides: CageDateOverride[]
   ) {
     this.season = season;
-    if (options?.seed !== undefined) {
-      this.randomSeed = options.seed;
-    }
     this.divisions = divisions; // Already sorted by schedulingOrder from listDivisions
     this.divisionConfigs = new Map(divisionConfigs.map((dc) => [dc.divisionId, dc]));
     this.divisionNames = new Map(divisions.map((d) => [d.id, d.name]));
@@ -1846,6 +1840,10 @@ export class ScheduleGenerator {
       for (const m of matchups) {
         weekCounts.set(m.targetWeek, (weekCounts.get(m.targetWeek) || 0) + 1);
       }
+      // Debug: Show matchup distribution for Majors
+      const weekCountsArr = Array.from(weekCounts.entries()).sort((a, b) => a[0] - b[0]);
+      const weekCountsStr = weekCountsArr.map(([w, c]) => `w${w + 1}:${c}`).join(', ');
+      console.log(`  [MatchupDist] ${divisionName}: ${weekCountsStr}`);
       verboseLog(`  Matchups per week:`);
       for (let w = 0; w < gameWeeks.length; w++) {
         const count = weekCounts.get(w) || 0;
@@ -1979,6 +1977,57 @@ export class ScheduleGenerator {
         fieldSlotsByWeek.set(i, weekSlots);
       }
 
+      // Debug: Log slots per week for this division
+      const weekSlotInfo: string[] = [];
+      const emptyWeeks: number[] = [];
+      for (let i = 0; i < gameWeeks.length; i++) {
+        const slots = fieldSlotsByWeek.get(i) || [];
+        const uniqueDates = new Set(slots.map(s => s.slot.date));
+        weekSlotInfo.push(`w${i + 1}:${uniqueDates.size}d`);
+        if (slots.length === 0) {
+          emptyWeeks.push(i + 1); // 1-indexed for display
+        }
+        // Debug week 1 and 11 for Majors specifically
+        if (division.divisionName === 'Majors' && (i === 0 || i === 10)) {
+          const week = gameWeeks[i];
+          const weekDatesArr = week.dates;
+          const availableDatesArr = [...uniqueDates].sort();
+          const missingDates = weekDatesArr.filter(d => !uniqueDates.has(d));
+          console.log(`  [Debug] Majors week 11 (${week.startDate} to ${week.endDate}): ${weekDatesArr.length} week dates, ${availableDatesArr.length} available`);
+          console.log(`    Week dates: ${weekDatesArr.join(', ')}`);
+          console.log(`    Available: ${availableDatesArr.join(', ')}`);
+          console.log(`    Missing: ${missingDates.length > 0 ? missingDates.join(', ') : 'none'}`);
+          // Show slots per available date
+          for (const date of availableDatesArr) {
+            const slotsForDate = slots.filter(s => s.slot.date === date);
+            console.log(`      ${date}: ${slotsForDate.length} slots`);
+          }
+          // Debug Saturday specifically
+          const satDate = weekDatesArr.find(d => getDayOfWeek(d) === 6) || '';
+          if (satDate) {
+            const allSatSlots = this.gameFieldSlots.filter(rs => rs.slot.date === satDate);
+            const compatSatSlots = allSatSlots.filter(rs => this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId));
+            console.log(`    Saturday ${satDate} breakdown: ${allSatSlots.length} total, ${compatSatSlots.length} compatible`);
+            for (const slot of allSatSlots) {
+              const isCompat = this.isFieldCompatibleWithDivision(slot.resourceId, division.divisionId);
+              console.log(`      ${slot.resourceName}: ${slot.slot.startTime}-${slot.slot.endTime}, compatible=${isCompat}`);
+            }
+          }
+          // Check why each missing date is missing
+          for (const date of missingDates) {
+            const allSlotsForDate = this.gameFieldSlots.filter(rs => rs.slot.date === date);
+            const compatibleSlots = allSlotsForDate.filter(rs => this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId));
+            const notBlockedSlots = compatibleSlots.filter(rs => !this.isDateBlockedForDivision(rs.slot.date, 'game', division.divisionId));
+            const isBlocked = this.isDateBlockedForDivision(date, 'game', division.divisionId);
+            console.log(`      ${date}: total=${allSlotsForDate.length}, compatible=${compatibleSlots.length}, notBlocked=${notBlockedSlots.length}, isBlocked=${isBlocked}`);
+          }
+        }
+      }
+      console.log(`  [FieldSlots] ${division.divisionName}: dates per week: ${weekSlotInfo.join(', ')}`);
+      if (emptyWeeks.length > 0) {
+        console.log(`  [FieldSlots] ${division.divisionName}: weeks with no compatible field slots: ${emptyWeeks.join(', ')}`);
+      }
+
       // Log available game slots for this division (sanity check)
       const allDivisionSlots = this.gameFieldSlots.filter(rs =>
         this.isFieldCompatibleWithDivision(rs.resourceId, division.divisionId) &&
@@ -2030,9 +2079,16 @@ export class ScheduleGenerator {
 
       // Get the required AND preferred days for this division (high priority days to optimize for)
       const gameDayPrefs = this.scoringContext?.gameDayPreferences.get(division.divisionId) || [];
-      const requiredDays = gameDayPrefs
-        .filter(p => p.priority === 'required' || p.priority === 'preferred')
+      // Truly required days (must be prioritized over preferred)
+      const strictlyRequiredDays = gameDayPrefs
+        .filter(p => p.priority === 'required')
         .map(p => p.dayOfWeek);
+      // Preferred days (second priority after required)
+      const preferredDays = gameDayPrefs
+        .filter(p => p.priority === 'preferred')
+        .map(p => p.dayOfWeek);
+      // Combined for backward compatibility with budget tracking
+      const requiredDays = [...strictlyRequiredDays, ...preferredDays];
 
       // Initialize preferredDayGames with counts from games already scheduled (e.g., from interleaved pre-pass)
       // This ensures the main loop fairness check accounts for games scheduled in the pre-pass
@@ -2147,12 +2203,11 @@ export class ScheduleGenerator {
         const spilloverMatchupsForWeek = allMatchupsThisWeek.filter(
           (m) => m.originalWeek !== undefined && m.originalWeek !== weekNum
         );
-        // Shuffle regular matchups to prevent alphabetical bias in required-day slot selection.
-        // Without this, teams with alphabetically-earlier names get systematically more Saturday games
-        // because findRequiredDayOptimalMatchups favors earlier indices when costs are equal.
-        const regularMatchupsForWeek = this.shuffleArray(allMatchupsThisWeek.filter(
+        // Get regular matchups (not spillover) - the cost-based fairness scoring handles
+        // balanced selection without needing randomization
+        const regularMatchupsForWeek = allMatchupsThisWeek.filter(
           (m) => m.originalWeek === undefined || m.originalWeek === weekNum
-        ));
+        );
 
         // Get required-day dates for this week (e.g., Saturday dates)
         // Used to check if scheduling a matchup would cause short rest
@@ -2491,7 +2546,8 @@ export class ScheduleGenerator {
 
                 // For spillover games, use special logic: pick earliest available date,
                 // ignoring ALL day preferences - spillover games are catch-up games that
-                // should just go to the soonest available slot
+                // should just go to the soonest available slot. We don't prioritize required
+                // days for spillover because it can cause matchup spacing violations.
                 if (isSpillover) {
                   // Group candidates by date
                   const candidatesByDate = new Map<string, PlacementCandidate[]>();
@@ -2528,95 +2584,68 @@ export class ScheduleGenerator {
                   }
 
                   // If no valid candidate found on any date, bestCandidate remains undefined
-                } else if (requiredDays.length > 0) {
-                  // Check if division has budget for any required day slot this week
-                  // Only allow required day if we have budget remaining
-                  const hasRequiredDayBudget = requiredDays.some((day) =>
-                    canUseRequiredDaySlot(division.divisionId, day, weekNum, requiredDayBudgetTracker)
-                  );
+                } else if (strictlyRequiredDays.length > 0 || preferredDays.length > 0) {
+                  // Three-phase approach: strictly required > preferred > other days
+                  // This ensures Saturday (required) is always prioritized over Tue/Wed/Thu (preferred)
 
-                  // Note: Team-level fairness for Saturday games is handled in the pre-pass for competition groups.
-                  // For non-competition divisions, the budget system limits total Saturday games per division.
-                  // We don't add fairness checks here because it would reduce total Saturday utilization.
-
-                  // Phase 1: Try required days only (if budget allows)
-                  const requiredDayCandidates = hasRequiredDayBudget
-                    ? filteredCandidates.filter((c) =>
-                        requiredDays.includes(c.dayOfWeek) &&
+                  // Helper to find best candidate from a set of days
+                  const findBestFromDays = (days: number[], checkBudget: boolean): ScoredCandidate | undefined => {
+                    let dayCandidates = filteredCandidates.filter(c => days.includes(c.dayOfWeek));
+                    if (checkBudget) {
+                      dayCandidates = dayCandidates.filter(c =>
                         canUseRequiredDaySlot(division.divisionId, c.dayOfWeek, weekNum, requiredDayBudgetTracker)
-                      )
-                    : [];
-
-                  if (requiredDayCandidates.length > 0) {
-                    const scoredRequired = requiredDayCandidates.map((c) =>
+                      );
+                    }
+                    if (dayCandidates.length === 0) return undefined;
+                    const scored = dayCandidates.map(c =>
                       calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
                     );
-                    scoredRequired.sort((a, b) => b.score - a.score);
-                    const bestRequired = scoredRequired[0];
+                    scored.sort((a, b) => b.score - a.score);
+                    const best = scored[0];
+                    // Only return if no hard constraint violation
+                    return best && best.score > -500000 ? best : undefined;
+                  };
 
-                    // Use required day if it doesn't have a hard constraint violation (sameDayEvent)
-                    if (bestRequired && bestRequired.score > -500000) {
-                      bestCandidate = bestRequired;
-                    } else {
-                      // Required day has hard constraint - need to fall back
-                      usedFallback = true;
-
-                      // Determine why required day was rejected for logging
-                      const breakdown = bestRequired?.scoreBreakdown;
-                      let reason = 'unknown';
-                      if (breakdown?.sameDayEvent && breakdown.sameDayEvent < -100000) {
-                        const homeHasGame = homeTeamState.fieldDatesUsed.has(bestRequired.date);
-                        const awayHasGame = awayTeamState.fieldDatesUsed.has(bestRequired.date);
-                        if (homeHasGame && awayHasGame) {
-                          reason = `Both ${homeTeam.name} and ${awayTeam.name} already have games on ${bestRequired.date}`;
-                        } else if (homeHasGame) {
-                          reason = `${homeTeam.name} already has a game on ${bestRequired.date}`;
-                        } else if (awayHasGame) {
-                          reason = `${awayTeam.name} already has a game on ${bestRequired.date}`;
-                        }
-                      }
-
-                      // Phase 2: Fall back to non-required days
-                      const nonRequiredCandidates = filteredCandidates.filter(c => !requiredDays.includes(c.dayOfWeek));
-                      if (nonRequiredCandidates.length > 0) {
-                        const scoredNonRequired = nonRequiredCandidates.map((c) =>
-                          calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
-                        );
-                        scoredNonRequired.sort((a, b) => b.score - a.score);
-                        bestCandidate = scoredNonRequired[0];
-
-                        if (bestCandidate) {
-                          this.log('warning', 'game', `Non-required day selected for ${homeTeam.name} vs ${awayTeam.name}`, {
-                            selectedDate: bestCandidate.date,
-                            selectedDay: ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek],
-                            selectedScore: bestCandidate.score,
-                            bestRequiredDate: bestRequired?.date,
-                            bestRequiredDay: bestRequired ? ScheduleGenerator.DAY_NAMES[bestRequired.dayOfWeek] : undefined,
-                            bestRequiredScore: bestRequired?.score,
-                            reason,
-                            requiredDayBreakdown: breakdown ? {
-                              gameDayPreference: breakdown.gameDayPreference,
-                              sameDayEvent: breakdown.sameDayEvent,
-                              dayGap: breakdown.dayGap,
-                              timeAdjacency: breakdown.timeAdjacency,
-                            } : undefined,
-                          }, `Game scheduled on ${ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek]} instead of required day. Reason: ${reason}`);
-                        }
-                      }
+                  // Phase 1: Try strictly required days first (e.g., Saturday)
+                  if (strictlyRequiredDays.length > 0) {
+                    const hasStrictBudget = strictlyRequiredDays.some(day =>
+                      canUseRequiredDaySlot(division.divisionId, day, weekNum, requiredDayBudgetTracker)
+                    );
+                    if (hasStrictBudget) {
+                      bestCandidate = findBestFromDays(strictlyRequiredDays, true);
                     }
-                  } else {
-                    // No required day candidates available (budget exhausted or no slots)
-                    // Fall back to non-required days only
+                  }
+
+                  // Phase 2: If no valid strictly required day, try preferred days (e.g., Tue/Wed/Thu)
+                  if (!bestCandidate && preferredDays.length > 0) {
+                    const hasPreferredBudget = preferredDays.some(day =>
+                      canUseRequiredDaySlot(division.divisionId, day, weekNum, requiredDayBudgetTracker)
+                    );
+                    if (hasPreferredBudget) {
+                      bestCandidate = findBestFromDays(preferredDays, true);
+                      if (bestCandidate) usedFallback = true;
+                    }
+                  }
+
+                  // Phase 3: Fall back to non-priority days (acceptable/avoid)
+                  if (!bestCandidate) {
                     usedFallback = true;
-                    const nonRequiredCandidates = filteredCandidates.filter(c => !requiredDays.includes(c.dayOfWeek));
-                    if (nonRequiredCandidates.length > 0) {
-                      const scoredCandidates = nonRequiredCandidates.map((c) =>
+                    const nonPriorityDays = filteredCandidates.filter(c =>
+                      !strictlyRequiredDays.includes(c.dayOfWeek) && !preferredDays.includes(c.dayOfWeek)
+                    );
+                    if (nonPriorityDays.length > 0) {
+                      const scored = nonPriorityDays.map(c =>
                         calculatePlacementScore(c, homeTeamState, this.scoringContext!, this.scoringWeights)
                       );
-                      scoredCandidates.sort((a, b) => b.score - a.score);
-                      bestCandidate = scoredCandidates[0];
+                      scored.sort((a, b) => b.score - a.score);
+                      if (scored[0] && scored[0].score > -500000) {
+                        bestCandidate = scored[0];
+                        this.log('warning', 'game', `Non-priority day selected for ${homeTeam.name} vs ${awayTeam.name}`, {
+                          selectedDate: bestCandidate.date,
+                          selectedDay: ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek],
+                        }, `Game scheduled on ${ScheduleGenerator.DAY_NAMES[bestCandidate.dayOfWeek]} instead of priority day`);
+                      }
                     }
-                    // If no non-required candidates either, bestCandidate stays undefined
                   }
                 } else {
                   // No required days configured - score all candidates normally
@@ -2686,6 +2715,10 @@ export class ScheduleGenerator {
 
                   totalScheduled++;
                   scheduled = true;
+                  // Debug: log Majors scheduling on week 11 dates
+                  if (division.divisionName === 'Majors' && bestCandidate.date >= '2026-05-11' && bestCandidate.date <= '2026-05-17') {
+                    console.log(`  [Scheduled] week ${weekNum + 1}: ${homeTeam.name} vs ${awayTeam.name} → ${bestCandidate.date} ${bestCandidate.startTime}`);
+                  }
                 }
               }
             }
@@ -2704,6 +2737,27 @@ export class ScheduleGenerator {
               targetWeek: weekNum, // Update target week for next iteration
               originalWeek,
             });
+            // Log spillover reasons for Majors to diagnose failures
+            if (division.divisionName === 'Majors' && weekNum <= 1) {
+              console.log(`  [Spillover] ${homeTeam.name} vs ${awayTeam.name} week ${weekNum + 1} (orig week ${originalWeek + 1}): ${failureReason}`);
+              // Debug: show what dates these teams have events on (both field and cage)
+              const homeState = this.teamSchedulingStates.get(matchup.homeTeamId);
+              const awayState = this.teamSchedulingStates.get(matchup.awayTeamId);
+              const week = gameWeeks[weekNum];
+              const homeFieldDates = week.dates.filter(d => homeState?.fieldDatesUsed.has(d));
+              const homeCageDates = week.dates.filter(d => homeState?.cageDatesUsed.has(d));
+              const awayFieldDates = week.dates.filter(d => awayState?.fieldDatesUsed.has(d));
+              const awayCageDates = week.dates.filter(d => awayState?.cageDatesUsed.has(d));
+              // Check what dates are theoretically free for both teams
+              const availDates = week.dates;
+              const freeDates = availDates.filter(d =>
+                !homeState?.fieldDatesUsed.has(d) && !homeState?.cageDatesUsed.has(d) &&
+                !awayState?.fieldDatesUsed.has(d) && !awayState?.cageDatesUsed.has(d)
+              );
+              console.log(`    ${homeTeam.name}: field=${homeFieldDates.join(',') || 'none'}, cage=${homeCageDates.join(',') || 'none'}`);
+              console.log(`    ${awayTeam.name}: field=${awayFieldDates.join(',') || 'none'}, cage=${awayCageDates.join(',') || 'none'}`);
+              console.log(`    Free dates for both: ${freeDates.join(',') || 'none'}`);
+            }
             if (isSpillover) {
               verboseLog(`  ⏩ Spillover continues: ${homeTeam.name} vs ${awayTeam.name} (originally week ${originalWeek + 1}, tried week ${weekNum + 1}): ${failureReason}`);
             } else {
@@ -2711,6 +2765,7 @@ export class ScheduleGenerator {
             }
           } else {
             // No more weeks - this is a true failure
+            console.log(`  [ScheduleFailed] ${division.divisionName}: ${homeTeam.name} vs ${awayTeam.name} (orig week ${originalWeek + 1}, last tried ${weekNum + 1}): ${failureReason}`);
             verboseLog(`  ❌ Could not schedule: ${homeTeam.name} vs ${awayTeam.name} (originally week ${originalWeek + 1}, last tried week ${weekNum + 1}): ${failureReason}`);
 
             const failureSummary = `Could not schedule ${homeTeam.name} vs ${awayTeam.name}. Originally targeted week ${originalWeek + 1}, failed through week ${weekNum + 1}.\nReason: ${failureReason}`;
@@ -2756,22 +2811,36 @@ export class ScheduleGenerator {
     } // end division loop
 
     // ============ GAME COUNT REBALANCING ============
-    // After all scheduling, try to rebalance game counts for divisions with delta > 1
-    // by scheduling remaining matchups for underrepresented teams
+    // After all scheduling, try to rebalance game counts for divisions with delta > 0
+    // by scheduling remaining matchups for underrepresented teams.
+    // Keep iterating until no more progress can be made.
     for (const division of divisionMatchupsList) {
-      // Calculate current game counts
-      const teamGameCounts = new Map<string, number>();
-      for (const team of division.teams) {
-        const teamState = this.teamSchedulingStates.get(team.id);
-        teamGameCounts.set(team.id, teamState?.gamesScheduled || 0);
-      }
+      let rebalanceScheduled = 0;
+      let rebalancePass = 0;
+      let madeProgress = true;
 
-      const counts = Array.from(teamGameCounts.values());
-      const minGames = Math.min(...counts);
-      const maxGames = Math.max(...counts);
-      const delta = maxGames - minGames;
+      while (madeProgress) {
+        rebalancePass++;
+        madeProgress = false;
 
-      if (delta <= 1) continue; // Already balanced
+        // Calculate current game counts
+        const teamGameCounts = new Map<string, number>();
+        for (const team of division.teams) {
+          const teamState = this.teamSchedulingStates.get(team.id);
+          teamGameCounts.set(team.id, teamState?.gamesScheduled || 0);
+        }
+
+        const counts = Array.from(teamGameCounts.values());
+        const minGames = Math.min(...counts);
+        const maxGames = Math.max(...counts);
+        const delta = maxGames - minGames;
+
+        if (delta === 0) break; // Already perfectly balanced
+
+        // Log that we're attempting rebalancing for this division
+        if (rebalancePass === 1 && delta > 0) {
+          console.log(`  [GameRebalance] ${division.divisionName}: starting rebalancing with delta=${delta}`);
+        }
 
       // Find teams with min games
       const minGameTeams = new Set<string>();
@@ -2826,16 +2895,27 @@ export class ScheduleGenerator {
         }
       }
 
-      if (unscheduledMatchups.length === 0) continue;
+        if (unscheduledMatchups.length === 0) {
+          if (rebalancePass === 1 && delta > 0) {
+            console.log(`    [GameRebalance] ${division.divisionName}: no eligible unscheduled matchups found (delta=${delta} but cannot improve)`);
+          }
+          break; // No more matchups to try, exit while loop
+        }
 
-      console.log(`  [GameRebalance] ${division.divisionName}: delta=${delta}, found ${unscheduledMatchups.length} eligible unscheduled matchups`);
+        console.log(`  [GameRebalance] ${division.divisionName}: pass ${rebalancePass}, delta=${delta}, found ${unscheduledMatchups.length} eligible unscheduled matchups`);
 
-      // Get total game slot hours for this division
-      const totalGameSlotHours = division.config.gameDurationHours + (division.config.gameArriveBeforeHours || 0);
+        // Get total game slot hours for this division
+        const totalGameSlotHours = division.config.gameDurationHours + (division.config.gameArriveBeforeHours || 0);
 
-      // Try to schedule unscheduled matchups on any available slot
-      let rebalanceScheduled = 0;
+        // Try to schedule unscheduled matchups on any available slot
+        let matchupsAttempted = 0;
+        let matchupsScheduled = 0;
       for (const matchup of unscheduledMatchups) {
+        matchupsAttempted++;
+        let scheduled = false;
+        let weeksWithNoSlots = 0;
+        let weeksWithNoCandidates = 0;
+        let weeksWithHardConstraint = 0;
         // Find any week with available slots
         for (let weekNum = 0; weekNum < gameWeeks.length; weekNum++) {
           const week = gameWeeks[weekNum];
@@ -2848,7 +2928,10 @@ export class ScheduleGenerator {
             !this.isDateBlockedForDivision(rs.slot.date, 'game', division.divisionId)
           );
 
-          if (weekSlots.length === 0) continue;
+          if (weekSlots.length === 0) {
+            weeksWithNoSlots++;
+            continue;
+          }
 
           const homeTeamState = this.teamSchedulingStates.get(matchup.homeTeamId);
           const awayTeamState = this.teamSchedulingStates.get(matchup.awayTeamId);
@@ -2864,7 +2947,11 @@ export class ScheduleGenerator {
             this.scoringContext!
           );
 
-          if (candidates.length === 0) continue;
+          if (candidates.length === 0) {
+            // No candidates for this week - all slots likely have conflicts
+            weeksWithNoCandidates++;
+            continue;
+          }
 
           // Score candidates and find best
           const scoredCandidates = candidates.map(c =>
@@ -2874,7 +2961,11 @@ export class ScheduleGenerator {
           const bestCandidate = scoredCandidates[0];
 
           // Accept if not a hard constraint violation
-          if (bestCandidate && bestCandidate.score > -500000) {
+          if (!bestCandidate || bestCandidate.score <= -500000) {
+            weeksWithHardConstraint++;
+            continue;
+          }
+          if (bestCandidate) {
             const eventDraft = candidateToEventDraft(bestCandidate, division.divisionId);
             this.scheduledEvents.push(eventDraft);
             addEventToContext(this.scoringContext!, eventDraft);
@@ -2888,45 +2979,29 @@ export class ScheduleGenerator {
 
             rebalanceScheduled++;
             totalScheduled++;
+            matchupsScheduled++;
+            scheduled = true;
+            madeProgress = true; // Signal that we made progress, continue rebalancing
 
             const homeTeam = division.teams.find(t => t.id === matchup.homeTeamId);
             const awayTeam = division.teams.find(t => t.id === matchup.awayTeamId);
             console.log(`    [GameRebalance] Scheduled ${homeTeam?.name} vs ${awayTeam?.name} → ${bestCandidate.date} ${bestCandidate.startTime}`);
 
-            // Check if delta is now <= 1
-            const newDelta = Math.max(
-              homeTeamState.gamesScheduled,
-              awayTeamState.gamesScheduled
-            ) - Math.min(
-              ...Array.from(teamGameCounts.keys()).map(id =>
-                this.teamSchedulingStates.get(id)?.gamesScheduled || 0
-              )
-            );
-
-            // Recalculate delta properly
-            const newCounts = division.teams.map(t =>
-              this.teamSchedulingStates.get(t.id)?.gamesScheduled || 0
-            );
-            const newMin = Math.min(...newCounts);
-            const newMax = Math.max(...newCounts);
-            const actualNewDelta = newMax - newMin;
-
-            if (actualNewDelta <= 1) {
-              console.log(`    [GameRebalance] Delta now ${actualNewDelta}, stopping rebalancing`);
-              break;
-            }
-
             break; // Move to next unscheduled matchup
           }
         }
-
-        // Check if we've achieved balance
-        const currentCounts = division.teams.map(t =>
-          this.teamSchedulingStates.get(t.id)?.gamesScheduled || 0
-        );
-        const currentDelta = Math.max(...currentCounts) - Math.min(...currentCounts);
-        if (currentDelta <= 1) break;
+        // Log why this matchup couldn't be scheduled
+        if (!scheduled) {
+          const homeTeam = division.teams.find(t => t.id === matchup.homeTeamId);
+          const awayTeam = division.teams.find(t => t.id === matchup.awayTeamId);
+          console.log(`    [GameRebalance] Failed: ${homeTeam?.name} vs ${awayTeam?.name} - tried ${gameWeeks.length} weeks: noSlots=${weeksWithNoSlots}, noCandidates=${weeksWithNoCandidates}, hardConstraint=${weeksWithHardConstraint}`);
+        }
       }
+        // Log pass summary if some matchups couldn't be scheduled
+        if (matchupsAttempted > matchupsScheduled) {
+          console.log(`    [GameRebalance] Pass ${rebalancePass}: ${matchupsScheduled}/${matchupsAttempted} matchups scheduled`);
+        }
+      } // end while (madeProgress)
 
       if (rebalanceScheduled > 0) {
         console.log(`    [GameRebalance] ${division.divisionName}: scheduled ${rebalanceScheduled} additional game(s)`);
@@ -4301,13 +4376,22 @@ export class ScheduleGenerator {
     }
 
     // Pre-compute indexes for fast lookups (computed once, used many times)
-    // Index: date+teamId -> has field event
-    const teamDateHasFieldEvent = new Set<string>();
+    // Index: date+teamId -> count of field events (games/practices)
+    const teamDateEventCount = new Map<string, number>();
     for (const e of this.scheduledEvents) {
       if (e.eventType === 'game' || e.eventType === 'practice') {
-        if (e.homeTeamId) teamDateHasFieldEvent.add(`${e.date}|${e.homeTeamId}`);
-        if (e.awayTeamId) teamDateHasFieldEvent.add(`${e.date}|${e.awayTeamId}`);
-        if (e.teamId) teamDateHasFieldEvent.add(`${e.date}|${e.teamId}`);
+        if (e.homeTeamId) {
+          const key = `${e.date}|${e.homeTeamId}`;
+          teamDateEventCount.set(key, (teamDateEventCount.get(key) || 0) + 1);
+        }
+        if (e.awayTeamId) {
+          const key = `${e.date}|${e.awayTeamId}`;
+          teamDateEventCount.set(key, (teamDateEventCount.get(key) || 0) + 1);
+        }
+        if (e.teamId) {
+          const key = `${e.date}|${e.teamId}`;
+          teamDateEventCount.set(key, (teamDateEventCount.get(key) || 0) + 1);
+        }
       }
     }
 
@@ -4370,6 +4454,12 @@ export class ScheduleGenerator {
         return Math.max(...counts) - Math.min(...counts);
       };
 
+      const getMaxMin = (violations: Map<string, number>): { max: number; min: number } => {
+        const counts = Array.from(violations.values());
+        if (counts.length === 0) return { max: 0, min: 0 };
+        return { max: Math.max(...counts), min: Math.min(...counts) };
+      };
+
       let violations = calculateViolations();
       let delta = getDelta(violations);
 
@@ -4393,7 +4483,12 @@ export class ScheduleGenerator {
       const maxIterations = 30; // Prevent infinite loops
       let totalPairsChecked = 0;
       let sameDayConflicts = 0;
+      let maxGamesPerWeekBlocks = 0;
+      let matchupSpacingBlocks = 0;
+      let fieldConflictBlocks = 0;
       let noImprovementCount = 0;
+      // Track swapped game pairs to prevent oscillation (e.g., A<->B then B<->A)
+      const swappedPairs = new Set<string>();
 
       for (let iter = 0; iter < maxIterations && delta > 1; iter++) {
         let foundImprovement = false;
@@ -4409,35 +4504,39 @@ export class ScheduleGenerator {
 
               totalPairsChecked++;
 
+              // Skip pairs that have already been swapped (prevents oscillation)
+              const pairKey = i < j ? `${i}-${j}` : `${j}-${i}`;
+              if (swappedPairs.has(pairKey)) continue;
+
               const teams1 = [game1.homeTeamId, game1.awayTeamId].filter(Boolean) as string[];
               const teams2 = [game2.homeTeamId, game2.awayTeamId].filter(Boolean) as string[];
 
-              // Check if swap would create same-day conflicts using pre-computed index
-              // Note: We need to exclude the games being swapped from the check
+              // Check if swap would create same-day conflicts using pre-computed count index
+              // For each team, check if they'd have more than 1 event on the target date after swap
               let wouldCreateSameDayConflict = false;
               for (const teamId of teams1) {
-                // Check if this team has any OTHER field event on the new date (game2.date)
-                // The index includes game1, so we check if there's more than just game1's entry
+                // Team in game1 is moving to game2.date
                 const key = `${game2.date}|${teamId}`;
-                if (teamDateHasFieldEvent.has(key)) {
-                  // There's something on that date - but is it just game2 (which will move away)?
-                  // If game2 involves this team, then the conflict would be with something else
-                  const game2InvolvesTeam = teams2.includes(teamId);
-                  if (!game2InvolvesTeam) {
-                    wouldCreateSameDayConflict = true;
-                    break;
-                  }
+                const count = teamDateEventCount.get(key) || 0;
+                const game2InvolvesTeam = teams2.includes(teamId);
+                // After swap: if team in both games, count stays same; if only in game1, count +1
+                const afterCount = game2InvolvesTeam ? count : count + 1;
+                if (afterCount > 1) {
+                  wouldCreateSameDayConflict = true;
+                  break;
                 }
               }
               if (!wouldCreateSameDayConflict) {
                 for (const teamId of teams2) {
+                  // Team in game2 is moving to game1.date
                   const key = `${game1.date}|${teamId}`;
-                  if (teamDateHasFieldEvent.has(key)) {
-                    const game1InvolvesTeam = teams1.includes(teamId);
-                    if (!game1InvolvesTeam) {
-                      wouldCreateSameDayConflict = true;
-                      break;
-                    }
+                  const count = teamDateEventCount.get(key) || 0;
+                  const game1InvolvesTeam = teams1.includes(teamId);
+                  // After swap: if team in both games, count stays same; if only in game2, count +1
+                  const afterCount = game1InvolvesTeam ? count : count + 1;
+                  if (afterCount > 1) {
+                    wouldCreateSameDayConflict = true;
+                    break;
                   }
                 }
               }
@@ -4450,17 +4549,17 @@ export class ScheduleGenerator {
               // Check if swap would violate maxGamesPerWeek for any team
               const config = this.divisionConfigs.get(divisionId);
               const maxGamesPerWeek = config?.maxGamesPerWeek;
-              if (maxGamesPerWeek !== undefined) {
+              if (maxGamesPerWeek != null) {
                 // Use proper week definitions to match scheduler's week calculation
                 const week1 = getWeekNumberForDate(game1.date, this.weekDefinitions);
                 const week2 = getWeekNumberForDate(game2.date, this.weekDefinitions);
 
                 // Only need to check if swapping across weeks
                 if (week1 !== week2) {
-                  // Count games per team per week (excluding the games being swapped)
-                  const countGamesInWeek = (teamId: string, weekNum: number, excludeGame: typeof game1): number => {
+                  // Count games per team per week (excluding both swapped games)
+                  const countGamesInWeek = (teamId: string, weekNum: number): number => {
                     return divisionGames.filter(g =>
-                      g !== excludeGame &&
+                      g !== game1 && g !== game2 &&
                       getWeekNumberForDate(g.date, this.weekDefinitions) === weekNum &&
                       (g.homeTeamId === teamId || g.awayTeamId === teamId)
                     ).length;
@@ -4469,8 +4568,13 @@ export class ScheduleGenerator {
                   let wouldExceedMaxGames = false;
                   // Check teams from game1 moving to week2
                   for (const teamId of teams1) {
-                    const gamesInWeek2 = countGamesInWeek(teamId, week2, game1);
-                    if (gamesInWeek2 + 1 > maxGamesPerWeek) {
+                    // Base count excludes both swapped games
+                    let gamesInWeek2 = countGamesInWeek(teamId, week2);
+                    // Add 1 for game1 arriving in week2
+                    gamesInWeek2 += 1;
+                    // If this team is also in game2, game2 is leaving week2, so no additional change
+                    // (it's already excluded from count)
+                    if (gamesInWeek2 > maxGamesPerWeek) {
                       wouldExceedMaxGames = true;
                       break;
                     }
@@ -4478,8 +4582,13 @@ export class ScheduleGenerator {
                   // Check teams from game2 moving to week1
                   if (!wouldExceedMaxGames) {
                     for (const teamId of teams2) {
-                      const gamesInWeek1 = countGamesInWeek(teamId, week1, game2);
-                      if (gamesInWeek1 + 1 > maxGamesPerWeek) {
+                      // Base count excludes both swapped games
+                      let gamesInWeek1 = countGamesInWeek(teamId, week1);
+                      // Add 1 for game2 arriving in week1
+                      gamesInWeek1 += 1;
+                      // If this team is also in game1, game1 is leaving week1, so no additional change
+                      // (it's already excluded from count)
+                      if (gamesInWeek1 > maxGamesPerWeek) {
                         wouldExceedMaxGames = true;
                         break;
                       }
@@ -4487,6 +4596,7 @@ export class ScheduleGenerator {
                   }
 
                   if (wouldExceedMaxGames) {
+                    maxGamesPerWeekBlocks++;
                     continue;
                   }
                 }
@@ -4535,6 +4645,7 @@ export class ScheduleGenerator {
               };
 
               if (wouldViolateMatchupSpacing()) {
+                matchupSpacingBlocks++;
                 continue;
               }
 
@@ -4571,6 +4682,7 @@ export class ScheduleGenerator {
               };
 
               if (wouldCreateFieldConflict()) {
+                fieldConflictBlocks++;
                 continue;
               }
 
@@ -4592,9 +4704,37 @@ export class ScheduleGenerator {
               // Recalculate violations
               const newViolations = calculateViolations();
               const newDelta = getDelta(newViolations);
+              const oldMaxMin = getMaxMin(violations);
+              const newMaxMin = getMaxMin(newViolations);
 
-              if (newDelta < delta) {
-                // Keep the swap
+              // Accept swap if:
+              // 1. Delta decreases (primary goal), OR
+              // 2. Delta stays same but max decreases (balancing move), OR
+              // 3. Delta stays same but min increases (balancing move)
+              const isDeltaImprovement = newDelta < delta;
+              const isBalancingMove = newDelta === delta && (
+                newMaxMin.max < oldMaxMin.max || newMaxMin.min > oldMaxMin.min
+              );
+
+              if (isDeltaImprovement || isBalancingMove) {
+                // Record this swap to prevent oscillation
+                swappedPairs.add(pairKey);
+
+                // Keep the swap - update the teamDateEventCount index
+                for (const teamId of teams1) {
+                  // Decrement count at old date, increment at new date
+                  const oldKey = `${orig1Date}|${teamId}`;
+                  const newKey = `${orig2Date}|${teamId}`;
+                  teamDateEventCount.set(oldKey, (teamDateEventCount.get(oldKey) || 1) - 1);
+                  teamDateEventCount.set(newKey, (teamDateEventCount.get(newKey) || 0) + 1);
+                }
+                for (const teamId of teams2) {
+                  const oldKey = `${orig2Date}|${teamId}`;
+                  const newKey = `${orig1Date}|${teamId}`;
+                  teamDateEventCount.set(oldKey, (teamDateEventCount.get(oldKey) || 1) - 1);
+                  teamDateEventCount.set(newKey, (teamDateEventCount.get(newKey) || 0) + 1);
+                }
+
                 const teams1Names = teams1.map(t => {
                   const state = this.teamSchedulingStates.get(t);
                   return state?.teamName || t;
@@ -4604,7 +4744,11 @@ export class ScheduleGenerator {
                   return state?.teamName || t;
                 }).join(' vs ');
 
-                console.log(`  [ShortRest] ${divisionName}: swapped ${teams1Names} (was ${orig1Date}) with ${teams2Names} (was ${orig2Date}), delta ${delta}->${newDelta}`);
+                if (isDeltaImprovement) {
+                  console.log(`  [ShortRest] ${divisionName}: swapped ${teams1Names} (was ${orig1Date}) with ${teams2Names} (was ${orig2Date}), delta ${delta}->${newDelta}`);
+                } else {
+                  console.log(`  [ShortRest] ${divisionName}: balancing swap ${teams1Names} (was ${orig1Date}) with ${teams2Names} (was ${orig2Date}), max ${oldMaxMin.max}->${newMaxMin.max}, min ${oldMaxMin.min}->${newMaxMin.min}`);
+                }
 
                 violations = newViolations;
                 delta = newDelta;
@@ -4626,9 +4770,9 @@ export class ScheduleGenerator {
         if (!foundImprovement) break;
       }
 
-      // Log diagnostic info if no swaps were made but delta > 1
-      if (swapsMade === 0 && delta > 1) {
-        console.log(`  [ShortRest] ${divisionName}: checked ${totalPairsChecked} pairs, ${sameDayConflicts} blocked by same-day conflicts, ${noImprovementCount} didn't improve delta`);
+      // Log diagnostic info if delta > 1
+      if (delta > 1) {
+        console.log(`  [ShortRest] ${divisionName}: checked ${totalPairsChecked} pairs, blocked by: sameDay=${sameDayConflicts}, maxGames=${maxGamesPerWeekBlocks}, matchupSpacing=${matchupSpacingBlocks}, fieldConflict=${fieldConflictBlocks}, noImprove=${noImprovementCount}`);
       }
 
       // Log final state for this division
@@ -7580,16 +7724,6 @@ export class ScheduleGenerator {
     const e2 = e2h * 60 + e2m;
 
     return s1 < e2 && s2 < e1;
-  }
-
-  /**
-   * Shuffle an array using Fisher-Yates algorithm with seeded random
-   */
-  private shuffleArray<T>(array: T[]): T[] {
-    const result = shuffleWithSeed(array, this.randomSeed);
-    // Advance the seed so subsequent shuffles produce different results
-    this.randomSeed = (this.randomSeed * 1664525 + 1013904223) % 4294967296;
-    return result;
   }
 
   /**

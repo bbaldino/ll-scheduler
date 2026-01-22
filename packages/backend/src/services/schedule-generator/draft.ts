@@ -814,10 +814,14 @@ export function generateCandidatesForGame(
   const awayTeamState = context.teamStates.get(matchup.awayTeamId);
 
   for (const slot of weekSlots) {
-    if (slot.slot.duration < durationHours) continue;
+    if (slot.slot.duration < durationHours) {
+      continue;
+    }
 
     // Skip days marked as 'avoid' - this is a hard blocker, not just a negative weight
-    if (avoidDays.has(slot.slot.dayOfWeek)) continue;
+    if (avoidDays.has(slot.slot.dayOfWeek)) {
+      continue;
+    }
 
     // Skip dates where either team already has any event (practice, cage, or paired practice)
     // Games should not be scheduled on days when a team has other activities
@@ -829,7 +833,9 @@ export function generateCandidatesForGame(
       awayTeamState.fieldDatesUsed.has(slot.slot.date) ||
       awayTeamState.cageDatesUsed.has(slot.slot.date)
     );
-    if (homeHasEvent || awayHasEvent) continue;
+    if (homeHasEvent || awayHasEvent) {
+      continue;
+    }
 
     // Skip single-event-only slots that already have an event
     if (slot.singleEventOnly) {
