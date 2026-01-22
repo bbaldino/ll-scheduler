@@ -106,8 +106,12 @@ function convertSeasonField(row: any, fields: any[]) {
     divisionCompatibility: parseJsonField(field?.division_compatibility, []),
     // Include nested field info for practiceOnly check in slot building
     field: field ? {
+      id: field.id,
       name: field.name,
+      divisionCompatibility: parseJsonField(field.division_compatibility, []),
       practiceOnly: field.practice_only === 1 || field.practice_only === true,
+      createdAt: field.created_at,
+      updatedAt: field.updated_at,
     } : undefined,
     createdAt: row.created_at, updatedAt: row.updated_at,
   };
@@ -227,7 +231,41 @@ describe('Production Data Gap Analysis', () => {
       for (const g of aaGames) {
         const home = allTeams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
         const away = allTeams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
-        console.log(`${g.date} ${home} vs ${away}`);
+        const field = seasonFields.find((sf: any) => sf.fieldId === g.fieldId)?.fieldName || g.fieldId?.slice(-8);
+        console.log(`${g.date} ${g.startTime} ${home} vs ${away} (${field})`);
+      }
+
+      // Analyze why AA back-to-back can't be resolved
+      // Look at games in the week of March 9-14 (Week 2)
+      console.log('\n=== AA Week 2 (March 9-14) Analysis ===');
+      const week2Games = aaGames.filter((g: any) => g.date >= '2026-03-09' && g.date <= '2026-03-14');
+      const fieldGroups = new Map<string, any[]>();
+      for (const g of week2Games) {
+        const fieldName = seasonFields.find((sf: any) => sf.fieldId === g.fieldId)?.fieldName || g.fieldId?.slice(-8);
+        if (!fieldGroups.has(fieldName)) fieldGroups.set(fieldName, []);
+        fieldGroups.get(fieldName)!.push(g);
+      }
+      for (const [fieldName, fieldGames] of fieldGroups) {
+        console.log(`  ${fieldName}:`);
+        for (const g of fieldGames.sort((a: any, b: any) => a.date.localeCompare(b.date))) {
+          const home = allTeams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
+          const away = allTeams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
+          console.log(`    ${g.date} ${g.startTime}: ${home} vs ${away}`);
+        }
+      }
+
+      // Find Team 3's games
+      const team3 = allTeams.find((t: any) => t.name === 'AA Team 3' && t.divisionId === aaDiv.id);
+      if (team3) {
+        const team3Games = aaGames.filter((g: any) => g.homeTeamId === team3.id || g.awayTeamId === team3.id);
+        console.log('\n=== AA Team 3 Full Schedule ===');
+        for (const g of team3Games) {
+          const home = allTeams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
+          const away = allTeams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
+          const field = seasonFields.find((sf: any) => sf.fieldId === g.fieldId)?.fieldName || g.fieldId?.slice(-8);
+          const role = g.homeTeamId === team3.id ? 'HOME' : 'AWAY';
+          console.log(`  ${g.date} ${g.startTime} ${home} vs ${away} (${field}) [${role}]`);
+        }
       }
     }
 

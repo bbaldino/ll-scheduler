@@ -1137,6 +1137,13 @@ export class ScheduleGenerator {
       this.rebalanceShortRest();
       console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
 
+      // Step 4c2: Reduce back-to-back games for divisions with game spacing enabled
+      // This tries to eliminate 1-day gaps between games
+      stepStart = Date.now();
+      const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+      this.reduceBackToBackGames(scheduledGames);
+      console.log(`  reduceBackToBackGames: ${Date.now() - stepStart}ms`);
+
       // Step 4d: Rebalance matchup spacing (avoid same teams playing within 7 days)
       stepStart = Date.now();
       this.rebalanceMatchupSpacing();
