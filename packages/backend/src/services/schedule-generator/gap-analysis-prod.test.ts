@@ -198,6 +198,20 @@ describe('Production Data Gap Analysis', () => {
 
     const games = generator.getScheduledEvents().filter((e: any) => e.eventType === 'game');
 
+    // Print Majors games for comparison with production
+    const majorsDiv = allDivisions.find((d: any) => d.name === 'Majors');
+    if (majorsDiv) {
+      const majorsGames = games.filter((g: any) => g.divisionId === majorsDiv.id).sort((a: any, b: any) =>
+        a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)
+      );
+      console.log('\n=== LOCAL Majors Games (for comparison) ===');
+      for (const g of majorsGames) {
+        const home = allTeams.find((t: any) => t.id === g.homeTeamId)?.name || g.homeTeamId;
+        const away = allTeams.find((t: any) => t.id === g.awayTeamId)?.name || g.awayTeamId;
+        console.log(`${g.date} ${home} vs ${away}`);
+      }
+    }
+
     // Print AA games for comparison with production
     const aaDiv = allDivisions.find((d: any) => d.name === 'AA');
     if (aaDiv) {

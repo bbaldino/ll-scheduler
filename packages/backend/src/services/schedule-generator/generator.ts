@@ -1345,6 +1345,12 @@ export class ScheduleGenerator {
       slotsByDayOfWeek: slotsByDay,
     });
 
+    // Log hash of game field slots for determinism debugging
+    const gameSlotDetails = this.gameFieldSlots
+      .map(s => `${s.slot.date}:${s.slot.startTime}:${s.resourceId.slice(-8)}`)
+      .sort();
+    console.log(`Game field slots: ${this.gameFieldSlots.length}, hash=${this.simpleHash(gameSlotDetails.join('|'))}`);
+
     // Log detailed slot info per field
     const fieldSlotDetails: Record<string, { dates: string[]; times: string[] }> = {};
     for (const slot of this.gameFieldSlots) {
@@ -1948,6 +1954,12 @@ export class ScheduleGenerator {
       // Rebalance home/away for matchups to ensure all teams have balanced assignments
       const rebalanceResult = rebalanceMatchupsHomeAway(matchups, teamIds);
       verboseLog(`  Rebalancing: ${rebalanceResult.phase1Swaps} Phase 1 swaps, ${rebalanceResult.phase2Swaps} Phase 2 swaps`);
+
+      // Log matchups hash for determinism debugging
+      const matchupDetails = matchups
+        .map(m => `${m.targetWeek}:${[m.homeTeamId, m.awayTeamId].sort().join('-')}`)
+        .sort();
+      console.log(`  [MatchupsHash] ${divisionName}: ${matchups.length} matchups, hash=${this.simpleHash(matchupDetails.join('|'))}`);
 
       // Log the distribution
       const weekCounts = new Map<number, number>();
