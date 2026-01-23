@@ -900,3 +900,352 @@
 .conflictWarning li:last-child {
   margin-bottom: 0;
 }
+
+/* Swap Mode Styles */
+.swapTimeSlotButton {
+  padding: 0.5rem 1rem;
+  background: #e8f5e9;
+  border: 1px solid #4caf50;
+  border-radius: 4px;
+  color: #2e7d32;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.swapTimeSlotButton:hover {
+  background: #c8e6c9;
+}
+
+.swapModeContent {
+  padding: 1.5rem;
+}
+
+.backButton {
+  padding: 0.5rem 1rem;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  color: #666;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.backButton:hover {
+  background: #e8e8e8;
+}
+
+.swapFilters {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+}
+
+.filterCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.filterCheckbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.swapCandidatesList {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+}
+
+.noCandidates {
+  padding: 2rem;
+  text-align: center;
+  color: #666;
+  font-style: italic;
+}
+
+.swapCandidate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #eee;
+  transition: background 0.2s;
+}
+
+.swapCandidate:last-child {
+  border-bottom: none;
+}
+
+.swapCandidate:hover {
+  background: #f5f5f5;
+}
+
+.candidateInfo {
+  flex: 1;
+}
+
+.candidateDate {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.25rem;
+}
+
+.candidateDetails {
+  font-size: 0.95rem;
+  color: #555;
+  margin-bottom: 0.25rem;
+}
+
+.candidateMeta {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.selectButton {
+  padding: 0.4rem 1rem;
+  background: #2196f3;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.selectButton:hover {
+  background: #1976d2;
+}
+
+/* Swap Confirmation Styles */
+.swapConfirmation {
+  padding: 1.5rem;
+}
+
+.swapConfirmText {
+  margin: 0 0 1rem 0;
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.swapPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.swapPreviewEvent {
+  padding: 1rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+}
+
+.swapPreviewLabel {
+  font-size: 0.8rem;
+  color: #888;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.swapPreviewDetails {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.swapPreviewSlot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.swapSlotOld {
+  color: #c62828;
+  text-decoration: line-through;
+}
+
+.swapArrow {
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.swapSlotNew {
+  color: #2e7d32;
+  font-weight: 500;
+}
+
+/* Swap Mini Calendar Styles */
+.candidateCount {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.swapMiniCalendar {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.miniCalendarHeader {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.miniCalendarDayHeader {
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #666;
+}
+
+.miniCalendarBody {
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.miniCalendarMonthLabel {
+  padding: 0.5rem 0.75rem;
+  background: #e3f2fd;
+  color: #1565c0;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #90caf9;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.miniCalendarWeek {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid #eee;
+}
+
+.miniCalendarWeek:last-child {
+  border-bottom: none;
+}
+
+.miniCalendarDay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.4rem 0.25rem;
+  min-height: 45px;
+  border-right: 1px solid #eee;
+  background: white;
+}
+
+.miniCalendarDay:last-child {
+  border-right: none;
+}
+
+.miniCalendarDay.hasSwapCandidates {
+  background: #e8f5e9;
+  cursor: pointer;
+}
+
+.miniCalendarDay.hasSwapCandidates:hover {
+  background: #c8e6c9;
+}
+
+.miniCalendarDay.isCurrentEvent {
+  background: #fff3e0;
+}
+
+.miniCalendarDay.isToday .miniDayNumber {
+  color: #1976d2;
+  font-weight: 700;
+}
+
+.miniDayNumber {
+  font-size: 0.8rem;
+  color: #333;
+}
+
+.miniDayDots {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.miniDayDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4caf50;
+}
+
+.miniDayCount {
+  font-size: 0.65rem;
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+/* Swap Day Detail View */
+.swapDayDetail {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.swapDayHeader {
+  padding: 0.75rem 1rem;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  color: #333;
+}
+
+/* Swap Source Event Info */
+.swapSourceEvent {
+  padding: 0.75rem 1rem;
+  background: #fff3e0;
+  border: 1px solid #ffb74d;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.swapSourceLabel {
+  font-size: 0.75rem;
+  color: #e65100;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.swapSourceDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.swapSourceTeams {
+  font-weight: 600;
+  color: #333;
+}
+
+.swapSourceMeta {
+  font-size: 0.9rem;
+  color: #666;
+}

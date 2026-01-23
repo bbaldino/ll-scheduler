@@ -259,7 +259,7 @@ describe('Short Rest Rebalancing with Real Data', () => {
   });
 
   it('should have short rest delta <= 1 for all game-spacing divisions after generation', async () => {
-    // Create the generator
+    // Create the generator with date swaps enabled (required for short rest rebalancing)
     const generator = new ScheduleGenerator(
       season,
       divisions,
@@ -270,7 +270,8 @@ describe('Short Rest Rebalancing with Real Data', () => {
       fieldAvailabilities,
       cageAvailabilities,
       fieldOverrides,
-      cageOverrides
+      cageOverrides,
+      { skipDateSwaps: false }
     );
 
     // Generate the schedule

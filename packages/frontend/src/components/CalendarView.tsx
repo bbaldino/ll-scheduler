@@ -104,6 +104,13 @@ export default function CalendarView({
   const [recurringEndDate, setRecurringEndDate] = useState('');
   const [recurringCount, setRecurringCount] = useState(8);
 
+  // Swap mode state
+  const [isSwapMode, setIsSwapMode] = useState(false);
+  const [swapFilters, setSwapFilters] = useState({ sameDivision: true, sameEventType: true });
+  const [selectedSwapDate, setSelectedSwapDate] = useState<string | null>(null); // For day zoom
+  const [selectedSwapTarget, setSelectedSwapTarget] = useState<ScheduledEvent | null>(null);
+  const [isSwapping, setIsSwapping] = useState(false);
+
   const handleEventClick = (event: ScheduledEvent) => {
     if (onEventUpdate) {
       // If we have update capability, open the edit modal
@@ -154,7 +161,76 @@ export default function CalendarView({
   const closeModal = () => {
     setEditingEvent(null);
     setEditFormData({});
+    setIsSwapMode(false);
+    setSelectedSwapDate(null);
+    setSelectedSwapTarget(null);
+    setSwapFilters({ sameDivision: true, sameEventType: true });
   };
+
+  // Execute swap between two events
+  const executeSwap = async () => {
+    if (!editingEvent || !selectedSwapTarget || !onEventUpdate) return;
+    setIsSwapping(true);
+    try {
+      const slotA = {
+        date: editingEvent.date,
+        startTime: editingEvent.startTime,
+        endTime: editingEvent.endTime,
+        fieldId: editingEvent.fieldId,
+        cageId: editingEvent.cageId,
+      };
+      const slotB = {
+        date: selectedSwapTarget.date,
+        startTime: selectedSwapTarget.startTime,
+        endTime: selectedSwapTarget.endTime,
+        fieldId: selectedSwapTarget.fieldId,
+        cageId: selectedSwapTarget.cageId,
+      };
+
+      await onEventUpdate(editingEvent.id, slotB);
+      await onEventUpdate(selectedSwapTarget.id, slotA);
+
+      // Close modal and reset state
+      setEditingEvent(null);
+      setEditFormData({});
+      setIsSwapMode(false);
+      setSelectedSwapDate(null);
+      setSelectedSwapTarget(null);
+      setSwapFilters({ sameDivision: true, sameEventType: true });
+    } catch (error) {
+      console.error('Failed to swap events:', error);
+      alert('Failed to swap events');
+    } finally {
+      setIsSwapping(false);
+    }
+  };
+
+  // Compute conflicts for both events after swap (for confirmation dialog)
+  const swapConflicts = useMemo(() => {
+    if (!editingEvent || !selectedSwapTarget) return { sourceConflicts: [], targetConflicts: [] };
+
+    // Check conflicts for source event moving to target slot
+    const sourceConflicts = findSlotConflicts(
+      editingEvent.id,
+      selectedSwapTarget.date,
+      selectedSwapTarget.startTime,
+      selectedSwapTarget.endTime,
+      selectedSwapTarget.fieldId || undefined,
+      selectedSwapTarget.cageId || undefined
+    ).filter((e) => e.id !== selectedSwapTarget.id);
+
+    // Check conflicts for target event moving to source slot
+    const targetConflicts = findSlotConflicts(
+      selectedSwapTarget.id,
+      editingEvent.date,
+      editingEvent.startTime,
+      editingEvent.endTime,
+      editingEvent.fieldId || undefined,
+      editingEvent.cageId || undefined
+    ).filter((e) => e.id !== editingEvent.id);
+
+    return { sourceConflicts, targetConflicts };
+  }, [editingEvent, selectedSwapTarget, events]);
 
   // Generate dates for recurring events
   const generateRecurringDates = (
@@ -377,6 +453,49 @@ export default function CalendarView({
 
     return findSlotConflicts(editingEvent.id, date, startTime, endTime, fieldId || undefined, cageId || undefined);
   }, [editingEvent, editFormData, events]);
+
+  // Compute swap candidates based on filters
+  const swapCandidates = useMemo(() => {
+    if (!editingEvent || !isSwapMode) return [];
+    return events.filter((e) => {
+      if (e.id === editingEvent.id) return false;
+      if (swapFilters.sameDivision && e.divisionId !== editingEvent.divisionId) return false;
+      if (swapFilters.sameEventType && e.eventType !== editingEvent.eventType) return false;
+      return true;
+    });
+  }, [events, editingEvent, isSwapMode, swapFilters]);
+
+  // Group swap candidates by date for mini calendar view
+  const swapCandidatesByDate = useMemo(() => {
+    const byDate = new Map<string, ScheduledEvent[]>();
+    for (const candidate of swapCandidates) {
+      const existing = byDate.get(candidate.date) || [];
+      existing.push(candidate);
+      byDate.set(candidate.date, existing);
+    }
+    return byDate;
+  }, [swapCandidates]);
+
+  // Get date range for swap calendar (use season dates if available, otherwise +/- 6 weeks)
+  const swapCalendarRange = useMemo(() => {
+    if (!editingEvent) return { start: new Date(), end: new Date() };
+
+    // Use season milestones if available
+    if (seasonMilestones?.startDate && seasonMilestones?.endDate) {
+      return {
+        start: new Date(seasonMilestones.startDate + 'T00:00:00'),
+        end: new Date(seasonMilestones.endDate + 'T00:00:00'),
+      };
+    }
+
+    // Fallback to +/- 6 weeks from event date
+    const eventDate = new Date(editingEvent.date + 'T00:00:00');
+    const start = new Date(eventDate);
+    start.setDate(start.getDate() - 42);
+    const end = new Date(eventDate);
+    end.setDate(end.getDate() + 42);
+    return { start, end };
+  }, [editingEvent, seasonMilestones]);
 
   // For games, calculate the actual game start time (block start + arrive before time)
   const getGameStartTime = (event: ScheduledEvent): string | null => {
@@ -1101,234 +1220,551 @@ export default function CalendarView({
         <div className={styles.modalOverlay} onClick={closeModal}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h3>Edit {EVENT_TYPE_LABELS[editingEvent.eventType]}</h3>
+              <h3>
+                {selectedSwapTarget
+                  ? 'Confirm Swap'
+                  : isSwapMode
+                    ? 'Swap Time Slot'
+                    : `Edit ${EVENT_TYPE_LABELS[editingEvent.eventType]}`}
+              </h3>
               <button className={styles.closeButton} onClick={closeModal}>
                 ×
               </button>
             </div>
-            <form onSubmit={handleUpdate} className={styles.editForm}>
-              <div className={styles.formRow}>
-                <div className={styles.formGroup}>
-                  <label>Date</label>
-                  <input
-                    type="date"
-                    value={editFormData.date || editingEvent.date}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, date: e.target.value })
-                    }
-                  />
-                </div>
-                <div className={styles.formGroup}>
-                  <label>Start Time</label>
-                  <input
-                    type="time"
-                    value={editFormData.startTime || editingEvent.startTime}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, startTime: e.target.value })
-                    }
-                  />
-                </div>
-                <div className={styles.formGroup}>
-                  <label>End Time</label>
-                  <input
-                    type="time"
-                    value={editFormData.endTime || editingEvent.endTime}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, endTime: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
 
-              {/* Game time breakdown: arrival vs game start */}
-              {editingEvent.eventType === 'game' && (() => {
-                const gameStartTime = getGameStartTime(editingEvent);
-                if (!gameStartTime) return null;
-                const arrivalTime = editFormData.startTime || editingEvent.startTime;
-                return (
-                  <div className={styles.formRow}>
-                    <div className={styles.formGroup}>
-                      <label>Arrival Time</label>
-                      <span className={styles.teamDisplay}>
-                        {formatTime12Hour(arrivalTime)}
-                      </span>
+            {/* Confirmation Dialog */}
+            {selectedSwapTarget ? (
+              <div className={styles.swapConfirmation}>
+                <p className={styles.swapConfirmText}>
+                  You are about to swap time slots between these two events:
+                </p>
+
+                <div className={styles.swapPreview}>
+                  <div className={styles.swapPreviewEvent}>
+                    <div className={styles.swapPreviewLabel}>This event:</div>
+                    <div className={styles.swapPreviewDetails}>
+                      {editingEvent.eventType === 'game' ? (
+                        <>{getTeamName(editingEvent.homeTeamId)} vs {getTeamName(editingEvent.awayTeamId)}</>
+                      ) : (
+                        <>{getTeamName(editingEvent.teamId)} {EVENT_TYPE_LABELS[editingEvent.eventType]}</>
+                      )}
                     </div>
-                    <div className={styles.formGroup}>
-                      <label>Game Starts</label>
-                      <span className={styles.teamDisplay}>
-                        {formatTime12Hour(gameStartTime)}
+                    <div className={styles.swapPreviewSlot}>
+                      <span className={styles.swapSlotOld}>
+                        {editingEvent.date} {formatTimeRange12Hour(editingEvent.startTime, editingEvent.endTime)}
+                        {editingEvent.fieldId && ` @ ${getFieldName(editingEvent.fieldId)}`}
+                        {editingEvent.cageId && ` @ ${getCageName(editingEvent.cageId)}`}
+                      </span>
+                      <span className={styles.swapArrow}>→</span>
+                      <span className={styles.swapSlotNew}>
+                        {selectedSwapTarget.date} {formatTimeRange12Hour(selectedSwapTarget.startTime, selectedSwapTarget.endTime)}
+                        {selectedSwapTarget.fieldId && ` @ ${getFieldName(selectedSwapTarget.fieldId)}`}
+                        {selectedSwapTarget.cageId && ` @ ${getCageName(selectedSwapTarget.cageId)}`}
                       </span>
                     </div>
                   </div>
-                );
-              })()}
 
-              {/* Team display for practices */}
-              {editingEvent.eventType === 'practice' && (
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label>Team</label>
-                    <span className={styles.teamDisplay}>
-                      {getTeamName(editingEvent.teamId)}
-                    </span>
+                  <div className={styles.swapPreviewEvent}>
+                    <div className={styles.swapPreviewLabel}>Target event:</div>
+                    <div className={styles.swapPreviewDetails}>
+                      {selectedSwapTarget.eventType === 'game' ? (
+                        <>{getTeamName(selectedSwapTarget.homeTeamId)} vs {getTeamName(selectedSwapTarget.awayTeamId)}</>
+                      ) : (
+                        <>{getTeamName(selectedSwapTarget.teamId)} {EVENT_TYPE_LABELS[selectedSwapTarget.eventType]}</>
+                      )}
+                    </div>
+                    <div className={styles.swapPreviewSlot}>
+                      <span className={styles.swapSlotOld}>
+                        {selectedSwapTarget.date} {formatTimeRange12Hour(selectedSwapTarget.startTime, selectedSwapTarget.endTime)}
+                        {selectedSwapTarget.fieldId && ` @ ${getFieldName(selectedSwapTarget.fieldId)}`}
+                        {selectedSwapTarget.cageId && ` @ ${getCageName(selectedSwapTarget.cageId)}`}
+                      </span>
+                      <span className={styles.swapArrow}>→</span>
+                      <span className={styles.swapSlotNew}>
+                        {editingEvent.date} {formatTimeRange12Hour(editingEvent.startTime, editingEvent.endTime)}
+                        {editingEvent.fieldId && ` @ ${getFieldName(editingEvent.fieldId)}`}
+                        {editingEvent.cageId && ` @ ${getCageName(editingEvent.cageId)}`}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {/* Practice time breakdown: arrival vs practice start */}
-              {editingEvent.eventType === 'practice' && (() => {
-                const config = getDivisionConfig(editingEvent.divisionId);
-                const arriveBeforeMinutes = config?.practiceArriveBeforeMinutes || 0;
-                if (arriveBeforeMinutes === 0) return null;
-
-                // Calculate arrival time from the current form start time
-                const startTime = editFormData.startTime || editingEvent.startTime;
-                const [hours, minutes] = startTime.split(':').map(Number);
-                const totalMinutes = hours * 60 + minutes - arriveBeforeMinutes;
-                const arrivalHours = Math.floor(totalMinutes / 60);
-                const arrivalMinutes = totalMinutes % 60;
-                const arrivalTime24 = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMinutes.toString().padStart(2, '0')}`;
-
-                return (
-                  <div className={styles.formRow}>
-                    <div className={styles.formGroup}>
-                      <label>Arrival Time</label>
-                      <span className={styles.teamDisplay}>
-                        {formatTime12Hour(arrivalTime24)}
-                      </span>
-                    </div>
-                    <div className={styles.formGroup}>
-                      <label>Practice Starts</label>
-                      <span className={styles.teamDisplay}>
-                        {formatTime12Hour(startTime)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Field selection for games and practices */}
-              {(editingEvent.eventType === 'game' || editingEvent.eventType === 'practice') && (
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label>Field</label>
-                    <select
-                      value={editFormData.fieldId || editingEvent.fieldId || ''}
-                      onChange={(e) =>
-                        setEditFormData({ ...editFormData, fieldId: e.target.value })
-                      }
-                    >
-                      <option value="">Select Field</option>
-                      {seasonFields.map((sf) => (
-                        <option key={sf.id} value={sf.fieldId}>
-                          {sf.field?.name || sf.fieldId}
-                        </option>
+                {/* Conflict warnings */}
+                {(swapConflicts.sourceConflicts.length > 0 || swapConflicts.targetConflicts.length > 0) && (
+                  <div className={styles.conflictWarning}>
+                    <strong>Warning:</strong> This swap will create conflicts:
+                    <ul>
+                      {swapConflicts.sourceConflicts.map((conflict) => (
+                        <li key={`source-${conflict.id}`}>
+                          Source event will conflict with: {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                          {' - '}
+                          {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
+                        </li>
                       ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {/* Cage selection for cage events */}
-              {editingEvent.eventType === 'cage' && (
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label>Team</label>
-                    <span className={styles.teamDisplay}>
-                      {getTeamName(editingEvent.teamId)}
-                    </span>
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label>Cage</label>
-                    <select
-                      value={editFormData.cageId || editingEvent.cageId || ''}
-                      onChange={(e) =>
-                        setEditFormData({ ...editFormData, cageId: e.target.value })
-                      }
-                    >
-                      <option value="">Select Cage</option>
-                      {seasonCages.map((sc) => (
-                        <option key={sc.id} value={sc.cageId}>
-                          {sc.cage?.name || sc.cageId}
-                        </option>
+                      {swapConflicts.targetConflicts.map((conflict) => (
+                        <li key={`target-${conflict.id}`}>
+                          Target event will conflict with: {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                          {' - '}
+                          {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
+                        </li>
                       ))}
-                    </select>
+                    </ul>
                   </div>
-                </div>
-              )}
-
-              {/* Home/Away swap for games */}
-              {editingEvent.eventType === 'game' && (
-                <div className={styles.formRow}>
-                  <div className={styles.formGroup}>
-                    <label>Home Team</label>
-                    <span className={styles.teamDisplay}>
-                      {getTeamName(editFormData.homeTeamId || editingEvent.homeTeamId)}
-                    </span>
-                  </div>
-                  <div className={styles.formGroup}>
-                    <label>Away Team</label>
-                    <span className={styles.teamDisplay}>
-                      {getTeamName(editFormData.awayTeamId || editingEvent.awayTeamId)}
-                    </span>
-                  </div>
-                  <div className={styles.formGroup}>
-                    <button
-                      type="button"
-                      className={styles.swapButton}
-                      onClick={() => {
-                        const currentHome = editFormData.homeTeamId || editingEvent.homeTeamId;
-                        const currentAway = editFormData.awayTeamId || editingEvent.awayTeamId;
-                        setEditFormData({
-                          ...editFormData,
-                          homeTeamId: currentAway,
-                          awayTeamId: currentHome,
-                        });
-                      }}
-                    >
-                      ⇄ Swap Home/Away
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Conflict warning */}
-              {editConflicts.length > 0 && (
-                <div className={styles.conflictWarning}>
-                  <strong>Warning:</strong> This slot conflicts with {editConflicts.length} existing event{editConflicts.length > 1 ? 's' : ''}:
-                  <ul>
-                    {editConflicts.map((conflict) => (
-                      <li key={conflict.id}>
-                        {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
-                        {' - '}
-                        {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
-                        {conflict.eventType === 'game' && (
-                          <> ({getTeamName(conflict.homeTeamId)} vs {getTeamName(conflict.awayTeamId)})</>
-                        )}
-                        {conflict.eventType === 'practice' && (
-                          <> ({getTeamName(conflict.teamId)})</>
-                        )}
-                        {conflict.eventType === 'cage' && (
-                          <> ({getTeamName(conflict.teamId)})</>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className={styles.formActions}>
-                <button type="submit" className={styles.saveButton}>Save</button>
-                {onEventDelete && (
-                  <button type="button" className={styles.deleteButton} onClick={handleDelete}>
-                    Delete
-                  </button>
                 )}
-                <button type="button" className={styles.cancelButton} onClick={closeModal}>
-                  Cancel
-                </button>
+
+                <div className={styles.formActions}>
+                  <button
+                    type="button"
+                    className={styles.saveButton}
+                    onClick={executeSwap}
+                    disabled={isSwapping}
+                  >
+                    {isSwapping ? 'Swapping...' : 'Confirm Swap'}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.cancelButton}
+                    onClick={() => setSelectedSwapTarget(null)}
+                  >
+                    Back
+                  </button>
+                </div>
               </div>
-            </form>
+            ) : isSwapMode ? (
+              /* Swap Mode - Mini Calendar + Day Detail */
+              <div className={styles.swapModeContent}>
+                <button
+                  type="button"
+                  className={styles.backButton}
+                  onClick={() => {
+                    if (selectedSwapDate) {
+                      setSelectedSwapDate(null);
+                    } else {
+                      setIsSwapMode(false);
+                    }
+                  }}
+                >
+                  ← {selectedSwapDate ? 'Back to Calendar' : 'Back to Edit'}
+                </button>
+
+                {/* Current event info */}
+                <div className={styles.swapSourceEvent}>
+                  <div className={styles.swapSourceLabel}>Swapping time slot for:</div>
+                  <div className={styles.swapSourceDetails}>
+                    <span className={styles.swapSourceTeams}>
+                      {editingEvent.eventType === 'game' ? (
+                        <>{getTeamName(editingEvent.homeTeamId)} vs {getTeamName(editingEvent.awayTeamId)}</>
+                      ) : (
+                        <>{getTeamName(editingEvent.teamId)} {EVENT_TYPE_LABELS[editingEvent.eventType]}</>
+                      )}
+                    </span>
+                    <span className={styles.swapSourceMeta}>
+                      {editingEvent.date} {formatTimeRange12Hour(editingEvent.startTime, editingEvent.endTime)}
+                      {editingEvent.fieldId && ` @ ${getFieldName(editingEvent.fieldId)}`}
+                      {editingEvent.cageId && ` @ ${getCageName(editingEvent.cageId)}`}
+                      {' · '}{getDivisionName(editingEvent.divisionId)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className={styles.swapFilters}>
+                  <label className={styles.filterCheckbox}>
+                    <input
+                      type="checkbox"
+                      checked={swapFilters.sameDivision}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSwapFilters((prev) => ({ ...prev, sameDivision: checked }));
+                      }}
+                    />
+                    Same division
+                  </label>
+                  <label className={styles.filterCheckbox}>
+                    <input
+                      type="checkbox"
+                      checked={swapFilters.sameEventType}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSwapFilters((prev) => ({ ...prev, sameEventType: checked }));
+                      }}
+                    />
+                    Same event type
+                  </label>
+                  <span className={styles.candidateCount}>
+                    {swapCandidates.length} event{swapCandidates.length !== 1 ? 's' : ''} on {swapCandidatesByDate.size} day{swapCandidatesByDate.size !== 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {selectedSwapDate ? (
+                  /* Day Detail View */
+                  <div className={styles.swapDayDetail}>
+                    <div className={styles.swapDayHeader}>
+                      {new Date(selectedSwapDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </div>
+                    <div className={styles.swapCandidatesList}>
+                      {(swapCandidatesByDate.get(selectedSwapDate) || []).map((candidate) => (
+                        <div key={candidate.id} className={styles.swapCandidate}>
+                          <div className={styles.candidateInfo}>
+                            <div className={styles.candidateDate}>
+                              {formatTimeRange12Hour(candidate.startTime, candidate.endTime)}
+                            </div>
+                            <div className={styles.candidateDetails}>
+                              {candidate.eventType === 'game' ? (
+                                <>{getTeamName(candidate.homeTeamId)} vs {getTeamName(candidate.awayTeamId)}</>
+                              ) : (
+                                <>{getTeamName(candidate.teamId)} {EVENT_TYPE_LABELS[candidate.eventType]}</>
+                              )}
+                            </div>
+                            <div className={styles.candidateMeta}>
+                              {candidate.fieldId && `@ ${getFieldName(candidate.fieldId)}`}
+                              {candidate.cageId && `@ ${getCageName(candidate.cageId)}`}
+                              {' - '}
+                              {getDivisionName(candidate.divisionId)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.selectButton}
+                            onClick={() => setSelectedSwapTarget(candidate)}
+                          >
+                            Select
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* Mini Calendar View */
+                  <div className={styles.swapMiniCalendar}>
+                    {swapCandidates.length === 0 ? (
+                      <div className={styles.noCandidates}>
+                        No matching events found. Try unchecking the filters above.
+                      </div>
+                    ) : (
+                      (() => {
+                        // Generate weeks for the calendar
+                        const weeks: Date[][] = [];
+                        const current = new Date(swapCalendarRange.start);
+                        // Align to start of week (Sunday)
+                        current.setDate(current.getDate() - current.getDay());
+
+                        while (current <= swapCalendarRange.end) {
+                          const week: Date[] = [];
+                          for (let i = 0; i < 7; i++) {
+                            week.push(new Date(current));
+                            current.setDate(current.getDate() + 1);
+                          }
+                          weeks.push(week);
+                        }
+
+                        return (
+                          <>
+                            <div className={styles.miniCalendarHeader}>
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                                <div key={d} className={styles.miniCalendarDayHeader}>{d}</div>
+                              ))}
+                            </div>
+                            <div className={styles.miniCalendarBody}>
+                              {weeks.map((week, weekIdx) => {
+                                // Check if this week starts in a new month compared to previous week
+                                const firstDayOfWeek = week[0];
+                                const prevWeek = weeks[weekIdx - 1];
+                                const showMonthLabel = weekIdx === 0 ||
+                                  (prevWeek && prevWeek[0].getMonth() !== firstDayOfWeek.getMonth());
+
+                                return (
+                                  <div key={weekIdx}>
+                                    {showMonthLabel && (
+                                      <div className={styles.miniCalendarMonthLabel}>
+                                        {firstDayOfWeek.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                      </div>
+                                    )}
+                                    <div className={styles.miniCalendarWeek}>
+                                      {week.map((date) => {
+                                        const dateStr = date.toISOString().split('T')[0];
+                                        const candidates = swapCandidatesByDate.get(dateStr) || [];
+                                        const isCurrentEventDate = editingEvent?.date === dateStr;
+                                        const isToday = date.toDateString() === new Date().toDateString();
+
+                                        return (
+                                          <div
+                                            key={dateStr}
+                                            className={`${styles.miniCalendarDay} ${
+                                              candidates.length > 0 ? styles.hasSwapCandidates : ''
+                                            } ${isCurrentEventDate ? styles.isCurrentEvent : ''} ${
+                                              isToday ? styles.isToday : ''
+                                            }`}
+                                            onClick={() => {
+                                              if (candidates.length > 0) {
+                                                setSelectedSwapDate(dateStr);
+                                              }
+                                            }}
+                                          >
+                                            <span className={styles.miniDayNumber}>{date.getDate()}</span>
+                                            {candidates.length > 0 && (
+                                              <span className={styles.miniDayDots}>
+                                                {candidates.length <= 3 ? (
+                                                  candidates.map((_, i) => (
+                                                    <span key={i} className={styles.miniDayDot} />
+                                                  ))
+                                                ) : (
+                                                  <span className={styles.miniDayCount}>{candidates.length}</span>
+                                                )}
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        );
+                      })()
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Normal Edit Form */
+              <form onSubmit={handleUpdate} className={styles.editForm}>
+                <div className={styles.formRow}>
+                  <div className={styles.formGroup}>
+                    <label>Date</label>
+                    <input
+                      type="date"
+                      value={editFormData.date || editingEvent.date}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>Start Time</label>
+                    <input
+                      type="time"
+                      value={editFormData.startTime || editingEvent.startTime}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, startTime: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className={styles.formGroup}>
+                    <label>End Time</label>
+                    <input
+                      type="time"
+                      value={editFormData.endTime || editingEvent.endTime}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, endTime: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+
+                {/* Game time breakdown: arrival vs game start */}
+                {editingEvent.eventType === 'game' && (() => {
+                  const gameStartTime = getGameStartTime(editingEvent);
+                  if (!gameStartTime) return null;
+                  const arrivalTime = editFormData.startTime || editingEvent.startTime;
+                  return (
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label>Arrival Time</label>
+                        <span className={styles.teamDisplay}>
+                          {formatTime12Hour(arrivalTime)}
+                        </span>
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label>Game Starts</label>
+                        <span className={styles.teamDisplay}>
+                          {formatTime12Hour(gameStartTime)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Team display for practices */}
+                {editingEvent.eventType === 'practice' && (
+                  <div className={styles.formRow}>
+                    <div className={styles.formGroup}>
+                      <label>Team</label>
+                      <span className={styles.teamDisplay}>
+                        {getTeamName(editingEvent.teamId)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Practice time breakdown: arrival vs practice start */}
+                {editingEvent.eventType === 'practice' && (() => {
+                  const config = getDivisionConfig(editingEvent.divisionId);
+                  const arriveBeforeMinutes = config?.practiceArriveBeforeMinutes || 0;
+                  if (arriveBeforeMinutes === 0) return null;
+
+                  // Calculate arrival time from the current form start time
+                  const startTime = editFormData.startTime || editingEvent.startTime;
+                  const [hours, minutes] = startTime.split(':').map(Number);
+                  const totalMinutes = hours * 60 + minutes - arriveBeforeMinutes;
+                  const arrivalHours = Math.floor(totalMinutes / 60);
+                  const arrivalMinutes = totalMinutes % 60;
+                  const arrivalTime24 = `${arrivalHours.toString().padStart(2, '0')}:${arrivalMinutes.toString().padStart(2, '0')}`;
+
+                  return (
+                    <div className={styles.formRow}>
+                      <div className={styles.formGroup}>
+                        <label>Arrival Time</label>
+                        <span className={styles.teamDisplay}>
+                          {formatTime12Hour(arrivalTime24)}
+                        </span>
+                      </div>
+                      <div className={styles.formGroup}>
+                        <label>Practice Starts</label>
+                        <span className={styles.teamDisplay}>
+                          {formatTime12Hour(startTime)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Field selection for games and practices */}
+                {(editingEvent.eventType === 'game' || editingEvent.eventType === 'practice') && (
+                  <div className={styles.formRow}>
+                    <div className={styles.formGroup}>
+                      <label>Field</label>
+                      <select
+                        value={editFormData.fieldId || editingEvent.fieldId || ''}
+                        onChange={(e) =>
+                          setEditFormData({ ...editFormData, fieldId: e.target.value })
+                        }
+                      >
+                        <option value="">Select Field</option>
+                        {seasonFields.map((sf) => (
+                          <option key={sf.id} value={sf.fieldId}>
+                            {sf.field?.name || sf.fieldId}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cage selection for cage events */}
+                {editingEvent.eventType === 'cage' && (
+                  <div className={styles.formRow}>
+                    <div className={styles.formGroup}>
+                      <label>Team</label>
+                      <span className={styles.teamDisplay}>
+                        {getTeamName(editingEvent.teamId)}
+                      </span>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Cage</label>
+                      <select
+                        value={editFormData.cageId || editingEvent.cageId || ''}
+                        onChange={(e) =>
+                          setEditFormData({ ...editFormData, cageId: e.target.value })
+                        }
+                      >
+                        <option value="">Select Cage</option>
+                        {seasonCages.map((sc) => (
+                          <option key={sc.id} value={sc.cageId}>
+                            {sc.cage?.name || sc.cageId}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {/* Home/Away swap for games */}
+                {editingEvent.eventType === 'game' && (
+                  <div className={styles.formRow}>
+                    <div className={styles.formGroup}>
+                      <label>Home Team</label>
+                      <span className={styles.teamDisplay}>
+                        {getTeamName(editFormData.homeTeamId || editingEvent.homeTeamId)}
+                      </span>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <label>Away Team</label>
+                      <span className={styles.teamDisplay}>
+                        {getTeamName(editFormData.awayTeamId || editingEvent.awayTeamId)}
+                      </span>
+                    </div>
+                    <div className={styles.formGroup}>
+                      <button
+                        type="button"
+                        className={styles.swapButton}
+                        onClick={() => {
+                          const currentHome = editFormData.homeTeamId || editingEvent.homeTeamId;
+                          const currentAway = editFormData.awayTeamId || editingEvent.awayTeamId;
+                          setEditFormData({
+                            ...editFormData,
+                            homeTeamId: currentAway,
+                            awayTeamId: currentHome,
+                          });
+                        }}
+                      >
+                        ⇄ Swap Home/Away
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conflict warning */}
+                {editConflicts.length > 0 && (
+                  <div className={styles.conflictWarning}>
+                    <strong>Warning:</strong> This slot conflicts with {editConflicts.length} existing event{editConflicts.length > 1 ? 's' : ''}:
+                    <ul>
+                      {editConflicts.map((conflict) => (
+                        <li key={conflict.id}>
+                          {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                          {' - '}
+                          {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
+                          {conflict.eventType === 'game' && (
+                            <> ({getTeamName(conflict.homeTeamId)} vs {getTeamName(conflict.awayTeamId)})</>
+                          )}
+                          {conflict.eventType === 'practice' && (
+                            <> ({getTeamName(conflict.teamId)})</>
+                          )}
+                          {conflict.eventType === 'cage' && (
+                            <> ({getTeamName(conflict.teamId)})</>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className={styles.formActions}>
+                  <button type="submit" className={styles.saveButton}>Save</button>
+                  <button
+                    type="button"
+                    className={styles.swapTimeSlotButton}
+                    onClick={() => setIsSwapMode(true)}
+                  >
+                    ⇄ Swap Time Slot
+                  </button>
+                  {onEventDelete && (
+                    <button type="button" className={styles.deleteButton} onClick={handleDelete}>
+                      Delete
+                    </button>
+                  )}
+                  <button type="button" className={styles.cancelButton} onClick={closeModal}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
