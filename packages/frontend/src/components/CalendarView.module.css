@@ -1249,3 +1249,189 @@
   font-size: 0.9rem;
   color: #666;
 }
+
+/* Date Picker Mode Styles */
+.datePickerMode {
+  padding: 1.5rem;
+}
+
+.datePickerInfo {
+  padding: 0.75rem 1rem;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.datePickerLabel {
+  font-size: 0.75rem;
+  color: #1565c0;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.datePickerEvent {
+  font-weight: 600;
+  color: #333;
+}
+
+.datePickerEventMeta {
+  font-weight: 400;
+  color: #666;
+}
+
+.datePickerCurrent {
+  font-size: 0.9rem;
+  color: #555;
+  margin-top: 0.25rem;
+}
+
+.datePickerButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.datePickerButton:hover {
+  border-color: #2196f3;
+  background: #f5f5f5;
+}
+
+.datePickerIcon {
+  font-size: 1rem;
+}
+
+/* Date picker calendar day styles */
+.miniCalendarDay.datePickerDay {
+  cursor: pointer;
+}
+
+.miniCalendarDay.datePickerDay:hover {
+  background: #e3f2fd;
+}
+
+.miniCalendarDay.isSelectedDate {
+  background: #2196f3;
+}
+
+.miniCalendarDay.isSelectedDate .miniDayNumber {
+  color: white;
+  font-weight: 700;
+}
+
+.miniCalendarDay.isOriginalDate {
+  background: #fff3e0;
+}
+
+.miniCalendarDay.isSelectedDate.isOriginalDate {
+  background: #2196f3;
+}
+
+.miniCalendarDay.hasEvents {
+  background: #f3e5f5;
+}
+
+.miniCalendarDay.hasEvents:hover {
+  background: #e1bee7;
+}
+
+.miniCalendarDay.isSelectedDate.hasEvents {
+  background: #2196f3;
+}
+
+.miniCalendarDay.isOriginalDate.hasEvents {
+  background: #fff3e0;
+}
+
+.filterLabel {
+  font-size: 0.9rem;
+  color: #666;
+  margin-right: 0.5rem;
+}
+
+/* Date Picker Day Detail View */
+.datePickerDayDetail {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.datePickerTimeSection {
+  padding: 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.datePickerTimeLabel {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+}
+
+.datePickerTimeInputs {
+  display: flex;
+  gap: 1rem;
+}
+
+.datePickerTimeInputs .formGroup {
+  flex: 1;
+}
+
+.datePickerExistingEvents {
+  padding: 1rem;
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.datePickerEventsLabel {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.datePickerEventsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.datePickerEventItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.datePickerEventTime {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.datePickerEventName {
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.datePickerEventItem .datePickerEventMeta {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.datePickerDayDetail .formActions {
+  padding: 1rem;
+  background: #f5f5f5;
+}

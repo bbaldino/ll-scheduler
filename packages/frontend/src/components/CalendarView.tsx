@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type {
   ScheduledEvent,
   Team,
@@ -111,6 +111,12 @@ export default function CalendarView({
   const [selectedSwapTarget, setSelectedSwapTarget] = useState<ScheduledEvent | null>(null);
   const [isSwapping, setIsSwapping] = useState(false);
 
+  // Date picker mode state (for moving single event)
+  const [isDatePickerMode, setIsDatePickerMode] = useState(false);
+  const [datePickerFilters, setDatePickerFilters] = useState({ sameDivision: true, sameEventType: true });
+  const [selectedDatePickerDate, setSelectedDatePickerDate] = useState<string | null>(null);
+  const [datePickerTime, setDatePickerTime] = useState({ startTime: '', endTime: '' });
+
   const handleEventClick = (event: ScheduledEvent) => {
     if (onEventUpdate) {
       // If we have update capability, open the edit modal
@@ -162,9 +168,13 @@ export default function CalendarView({
     setEditingEvent(null);
     setEditFormData({});
     setIsSwapMode(false);
+    setIsDatePickerMode(false);
     setSelectedSwapDate(null);
     setSelectedSwapTarget(null);
     setSwapFilters({ sameDivision: true, sameEventType: true });
+    setDatePickerFilters({ sameDivision: true, sameEventType: true });
+    setSelectedDatePickerDate(null);
+    setDatePickerTime({ startTime: '', endTime: '' });
   };
 
   // Execute swap between two events
@@ -205,6 +215,34 @@ export default function CalendarView({
     }
   };
 
+  // Check for conflicting events when editing
+  // Returns events that overlap with the given slot (excluding the event being edited)
+  const findSlotConflicts = useCallback(
+    (
+      excludeEventId: string,
+      date: string,
+      startTime: string,
+      endTime: string,
+      fieldId?: string,
+      cageId?: string
+    ): ScheduledEvent[] => {
+      return events.filter((e) => {
+        // Don't conflict with self
+        if (e.id === excludeEventId) return false;
+        // Must be on the same date
+        if (e.date !== date) return false;
+        // Must use the same resource
+        const sameField = fieldId && e.fieldId === fieldId;
+        const sameCage = cageId && e.cageId === cageId;
+        if (!sameField && !sameCage) return false;
+        // Check time overlap
+        const overlaps = startTime < e.endTime && endTime > e.startTime;
+        return overlaps;
+      });
+    },
+    [events]
+  );
+
   // Compute conflicts for both events after swap (for confirmation dialog)
   const swapConflicts = useMemo(() => {
     if (!editingEvent || !selectedSwapTarget) return { sourceConflicts: [], targetConflicts: [] };
@@ -230,7 +268,7 @@ export default function CalendarView({
     ).filter((e) => e.id !== editingEvent.id);
 
     return { sourceConflicts, targetConflicts };
-  }, [editingEvent, selectedSwapTarget, events]);
+  }, [editingEvent, selectedSwapTarget, findSlotConflicts]);
 
   // Generate dates for recurring events
   const generateRecurringDates = (
@@ -416,31 +454,6 @@ export default function CalendarView({
     return divisionConfigs?.find((dc) => dc.divisionId === divisionId);
   };
 
-  // Check for conflicting events when editing
-  // Returns events that overlap with the given slot (excluding the event being edited)
-  const findSlotConflicts = (
-    excludeEventId: string,
-    date: string,
-    startTime: string,
-    endTime: string,
-    fieldId?: string,
-    cageId?: string
-  ): ScheduledEvent[] => {
-    return events.filter((e) => {
-      // Don't conflict with self
-      if (e.id === excludeEventId) return false;
-      // Must be on the same date
-      if (e.date !== date) return false;
-      // Must use the same resource
-      const sameField = fieldId && e.fieldId === fieldId;
-      const sameCage = cageId && e.cageId === cageId;
-      if (!sameField && !sameCage) return false;
-      // Check time overlap
-      const overlaps = startTime < e.endTime && endTime > e.startTime;
-      return overlaps;
-    });
-  };
-
   // Compute conflicts for the event being edited
   const editConflicts = useMemo(() => {
     if (!editingEvent) return [];
@@ -452,7 +465,7 @@ export default function CalendarView({
     const cageId = editFormData.cageId !== undefined ? editFormData.cageId : editingEvent.cageId;
 
     return findSlotConflicts(editingEvent.id, date, startTime, endTime, fieldId || undefined, cageId || undefined);
-  }, [editingEvent, editFormData, events]);
+  }, [editingEvent, editFormData, findSlotConflicts]);
 
   // Compute swap candidates based on filters
   const swapCandidates = useMemo(() => {
@@ -475,6 +488,51 @@ export default function CalendarView({
     }
     return byDate;
   }, [swapCandidates]);
+
+  // Compute filtered events by date for date picker calendar
+  const datePickerEventsByDate = useMemo(() => {
+    if (!editingEvent || !isDatePickerMode) return new Map<string, ScheduledEvent[]>();
+
+    const filtered = events.filter((e) => {
+      if (e.id === editingEvent.id) return false;
+      if (datePickerFilters.sameDivision && e.divisionId !== editingEvent.divisionId) return false;
+      if (datePickerFilters.sameEventType && e.eventType !== editingEvent.eventType) return false;
+      return true;
+    });
+
+    const byDate = new Map<string, ScheduledEvent[]>();
+    for (const event of filtered) {
+      const existing = byDate.get(event.date) || [];
+      existing.push(event);
+      byDate.set(event.date, existing);
+    }
+    return byDate;
+  }, [events, editingEvent, isDatePickerMode, datePickerFilters]);
+
+  // Compute conflicts for date picker selection
+  const datePickerConflicts = useMemo(() => {
+    if (!editingEvent || !selectedDatePickerDate) return [];
+
+    const startTime = datePickerTime.startTime || editingEvent.startTime;
+    const endTime = datePickerTime.endTime || editingEvent.endTime;
+    const fieldId = editFormData.fieldId !== undefined ? editFormData.fieldId : editingEvent.fieldId;
+    const cageId = editFormData.cageId !== undefined ? editFormData.cageId : editingEvent.cageId;
+
+    return findSlotConflicts(
+      editingEvent.id,
+      selectedDatePickerDate,
+      startTime,
+      endTime,
+      fieldId || undefined,
+      cageId || undefined
+    );
+  }, [editingEvent, selectedDatePickerDate, datePickerTime, editFormData, findSlotConflicts]);
+
+  // Get all events on the selected date picker date (unfiltered, for display)
+  const allEventsOnSelectedDate = useMemo(() => {
+    if (!selectedDatePickerDate) return [];
+    return events.filter((e) => e.date === selectedDatePickerDate && e.id !== editingEvent?.id);
+  }, [events, selectedDatePickerDate, editingEvent]);
 
   // Get date range for swap calendar (use season dates if available, otherwise +/- 6 weeks)
   const swapCalendarRange = useMemo(() => {
@@ -1532,19 +1590,308 @@ export default function CalendarView({
                   </div>
                 )}
               </div>
+            ) : isDatePickerMode ? (
+              /* Date Picker Mode */
+              <div className={styles.datePickerMode}>
+                <button
+                  type="button"
+                  className={styles.backButton}
+                  onClick={() => {
+                    if (selectedDatePickerDate) {
+                      setSelectedDatePickerDate(null);
+                      setDatePickerTime({ startTime: '', endTime: '' });
+                    } else {
+                      setIsDatePickerMode(false);
+                    }
+                  }}
+                >
+                  ← {selectedDatePickerDate ? 'Back to Calendar' : 'Back to Edit'}
+                </button>
+
+                <div className={styles.datePickerInfo}>
+                  <div className={styles.datePickerLabel}>Select new date for:</div>
+                  <div className={styles.datePickerEvent}>
+                    {editingEvent.eventType === 'game' ? (
+                      <>{getTeamName(editingEvent.homeTeamId)} vs {getTeamName(editingEvent.awayTeamId)}</>
+                    ) : (
+                      <>{getTeamName(editingEvent.teamId)} {EVENT_TYPE_LABELS[editingEvent.eventType]}</>
+                    )}
+                    <span className={styles.datePickerEventMeta}>
+                      {' · '}{getDivisionName(editingEvent.divisionId)}
+                    </span>
+                  </div>
+                  <div className={styles.datePickerCurrent}>
+                    Current: {new Date((editFormData.date || editingEvent.date) + 'T00:00:00').toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })} {formatTimeRange12Hour(
+                      editFormData.startTime || editingEvent.startTime,
+                      editFormData.endTime || editingEvent.endTime
+                    )}
+                  </div>
+                </div>
+
+                {selectedDatePickerDate ? (
+                  /* Day Detail View */
+                  <div className={styles.datePickerDayDetail}>
+                    <div className={styles.swapDayHeader}>
+                      {new Date(selectedDatePickerDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </div>
+
+                    <div className={styles.datePickerTimeSection}>
+                      <div className={styles.datePickerTimeLabel}>Select time:</div>
+                      <div className={styles.datePickerTimeInputs}>
+                        <div className={styles.formGroup}>
+                          <label>Start Time</label>
+                          <input
+                            type="time"
+                            value={datePickerTime.startTime || editingEvent.startTime}
+                            onChange={(e) =>
+                              setDatePickerTime((prev) => ({ ...prev, startTime: e.target.value }))
+                            }
+                          />
+                        </div>
+                        <div className={styles.formGroup}>
+                          <label>End Time</label>
+                          <input
+                            type="time"
+                            value={datePickerTime.endTime || editingEvent.endTime}
+                            onChange={(e) =>
+                              setDatePickerTime((prev) => ({ ...prev, endTime: e.target.value }))
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Conflict warning */}
+                    {datePickerConflicts.length > 0 && (
+                      <div className={styles.conflictWarning}>
+                        <strong>Warning:</strong> This slot conflicts with {datePickerConflicts.length} existing event{datePickerConflicts.length > 1 ? 's' : ''}:
+                        <ul>
+                          {datePickerConflicts.map((conflict) => (
+                            <li key={conflict.id}>
+                              {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                              {' - '}
+                              {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
+                              {conflict.eventType === 'game' && (
+                                <> ({getTeamName(conflict.homeTeamId)} vs {getTeamName(conflict.awayTeamId)})</>
+                              )}
+                              {conflict.eventType === 'practice' && (
+                                <> ({getTeamName(conflict.teamId)})</>
+                              )}
+                              {conflict.eventType === 'cage' && (
+                                <> ({getTeamName(conflict.teamId)})</>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Existing events on this day */}
+                    {allEventsOnSelectedDate.length > 0 && (
+                      <div className={styles.datePickerExistingEvents}>
+                        <div className={styles.datePickerEventsLabel}>
+                          Other events on this day ({allEventsOnSelectedDate.length}):
+                        </div>
+                        <div className={styles.datePickerEventsList}>
+                          {allEventsOnSelectedDate.map((event) => (
+                            <div key={event.id} className={styles.datePickerEventItem}>
+                              <span className={styles.datePickerEventTime}>
+                                {formatTimeRange12Hour(event.startTime, event.endTime)}
+                              </span>
+                              <span className={styles.datePickerEventName}>
+                                {event.eventType === 'game' ? (
+                                  <>{getTeamName(event.homeTeamId)} vs {getTeamName(event.awayTeamId)}</>
+                                ) : (
+                                  <>{getTeamName(event.teamId)} {EVENT_TYPE_LABELS[event.eventType]}</>
+                                )}
+                              </span>
+                              <span className={styles.datePickerEventMeta}>
+                                {getDivisionName(event.divisionId)}
+                                {event.fieldId && ` · ${getFieldName(event.fieldId)}`}
+                                {event.cageId && ` · ${getCageName(event.cageId)}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className={styles.formActions}>
+                      <button
+                        type="button"
+                        className={styles.saveButton}
+                        onClick={() => {
+                          setEditFormData({
+                            ...editFormData,
+                            date: selectedDatePickerDate,
+                            startTime: datePickerTime.startTime || editingEvent.startTime,
+                            endTime: datePickerTime.endTime || editingEvent.endTime,
+                          });
+                          setSelectedDatePickerDate(null);
+                          setDatePickerTime({ startTime: '', endTime: '' });
+                          setIsDatePickerMode(false);
+                        }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.cancelButton}
+                        onClick={() => {
+                          setSelectedDatePickerDate(null);
+                          setDatePickerTime({ startTime: '', endTime: '' });
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Calendar View */
+                  <>
+                    <div className={styles.swapFilters}>
+                      <span className={styles.filterLabel}>Show events:</span>
+                      <label className={styles.filterCheckbox}>
+                        <input
+                          type="checkbox"
+                          checked={datePickerFilters.sameDivision}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setDatePickerFilters((prev) => ({ ...prev, sameDivision: checked }));
+                          }}
+                        />
+                        Same division
+                      </label>
+                      <label className={styles.filterCheckbox}>
+                        <input
+                          type="checkbox"
+                          checked={datePickerFilters.sameEventType}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setDatePickerFilters((prev) => ({ ...prev, sameEventType: checked }));
+                          }}
+                        />
+                        Same event type
+                      </label>
+                    </div>
+
+                    <div className={styles.swapMiniCalendar}>
+                      {(() => {
+                        const weeks: Date[][] = [];
+                        const current = new Date(swapCalendarRange.start);
+                        current.setDate(current.getDate() - current.getDay());
+
+                        while (current <= swapCalendarRange.end) {
+                          const week: Date[] = [];
+                          for (let i = 0; i < 7; i++) {
+                            week.push(new Date(current));
+                            current.setDate(current.getDate() + 1);
+                          }
+                          weeks.push(week);
+                        }
+
+                        const selectedDate = editFormData.date || editingEvent.date;
+
+                        return (
+                          <>
+                            <div className={styles.miniCalendarHeader}>
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                                <div key={d} className={styles.miniCalendarDayHeader}>{d}</div>
+                              ))}
+                            </div>
+                            <div className={styles.miniCalendarBody}>
+                              {weeks.map((week, weekIdx) => {
+                                const firstDayOfWeek = week[0];
+                                const prevWeek = weeks[weekIdx - 1];
+                                const showMonthLabel = weekIdx === 0 ||
+                                  (prevWeek && prevWeek[0].getMonth() !== firstDayOfWeek.getMonth());
+
+                                return (
+                                  <div key={weekIdx}>
+                                    {showMonthLabel && (
+                                      <div className={styles.miniCalendarMonthLabel}>
+                                        {firstDayOfWeek.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                                      </div>
+                                    )}
+                                    <div className={styles.miniCalendarWeek}>
+                                      {week.map((date) => {
+                                        const dateStr = date.toISOString().split('T')[0];
+                                        const eventsOnDate = datePickerEventsByDate.get(dateStr) || [];
+                                        const isSelected = dateStr === selectedDate;
+                                        const isOriginalDate = dateStr === editingEvent.date;
+                                        const isToday = date.toDateString() === new Date().toDateString();
+
+                                        return (
+                                          <div
+                                            key={dateStr}
+                                            className={`${styles.miniCalendarDay} ${styles.datePickerDay} ${
+                                              isSelected ? styles.isSelectedDate : ''
+                                            } ${isOriginalDate ? styles.isOriginalDate : ''} ${
+                                              isToday ? styles.isToday : ''
+                                            } ${eventsOnDate.length > 0 ? styles.hasEvents : ''}`}
+                                            onClick={() => {
+                                              setSelectedDatePickerDate(dateStr);
+                                              setDatePickerTime({
+                                                startTime: editFormData.startTime || editingEvent.startTime,
+                                                endTime: editFormData.endTime || editingEvent.endTime,
+                                              });
+                                            }}
+                                          >
+                                            <span className={styles.miniDayNumber}>{date.getDate()}</span>
+                                            {eventsOnDate.length > 0 && (
+                                              <span className={styles.miniDayDots}>
+                                                {eventsOnDate.length <= 3 ? (
+                                                  eventsOnDate.map((_, i) => (
+                                                    <span key={i} className={styles.miniDayDot} />
+                                                  ))
+                                                ) : (
+                                                  <span className={styles.miniDayCount}>{eventsOnDate.length}</span>
+                                                )}
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </>
+                )}
+              </div>
             ) : (
               /* Normal Edit Form */
               <form onSubmit={handleUpdate} className={styles.editForm}>
                 <div className={styles.formRow}>
                   <div className={styles.formGroup}>
                     <label>Date</label>
-                    <input
-                      type="date"
-                      value={editFormData.date || editingEvent.date}
-                      onChange={(e) =>
-                        setEditFormData({ ...editFormData, date: e.target.value })
-                      }
-                    />
+                    <button
+                      type="button"
+                      className={styles.datePickerButton}
+                      onClick={() => setIsDatePickerMode(true)}
+                    >
+                      {new Date((editFormData.date || editingEvent.date) + 'T00:00:00').toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                      <span className={styles.datePickerIcon}>📅</span>
+                    </button>
                   </div>
                   <div className={styles.formGroup}>
                     <label>Start Time</label>
