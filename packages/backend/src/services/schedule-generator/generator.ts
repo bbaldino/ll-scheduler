@@ -606,6 +606,26 @@ function redistributeUnusedQuota(
 }
 
 /**
+ * Options for the schedule generator
+ */
+export interface ScheduleGeneratorOptions {
+  /**
+   * Skip all post-scheduling rebalancing (home/away, short rest, matchup spacing, back-to-back).
+   * Defaults to false (post-processing runs).
+   */
+  skipPostProcessing?: boolean;
+  /**
+   * Skip date-swapping post-processing (keeps home/away rebalancing).
+   * Defaults to true because date swaps tend to improve some metrics (e.g., short rest delta)
+   * while making others worse (first game spread, games-per-week distribution, matchup spacing).
+   *
+   * TODO: Consider removing the date-swap functions entirely (reduceBackToBackGames,
+   * rebalanceMatchupSpacing, rebalanceShortRest) since they cause more problems than they solve.
+   */
+  skipDateSwaps?: boolean;
+}
+
+/**
  * Main schedule generator
  * Generates optimal schedules for games, practices, and cage sessions
  * Uses season.gamesStartDate to determine when games can be scheduled
@@ -649,6 +669,9 @@ export class ScheduleGenerator {
   private scoringWeights: ScoringWeights = DEFAULT_SCORING_WEIGHTS;
   private weekDefinitions: WeekDefinition[] = [];
 
+  // Generator options
+  private options: ScheduleGeneratorOptions;
+
   // Day names for logging
   private static readonly DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -662,8 +685,14 @@ export class ScheduleGenerator {
     fieldAvailability: FieldAvailability[],
     cageAvailability: CageAvailability[],
     fieldOverrides: FieldDateOverride[],
-    cageOverrides: CageDateOverride[]
+    cageOverrides: CageDateOverride[],
+    options: ScheduleGeneratorOptions = {}
   ) {
+    this.options = {
+      skipPostProcessing: false,
+      skipDateSwaps: true,
+      ...options,
+    };
     this.season = season;
     this.divisions = divisions; // Already sorted by schedulingOrder from listDivisions
     this.divisionConfigs = new Map(divisionConfigs.map((dc) => [dc.divisionId, dc]));
@@ -1125,30 +1154,42 @@ export class ScheduleGenerator {
       console.log(`  scheduleGames: ${Date.now() - stepStart}ms`);
       verboseLog(`✓ Games scheduled: ${this.scheduledEvents.filter(e => e.eventType === 'game').length}`);
 
-      // Step 4b: Rebalance home/away for scheduled games
-      // This fixes imbalances caused by games that failed to schedule
-      stepStart = Date.now();
-      this.rebalanceScheduledHomeAway();
-      console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
+      // Post-processing: rebalancing steps to improve schedule quality
+      // These can be skipped for testing/comparison purposes
+      if (!this.options.skipPostProcessing) {
+        // Step 4b: Rebalance home/away for scheduled games
+        // This fixes imbalances caused by games that failed to schedule
+        // NOTE: This only swaps home/away designations, not game dates/times
+        stepStart = Date.now();
+        this.rebalanceScheduledHomeAway();
+        console.log(`  rebalanceHomeAway: ${Date.now() - stepStart}ms`);
 
-      // Step 4c: Reduce back-to-back games (1-day gaps)
-      // This tries to eliminate 1-day gaps between games for all divisions
-      stepStart = Date.now();
-      const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
-      this.reduceBackToBackGames(scheduledGames);
-      console.log(`  reduceBackToBackGames: ${Date.now() - stepStart}ms`);
+        // The following steps swap game dates and can be skipped separately
+        if (!this.options.skipDateSwaps) {
+          // Step 4c: Reduce back-to-back games (1-day gaps)
+          // This tries to eliminate 1-day gaps between games for all divisions
+          stepStart = Date.now();
+          const scheduledGames = this.scheduledEvents.filter(e => e.eventType === 'game');
+          this.reduceBackToBackGames(scheduledGames);
+          console.log(`  reduceBackToBackGames: ${Date.now() - stepStart}ms`);
 
-      // Step 4d: Rebalance matchup spacing (avoid same teams playing within 7 days)
-      stepStart = Date.now();
-      this.rebalanceMatchupSpacing();
-      console.log(`  rebalanceMatchupSpacing: ${Date.now() - stepStart}ms`);
+          // Step 4d: Rebalance matchup spacing (avoid same teams playing within 7 days)
+          stepStart = Date.now();
+          this.rebalanceMatchupSpacing();
+          console.log(`  rebalanceMatchupSpacing: ${Date.now() - stepStart}ms`);
 
-      // Step 4e: Rebalance short rest violations across teams (run LAST)
-      // This swaps game dates to balance short rest violations
-      // Running last ensures the final schedule has balanced short rest delta
-      stepStart = Date.now();
-      this.rebalanceShortRest();
-      console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
+          // Step 4e: Rebalance short rest violations across teams (run LAST)
+          // This swaps game dates to balance short rest violations
+          // Running last ensures the final schedule has balanced short rest delta
+          stepStart = Date.now();
+          this.rebalanceShortRest();
+          console.log(`  rebalanceShortRest: ${Date.now() - stepStart}ms`);
+        } else {
+          console.log('  [SKIPPED] Date-swapping post-processing (default behavior)');
+        }
+      } else {
+        console.log('  [SKIPPED] All post-processing disabled');
+      }
 
       // Rebuild fieldDatesUsed from actual scheduled events after rebalancing
       // This is necessary because rebalancing swaps dates directly on events
