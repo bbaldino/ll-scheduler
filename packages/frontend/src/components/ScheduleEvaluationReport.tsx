@@ -24,6 +24,8 @@ import type {
   WeeklyGamesDistributionReport,
   DivisionWeeklyGamesReport,
   TeamWeeklyGamesReport,
+  GameStartTimeBalanceReport,
+  DivisionGameStartTimeReport,
 } from '@ll-scheduler/shared';
 import styles from './ScheduleEvaluationReport.module.css';
 
@@ -145,6 +147,13 @@ export default function ScheduleEvaluationReport({ result, onClose }: Props) {
             report={result.weeklyGamesDistribution}
             expanded={expandedSections.has('weeklyGamesDistribution')}
             onToggle={() => toggleSection('weeklyGamesDistribution')}
+          />
+
+          {/* Game Start Time Balance */}
+          <GameStartTimeBalanceSection
+            report={result.gameStartTimeBalance}
+            expanded={expandedSections.has('gameStartTimeBalance')}
+            onToggle={() => toggleSection('gameStartTimeBalance')}
           />
         </div>
       </div>
@@ -1422,6 +1431,126 @@ function WeeklyGamesDistributionSection({
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameStartTimeBalanceSection({
+  report,
+  expanded,
+  onToggle,
+}: {
+  report: GameStartTimeBalanceReport;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
+
+  const toggleDivision = (divisionId: string) => {
+    setExpandedDivisions((prev) => {
+      const next = new Set(prev);
+      if (next.has(divisionId)) {
+        next.delete(divisionId);
+      } else {
+        next.add(divisionId);
+      }
+      return next;
+    });
+  };
+
+  // Format time for display (e.g., "09:00" -> "9:00 AM")
+  const formatTime = (time: string): string => {
+    const [hours, minutes] = time.split(':').map(Number);
+    const suffix = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${suffix}`;
+  };
+
+  return (
+    <div className={styles.section}>
+      <SectionHeader
+        title="Game Start Times"
+        passed={report.passed}
+        summary={report.summary}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+      {expanded && (
+        <div className={styles.sectionContent}>
+          {report.divisionReports.length === 0 ? (
+            <p className={styles.noData}>No division data available</p>
+          ) : (
+            report.divisionReports.map((division: DivisionGameStartTimeReport) => (
+              <div key={division.divisionId} className={styles.divisionReport}>
+                <div
+                  className={styles.divisionHeader}
+                  onClick={() => toggleDivision(division.divisionId)}
+                >
+                  <span className={division.passed ? styles.statusPass : styles.statusFail}>
+                    {division.passed ? '✓' : '✗'}
+                  </span>
+                  <span className={styles.divisionName}>{division.divisionName}</span>
+                  <span className={styles.complianceRate}>
+                    {division.startTimes.length} time slots, max imbalance: {division.maxImbalance}
+                  </span>
+                  <span className={styles.expandIcon}>
+                    {expandedDivisions.has(division.divisionId) ? '▼' : '▶'}
+                  </span>
+                </div>
+
+                {expandedDivisions.has(division.divisionId) && (
+                  <div className={styles.divisionContent}>
+                    <table className={styles.balanceTable}>
+                      <thead>
+                        <tr>
+                          <th>Team</th>
+                          {division.startTimes.map((time) => (
+                            <th key={time}>{formatTime(time)}</th>
+                          ))}
+                          <th>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {division.teamReports.map((team) => (
+                          <tr key={team.teamId}>
+                            <td>{team.teamName}</td>
+                            {division.startTimes.map((time) => {
+                              const count = team.startTimeCounts[time] || 0;
+                              // Find max and min for this time slot to highlight imbalances
+                              const counts = division.teamReports.map(
+                                (t) => t.startTimeCounts[time] || 0
+                              );
+                              const maxCount = Math.max(...counts);
+                              const minCount = Math.min(...counts);
+                              const isMax = count === maxCount && maxCount - minCount > 1;
+                              const isMin = count === minCount && maxCount - minCount > 1;
+                              return (
+                                <td
+                                  key={time}
+                                  className={
+                                    isMax
+                                      ? styles.cellWarning
+                                      : isMin
+                                        ? styles.cellOk
+                                        : ''
+                                  }
+                                >
+                                  {count}
+                                </td>
+                              );
+                            })}
+                            <td>{team.totalGames}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

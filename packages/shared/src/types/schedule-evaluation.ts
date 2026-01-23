@@ -21,6 +21,7 @@ export interface ScheduleEvaluationResult {
   matchupSpacing: MatchupSpacingReport;
   gameSlotEfficiency: GameSlotEfficiencyReport;
   weeklyGamesDistribution: WeeklyGamesDistributionReport;
+  gameStartTimeBalance: GameStartTimeBalanceReport;
 }
 
 // Weekly Requirements Report
@@ -274,6 +275,32 @@ export interface TeamWeeklyGamesReport {
   weeksUnderQuota: number; // Count of weeks where games < expected
 }
 
+// Game Start Time Balance Report - tracks distribution of game start times per team
+export interface GameStartTimeBalanceReport {
+  passed: boolean;
+  summary: string;
+  divisionReports: DivisionGameStartTimeReport[];
+}
+
+export interface DivisionGameStartTimeReport {
+  divisionId: string;
+  divisionName: string;
+  teamReports: TeamGameStartTimeReport[];
+  // All unique start times seen in this division, sorted
+  startTimes: string[];
+  // Max difference in count for any single start time across teams
+  maxImbalance: number;
+  passed: boolean;
+}
+
+export interface TeamGameStartTimeReport {
+  teamId: string;
+  teamName: string;
+  // Map of startTime (HH:MM) -> count of games at that time
+  startTimeCounts: Record<string, number>;
+  totalGames: number;
+}
+
 // Request type for evaluate endpoint
 export interface EvaluateScheduleRequest {
   seasonId: string;
@@ -318,6 +345,7 @@ export interface ScheduleComparisonResult {
     matchupSpacing: MetricComparison;
     gameSlotEfficiency: MetricComparison;
     weeklyGamesDistribution: MetricComparison;
+    gameStartTimeBalance: MetricComparison;
   };
 
   // Summary counts

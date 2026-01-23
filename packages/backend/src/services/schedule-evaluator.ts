@@ -26,6 +26,9 @@ import type {
   DivisionWeeklyGamesReport,
   TeamWeeklyGamesReport,
   WeekInfo,
+  GameStartTimeBalanceReport,
+  DivisionGameStartTimeReport,
+  TeamGameStartTimeReport,
   ScheduledEvent,
   Team,
   Division,
@@ -112,8 +115,10 @@ function evaluateEvents(
     configByDivision,
     season
   );
+  const gameStartTimeBalance = evaluateGameStartTimeBalance(events, teams, divisionMap);
 
   // Calculate overall score
+  // Note: gameStartTimeBalance is informational only, not included in score
   const checks = [
     weeklyRequirements.passed,
     homeAwayBalance.passed,
@@ -143,6 +148,7 @@ function evaluateEvents(
     matchupSpacing,
     gameSlotEfficiency,
     weeklyGamesDistribution,
+    gameStartTimeBalance,
   };
 }
 
@@ -357,6 +363,12 @@ export async function compareSchedules(
       currentEvaluation.weeklyGamesDistribution.passed,
       savedEvaluation.weeklyGamesDistribution.summary,
       currentEvaluation.weeklyGamesDistribution.summary
+    ),
+    gameStartTimeBalance: compareMetric(
+      savedEvaluation.gameStartTimeBalance.passed,
+      currentEvaluation.gameStartTimeBalance.passed,
+      savedEvaluation.gameStartTimeBalance.summary,
+      currentEvaluation.gameStartTimeBalance.summary
     ),
   };
 
@@ -1941,6 +1953,102 @@ function evaluateWeeklyGamesDistribution(
     summary: allPassed
       ? 'All teams within acceptable weekly game counts'
       : `${totalIssues} weeks with games exceeding quota`,
+    divisionReports,
+  };
+}
+
+/**
+ * Evaluate game start time distribution across teams
+ * Tracks how many games each team has at each start time
+ */
+function evaluateGameStartTimeBalance(
+  events: ScheduledEvent[],
+  teams: Team[],
+  divisionMap: Map<string, Division>
+): GameStartTimeBalanceReport {
+  // Get games only
+  const games = events.filter((e) => e.eventType === 'game');
+
+  // Group teams by division
+  const teamsByDivision = new Map<string, Team[]>();
+  for (const team of teams) {
+    const existing = teamsByDivision.get(team.divisionId) || [];
+    existing.push(team);
+    teamsByDivision.set(team.divisionId, existing);
+  }
+
+  const divisionReports: DivisionGameStartTimeReport[] = [];
+
+  for (const [divisionId, divisionTeams] of teamsByDivision) {
+    const division = divisionMap.get(divisionId);
+    if (!division) continue;
+
+    // Get games for this division
+    const divisionGames = games.filter((g) => g.divisionId === divisionId);
+
+    // Track start time counts per team
+    const teamReports: TeamGameStartTimeReport[] = [];
+    const allStartTimes = new Set<string>();
+
+    for (const team of divisionTeams) {
+      // Get games where this team plays (home or away)
+      const teamGames = divisionGames.filter(
+        (g) => g.homeTeamId === team.id || g.awayTeamId === team.id
+      );
+
+      // Count games by start time
+      const startTimeCounts: Record<string, number> = {};
+      for (const game of teamGames) {
+        const time = game.startTime;
+        allStartTimes.add(time);
+        startTimeCounts[time] = (startTimeCounts[time] || 0) + 1;
+      }
+
+      teamReports.push({
+        teamId: team.id,
+        teamName: team.name,
+        startTimeCounts,
+        totalGames: teamGames.length,
+      });
+    }
+
+    // Sort start times
+    const startTimes = Array.from(allStartTimes).sort();
+
+    // Calculate max imbalance for any single start time
+    // For each start time, find the max difference between any two teams
+    let maxImbalance = 0;
+    for (const time of startTimes) {
+      const counts = teamReports.map((r) => r.startTimeCounts[time] || 0);
+      if (counts.length > 0) {
+        const minCount = Math.min(...counts);
+        const maxCount = Math.max(...counts);
+        const imbalance = maxCount - minCount;
+        maxImbalance = Math.max(maxImbalance, imbalance);
+      }
+    }
+
+    // Consider it "passed" if max imbalance is <= 2 for any single time slot
+    const passed = maxImbalance <= 2;
+
+    divisionReports.push({
+      divisionId,
+      divisionName: division.name,
+      teamReports,
+      startTimes,
+      maxImbalance,
+      passed,
+    });
+  }
+
+  const allPassed = divisionReports.every((r) => r.passed);
+  const worstImbalance = Math.max(...divisionReports.map((r) => r.maxImbalance), 0);
+
+  return {
+    passed: allPassed,
+    summary: allPassed
+      ? 'Game start times reasonably balanced across teams'
+      : `Max imbalance of ${worstImbalance} games at same start time between teams`,
     divisionReports,
   };
 }
