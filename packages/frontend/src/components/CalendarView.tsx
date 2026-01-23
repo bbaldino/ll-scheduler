@@ -1465,35 +1465,41 @@ export default function CalendarView({
                       })}
                     </div>
                     <div className={styles.swapCandidatesList}>
-                      {(swapCandidatesByDate.get(selectedSwapDate) || []).map((candidate) => (
-                        <div key={candidate.id} className={styles.swapCandidate}>
-                          <div className={styles.candidateInfo}>
-                            <div className={styles.candidateDate}>
-                              {formatTimeRange12Hour(candidate.startTime, candidate.endTime)}
-                            </div>
-                            <div className={styles.candidateDetails}>
-                              {candidate.eventType === 'game' ? (
-                                <>{getTeamName(candidate.homeTeamId)} vs {getTeamName(candidate.awayTeamId)}</>
-                              ) : (
-                                <>{getTeamName(candidate.teamId)} {EVENT_TYPE_LABELS[candidate.eventType]}</>
-                              )}
-                            </div>
-                            <div className={styles.candidateMeta}>
-                              {candidate.fieldId && `@ ${getFieldName(candidate.fieldId)}`}
-                              {candidate.cageId && `@ ${getCageName(candidate.cageId)}`}
-                              {' - '}
-                              {getDivisionName(candidate.divisionId)}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            className={styles.selectButton}
-                            onClick={() => setSelectedSwapTarget(candidate)}
-                          >
-                            Select
-                          </button>
+                      {(swapCandidatesByDate.get(selectedSwapDate) || []).length === 0 ? (
+                        <div className={styles.noCandidates}>
+                          No matching events on this day. Try unchecking the filters above.
                         </div>
-                      ))}
+                      ) : (
+                        (swapCandidatesByDate.get(selectedSwapDate) || []).map((candidate) => (
+                          <div key={candidate.id} className={styles.swapCandidate}>
+                            <div className={styles.candidateInfo}>
+                              <div className={styles.candidateDate}>
+                                {formatTimeRange12Hour(candidate.startTime, candidate.endTime)}
+                              </div>
+                              <div className={styles.candidateDetails}>
+                                {candidate.eventType === 'game' ? (
+                                  <>{getTeamName(candidate.homeTeamId)} vs {getTeamName(candidate.awayTeamId)}</>
+                                ) : (
+                                  <>{getTeamName(candidate.teamId)} {EVENT_TYPE_LABELS[candidate.eventType]}</>
+                                )}
+                              </div>
+                              <div className={styles.candidateMeta}>
+                                {candidate.fieldId && `@ ${getFieldName(candidate.fieldId)}`}
+                                {candidate.cageId && `@ ${getCageName(candidate.cageId)}`}
+                                {' - '}
+                                {getDivisionName(candidate.divisionId)}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className={styles.selectButton}
+                              onClick={() => setSelectedSwapTarget(candidate)}
+                            >
+                              Select
+                            </button>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -1558,7 +1564,7 @@ export default function CalendarView({
                                               isToday ? styles.isToday : ''
                                             }`}
                                             onClick={() => {
-                                              if (candidates.length > 0) {
+                                              if (candidates.length > 0 || isCurrentEventDate) {
                                                 setSelectedSwapDate(dateStr);
                                               }
                                             }}

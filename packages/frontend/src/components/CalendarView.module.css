@@ -1169,6 +1169,11 @@
 
 .miniCalendarDay.isCurrentEvent {
   background: #fff3e0;
+  cursor: pointer;
+}
+
+.miniCalendarDay.isCurrentEvent:hover {
+  background: #ffe0b2;
 }
 
 .miniCalendarDay.isToday .miniDayNumber {
