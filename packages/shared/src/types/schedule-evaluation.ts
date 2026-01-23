@@ -82,7 +82,8 @@ export type ConstraintViolationType =
   | 'team_time_conflict'
   | 'min_day_gap'
   | 'resource_conflict'
-  | 'invalid_event_type_for_period';
+  | 'invalid_event_type_for_period'
+  | 'outside_resource_availability';
 
 export interface ConstraintViolation {
   type: ConstraintViolationType;

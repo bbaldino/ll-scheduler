@@ -635,7 +635,13 @@ describe('Schedule Generation Regression Tests', () => {
         configByDivision,
         fieldMap,
         cageMap,
-        season
+        season,
+        {
+          fieldAvailabilities,
+          cageAvailabilities,
+          fieldOverrides,
+          cageOverrides,
+        }
       );
 
       // Log all violations for debugging
@@ -667,7 +673,13 @@ describe('Schedule Generation Regression Tests', () => {
         configByDivision,
         fieldMap,
         cageMap,
-        season
+        season,
+        {
+          fieldAvailabilities,
+          cageAvailabilities,
+          fieldOverrides,
+          cageOverrides,
+        }
       );
 
       const sameDayConflicts = result.violations.filter(v => v.type === 'same_day_conflict');
@@ -680,6 +692,48 @@ describe('Schedule Generation Regression Tests', () => {
       }
 
       expect(sameDayConflicts.length, `Found ${sameDayConflicts.length} same-day conflict violations`).toBe(0);
+    });
+
+    it('should have no outside_resource_availability violations', () => {
+      const allEvents = generator.getScheduledEvents() as ScheduledEvent[];
+
+      const teamMap = new Map(teams.map(t => [t.id, t]));
+      const divisionMap = new Map(divisions.map(d => [d.id, d]));
+      const configByDivision = new Map(divisionConfigs.map(c => [c.divisionId, c]));
+      const fieldMap = new Map(seasonFields.map(f => [f.fieldId, f]));
+      const cageMap = new Map(seasonCages.map(c => [c.cageId, c]));
+
+      const result = evaluateConstraintViolations(
+        allEvents,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season,
+        {
+          fieldAvailabilities,
+          cageAvailabilities,
+          fieldOverrides,
+          cageOverrides,
+        }
+      );
+
+      const availabilityViolations = result.violations.filter(
+        v => v.type === 'outside_resource_availability'
+      );
+
+      if (availabilityViolations.length > 0) {
+        console.log('Resource availability violations found:');
+        for (const v of availabilityViolations) {
+          console.log(`  [${v.severity}] ${v.description} on ${v.date}`);
+        }
+      }
+
+      expect(
+        availabilityViolations.length,
+        `Found ${availabilityViolations.length} outside_resource_availability violations`
+      ).toBe(0);
     });
   });
 

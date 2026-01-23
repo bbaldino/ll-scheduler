@@ -33,6 +33,10 @@ import type {
   Season,
   SeasonField,
   SeasonCage,
+  FieldAvailability,
+  CageAvailability,
+  FieldDateOverride,
+  CageDateOverride,
   GameDayPreference,
   ScheduleComparisonResult,
   MetricComparison,
@@ -610,6 +614,16 @@ function evaluateHomeAwayBalance(
 }
 
 /**
+ * Optional availability data for resource availability checks
+ */
+export interface AvailabilityData {
+  fieldAvailabilities: FieldAvailability[];
+  cageAvailabilities: CageAvailability[];
+  fieldOverrides: FieldDateOverride[];
+  cageOverrides: CageDateOverride[];
+}
+
+/**
  * Evaluate constraint violations
  */
 export function evaluateConstraintViolations(
@@ -619,7 +633,8 @@ export function evaluateConstraintViolations(
   configByDivision: Map<string, DivisionConfig>,
   fieldMap: Map<string, SeasonField>,
   cageMap: Map<string, SeasonCage>,
-  season: Season
+  season: Season,
+  availabilityData?: AvailabilityData
 ): ConstraintViolationsReport {
   const violations: ConstraintViolation[] = [];
 
@@ -828,6 +843,152 @@ export function evaluateConstraintViolations(
         description: `Game scheduled on ${event.date} but games are only allowed from ${gamesStartDate}`,
         eventIds: [event.id],
       });
+    }
+  }
+
+  // Check if events are scheduled outside resource availability
+  if (availabilityData) {
+    const { fieldAvailabilities, cageAvailabilities, fieldOverrides, cageOverrides } = availabilityData;
+
+    // Helper to get day of week from date string (0=Sunday, 6=Saturday)
+    const getDayOfWeek = (dateStr: string): number => {
+      const date = new Date(dateStr + 'T12:00:00Z');
+      return date.getUTCDay();
+    };
+
+    // Helper to check if event time falls within an availability window
+    const isWithinWindow = (eventStart: string, eventEnd: string, windowStart: string, windowEnd: string): boolean => {
+      return eventStart >= windowStart && eventEnd <= windowEnd;
+    };
+
+    for (const event of events) {
+      if (event.fieldId) {
+        // Find the season field to get seasonFieldId
+        const seasonField = fieldMap.get(event.fieldId);
+        if (!seasonField) continue;
+
+        const dayOfWeek = getDayOfWeek(event.date);
+
+        // Get regular availability for this field and day
+        const regularAvailabilities = fieldAvailabilities.filter(
+          (fa) => fa.seasonFieldId === seasonField.id && fa.dayOfWeek === dayOfWeek
+        );
+
+        // Get date overrides for this field and date
+        const dateOverrides = fieldOverrides.filter(
+          (fo) => fo.seasonFieldId === seasonField.id && fo.date === event.date
+        );
+
+        // Check for blackouts first
+        const hasBlackout = dateOverrides.some((fo) => {
+          if (fo.overrideType !== 'blackout') return false;
+          // All-day blackout
+          if (!fo.startTime || !fo.endTime) return true;
+          // Time-specific blackout - check overlap
+          return event.startTime < fo.endTime && event.endTime > fo.startTime;
+        });
+
+        if (hasBlackout) {
+          violations.push({
+            type: 'outside_resource_availability',
+            severity: 'error',
+            date: event.date,
+            description: `Event on ${seasonField.fieldName || event.fieldId} scheduled during blackout period`,
+            eventIds: [event.id],
+          });
+          continue;
+        }
+
+        // Get added availability windows for this date
+        const addedWindows = dateOverrides
+          .filter((fo) => fo.overrideType === 'added' && fo.startTime && fo.endTime)
+          .map((fo) => ({ startTime: fo.startTime!, endTime: fo.endTime! }));
+
+        // Combine regular and added availability windows
+        const allWindows = [
+          ...regularAvailabilities.map((ra) => ({ startTime: ra.startTime, endTime: ra.endTime })),
+          ...addedWindows,
+        ];
+
+        // Check if event falls within any availability window
+        const isAvailable = allWindows.some((window) =>
+          isWithinWindow(event.startTime, event.endTime, window.startTime, window.endTime)
+        );
+
+        if (!isAvailable && allWindows.length > 0) {
+          violations.push({
+            type: 'outside_resource_availability',
+            severity: 'error',
+            date: event.date,
+            description: `Event ${event.startTime}-${event.endTime} on ${seasonField.fieldName || event.fieldId} is outside available hours`,
+            eventIds: [event.id],
+          });
+        }
+      }
+
+      if (event.cageId) {
+        // Find the season cage to get seasonCageId
+        const seasonCage = cageMap.get(event.cageId);
+        if (!seasonCage) continue;
+
+        const dayOfWeek = getDayOfWeek(event.date);
+
+        // Get regular availability for this cage and day
+        const regularAvailabilities = cageAvailabilities.filter(
+          (ca) => ca.seasonCageId === seasonCage.id && ca.dayOfWeek === dayOfWeek
+        );
+
+        // Get date overrides for this cage and date
+        const dateOverrides = cageOverrides.filter(
+          (co) => co.seasonCageId === seasonCage.id && co.date === event.date
+        );
+
+        // Check for blackouts first
+        const hasBlackout = dateOverrides.some((co) => {
+          if (co.overrideType !== 'blackout') return false;
+          // All-day blackout
+          if (!co.startTime || !co.endTime) return true;
+          // Time-specific blackout - check overlap
+          return event.startTime < co.endTime && event.endTime > co.startTime;
+        });
+
+        if (hasBlackout) {
+          violations.push({
+            type: 'outside_resource_availability',
+            severity: 'error',
+            date: event.date,
+            description: `Event on ${seasonCage.cageName || event.cageId} scheduled during blackout period`,
+            eventIds: [event.id],
+          });
+          continue;
+        }
+
+        // Get added availability windows for this date
+        const addedWindows = dateOverrides
+          .filter((co) => co.overrideType === 'added' && co.startTime && co.endTime)
+          .map((co) => ({ startTime: co.startTime!, endTime: co.endTime! }));
+
+        // Combine regular and added availability windows
+        const allWindows = [
+          ...regularAvailabilities.map((ra) => ({ startTime: ra.startTime, endTime: ra.endTime })),
+          ...addedWindows,
+        ];
+
+        // Check if event falls within any availability window
+        const isAvailable = allWindows.some((window) =>
+          isWithinWindow(event.startTime, event.endTime, window.startTime, window.endTime)
+        );
+
+        if (!isAvailable && allWindows.length > 0) {
+          violations.push({
+            type: 'outside_resource_availability',
+            severity: 'error',
+            date: event.date,
+            description: `Event ${event.startTime}-${event.endTime} on ${seasonCage.cageName || event.cageId} is outside available hours`,
+            eventIds: [event.id],
+          });
+        }
+      }
     }
   }
 

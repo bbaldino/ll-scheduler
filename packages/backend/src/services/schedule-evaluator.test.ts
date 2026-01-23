@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateConstraintViolations } from './schedule-evaluator.js';
+import { evaluateConstraintViolations, AvailabilityData } from './schedule-evaluator.js';
 import type {
   ScheduledEvent,
   Team,
@@ -8,6 +8,10 @@ import type {
   SeasonField,
   SeasonCage,
   Season,
+  FieldAvailability,
+  CageAvailability,
+  FieldDateOverride,
+  CageDateOverride,
 } from '@ll-scheduler/shared';
 
 // Helper to create a minimal team
@@ -406,6 +410,248 @@ describe('evaluateConstraintViolations', () => {
         (v) => v.type === 'same_day_conflict' && v.teamId === 'team-1'
       );
       expect(sameDayViolations.length).toBe(1);
+    });
+  });
+
+  describe('resource availability detection', () => {
+    // Helper to create field availability
+    function createFieldAvailability(
+      id: string,
+      seasonFieldId: string,
+      dayOfWeek: number,
+      startTime: string,
+      endTime: string
+    ): FieldAvailability {
+      return {
+        id,
+        seasonFieldId,
+        dayOfWeek,
+        startTime,
+        endTime,
+        singleEventOnly: false,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+    }
+
+    // Helper to create field date override
+    function createFieldOverride(
+      id: string,
+      seasonFieldId: string,
+      date: string,
+      overrideType: 'blackout' | 'added',
+      startTime?: string,
+      endTime?: string
+    ): FieldDateOverride {
+      return {
+        id,
+        seasonFieldId,
+        date,
+        overrideType,
+        startTime,
+        endTime,
+        singleEventOnly: false,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+    }
+
+    // Helper to create a SeasonField with proper structure
+    function createSeasonField(id: string, fieldId: string, fieldName: string): SeasonField {
+      return {
+        id,
+        seasonId: 'season-1',
+        fieldId,
+        fieldName,
+        divisionCompatibility: [],
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      };
+    }
+
+    const team1 = createTeam('team-1', 'Red Sox', 'div-1');
+    const team2 = createTeam('team-2', 'Yankees', 'div-1');
+    const division = createDivision('div-1', 'Majors');
+    const config = createDivisionConfig('div-1');
+    const season = createSeason();
+
+    const teamMap = new Map<string, Team>([[team1.id, team1], [team2.id, team2]]);
+    const divisionMap = new Map<string, Division>([[division.id, division]]);
+    const configByDivision = new Map<string, DivisionConfig>([[division.id, config]]);
+    const cageMap = new Map<string, SeasonCage>();
+
+    it('should flag event scheduled outside field availability hours', () => {
+      const seasonField = createSeasonField('sf-1', 'field-1', 'Main Field');
+      const fieldMap = new Map<string, SeasonField>([[seasonField.fieldId, seasonField]]);
+
+      // Field is available Saturday (day 6) 09:00-17:00
+      // 2024-03-16 is a Saturday
+      const availabilityData: AvailabilityData = {
+        fieldAvailabilities: [
+          createFieldAvailability('fa-1', 'sf-1', 6, '09:00', '17:00'),
+        ],
+        cageAvailabilities: [],
+        fieldOverrides: [],
+        cageOverrides: [],
+      };
+
+      // Event scheduled 18:00-20:00 - outside available hours
+      const events: ScheduledEvent[] = [
+        createPractice('practice-1', '2024-03-16', '18:00', '20:00', 'team-1', 'field-1', 'div-1'),
+      ];
+
+      const result = evaluateConstraintViolations(
+        events,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season,
+        availabilityData
+      );
+
+      const availabilityViolations = result.violations.filter(
+        (v) => v.type === 'outside_resource_availability'
+      );
+      expect(availabilityViolations.length).toBe(1);
+      expect(availabilityViolations[0].description).toContain('outside available hours');
+    });
+
+    it('should NOT flag event scheduled within field availability hours', () => {
+      const seasonField = createSeasonField('sf-1', 'field-1', 'Main Field');
+      const fieldMap = new Map<string, SeasonField>([[seasonField.fieldId, seasonField]]);
+
+      // Field is available Saturday (day 6) 09:00-17:00
+      const availabilityData: AvailabilityData = {
+        fieldAvailabilities: [
+          createFieldAvailability('fa-1', 'sf-1', 6, '09:00', '17:00'),
+        ],
+        cageAvailabilities: [],
+        fieldOverrides: [],
+        cageOverrides: [],
+      };
+
+      // Event scheduled 10:00-12:00 - within available hours
+      const events: ScheduledEvent[] = [
+        createPractice('practice-1', '2024-03-16', '10:00', '12:00', 'team-1', 'field-1', 'div-1'),
+      ];
+
+      const result = evaluateConstraintViolations(
+        events,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season,
+        availabilityData
+      );
+
+      const availabilityViolations = result.violations.filter(
+        (v) => v.type === 'outside_resource_availability'
+      );
+      expect(availabilityViolations.length).toBe(0);
+    });
+
+    it('should flag event scheduled during field blackout', () => {
+      const seasonField = createSeasonField('sf-1', 'field-1', 'Main Field');
+      const fieldMap = new Map<string, SeasonField>([[seasonField.fieldId, seasonField]]);
+
+      const availabilityData: AvailabilityData = {
+        fieldAvailabilities: [
+          createFieldAvailability('fa-1', 'sf-1', 6, '09:00', '17:00'),
+        ],
+        cageAvailabilities: [],
+        fieldOverrides: [
+          // All-day blackout on 2024-03-16
+          createFieldOverride('fo-1', 'sf-1', '2024-03-16', 'blackout'),
+        ],
+        cageOverrides: [],
+      };
+
+      const events: ScheduledEvent[] = [
+        createPractice('practice-1', '2024-03-16', '10:00', '12:00', 'team-1', 'field-1', 'div-1'),
+      ];
+
+      const result = evaluateConstraintViolations(
+        events,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season,
+        availabilityData
+      );
+
+      const availabilityViolations = result.violations.filter(
+        (v) => v.type === 'outside_resource_availability'
+      );
+      expect(availabilityViolations.length).toBe(1);
+      expect(availabilityViolations[0].description).toContain('blackout');
+    });
+
+    it('should allow event during added availability window', () => {
+      const seasonField = createSeasonField('sf-1', 'field-1', 'Main Field');
+      const fieldMap = new Map<string, SeasonField>([[seasonField.fieldId, seasonField]]);
+
+      // No regular availability for this day, but added availability via override
+      const availabilityData: AvailabilityData = {
+        fieldAvailabilities: [],
+        cageAvailabilities: [],
+        fieldOverrides: [
+          // Added availability on 2024-03-16 from 10:00-14:00
+          createFieldOverride('fo-1', 'sf-1', '2024-03-16', 'added', '10:00', '14:00'),
+        ],
+        cageOverrides: [],
+      };
+
+      const events: ScheduledEvent[] = [
+        createPractice('practice-1', '2024-03-16', '11:00', '13:00', 'team-1', 'field-1', 'div-1'),
+      ];
+
+      const result = evaluateConstraintViolations(
+        events,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season,
+        availabilityData
+      );
+
+      const availabilityViolations = result.violations.filter(
+        (v) => v.type === 'outside_resource_availability'
+      );
+      expect(availabilityViolations.length).toBe(0);
+    });
+
+    it('should skip availability check when no availability data provided', () => {
+      const seasonField = createSeasonField('sf-1', 'field-1', 'Main Field');
+      const fieldMap = new Map<string, SeasonField>([[seasonField.fieldId, seasonField]]);
+
+      // Event at any time - no availability data to check against
+      const events: ScheduledEvent[] = [
+        createPractice('practice-1', '2024-03-16', '23:00', '23:59', 'team-1', 'field-1', 'div-1'),
+      ];
+
+      const result = evaluateConstraintViolations(
+        events,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season
+        // No availabilityData provided
+      );
+
+      const availabilityViolations = result.violations.filter(
+        (v) => v.type === 'outside_resource_availability'
+      );
+      expect(availabilityViolations.length).toBe(0);
     });
   });
 });
