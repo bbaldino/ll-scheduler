@@ -15,7 +15,7 @@ import { listDivisionConfigsBySeasonId } from './division-configs.js';
 /**
  * Convert 24-hour time (HH:MM) to TeamSnap format (hh:mm:ss AM/PM)
  */
-function formatTimeForTeamSnap(time24: string): string {
+export function formatTimeForTeamSnap(time24: string): string {
   const [hoursStr, minutesStr] = time24.split(':');
   let hours = parseInt(hoursStr, 10);
   const minutes = minutesStr;
@@ -34,7 +34,7 @@ function formatTimeForTeamSnap(time24: string): string {
 /**
  * Convert ISO date (YYYY-MM-DD) to TeamSnap format (mm/dd/yyyy)
  */
-function formatDateForTeamSnap(isoDate: string): string {
+export function formatDateForTeamSnap(isoDate: string): string {
   const [year, month, day] = isoDate.split('-');
   // Remove leading zeros for single digit month/day
   const m = parseInt(month, 10);
@@ -47,7 +47,7 @@ function formatDateForTeamSnap(isoDate: string): string {
  * Event slots already include arrive-before time, so we need to add it back to get the actual start.
  * For example: slot 9am-12pm with 60min arrive-before means actual game starts at 10am.
  */
-function calculateActualStartTime(slotStartTime: string, arriveBeforeMinutes: number): string {
+export function calculateActualStartTime(slotStartTime: string, arriveBeforeMinutes: number): string {
   const [hoursStr, minutesStr] = slotStartTime.split(':');
   let totalMinutes = parseInt(hoursStr, 10) * 60 + parseInt(minutesStr, 10);
   totalMinutes += arriveBeforeMinutes;
@@ -61,7 +61,7 @@ function calculateActualStartTime(slotStartTime: string, arriveBeforeMinutes: nu
 /**
  * Get arrival time in minutes based on event type and division config
  */
-function getArrivalTime(
+export function getArrivalTime(
   eventType: string,
   divisionConfig: DivisionConfig | undefined
 ): number {
@@ -77,7 +77,7 @@ function getArrivalTime(
 /**
  * Get short label based on event type
  */
-function getShortLabel(eventType: string): string {
+export function getShortLabel(eventType: string): string {
   switch (eventType) {
     case 'game':
       return '';
@@ -93,7 +93,7 @@ function getShortLabel(eventType: string): string {
 /**
  * Get TeamSnap event type
  */
-function getTeamSnapEventType(eventType: string): 'Game' | 'Practice' {
+export function getTeamSnapEventType(eventType: string): 'Game' | 'Practice' {
   return eventType === 'game' ? 'Game' : 'Practice';
 }
 
@@ -188,11 +188,18 @@ export async function exportToTeamSnapFormat(
     }
 
     const arrivalTimeMinutes = getArrivalTime(event.eventType, divisionConfig);
-    const actualStartTime = calculateActualStartTime(event.startTime, arrivalTimeMinutes);
+
+    // For games, the stored startTime is the slot/arrival time, and we need to add
+    // arrive-before to get the actual game start time.
+    // For practices/cages, the stored startTime IS the actual event start time.
+    const exportStartTime =
+      event.eventType === 'game'
+        ? calculateActualStartTime(event.startTime, arrivalTimeMinutes)
+        : event.startTime;
 
     rows.push({
       date: formatDateForTeamSnap(event.date),
-      startTime: formatTimeForTeamSnap(actualStartTime),
+      startTime: formatTimeForTeamSnap(exportStartTime),
       endTime: formatTimeForTeamSnap(event.endTime),
       arrivalTime: arrivalTimeMinutes,
       shortLabel: getShortLabel(event.eventType),
@@ -388,11 +395,18 @@ export async function exportToTeamSnapBulk(
       }
 
       const arrivalTimeMinutes = getArrivalTime(event.eventType, divisionConfig);
-      const actualStartTime = calculateActualStartTime(event.startTime, arrivalTimeMinutes);
+
+      // For games, the stored startTime is the slot/arrival time, and we need to add
+      // arrive-before to get the actual game start time.
+      // For practices/cages, the stored startTime IS the actual event start time.
+      const exportStartTime =
+        event.eventType === 'game'
+          ? calculateActualStartTime(event.startTime, arrivalTimeMinutes)
+          : event.startTime;
 
       rows.push({
         date: formatDateForTeamSnap(event.date),
-        startTime: formatTimeForTeamSnap(actualStartTime),
+        startTime: formatTimeForTeamSnap(exportStartTime),
         endTime: formatTimeForTeamSnap(event.endTime),
         arrivalTime: arrivalTimeMinutes,
         shortLabel: getShortLabel(event.eventType),
