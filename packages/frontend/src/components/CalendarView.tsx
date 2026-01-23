@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type {
   ScheduledEvent,
   Team,
@@ -111,11 +111,40 @@ export default function CalendarView({
   const [selectedSwapTarget, setSelectedSwapTarget] = useState<ScheduledEvent | null>(null);
   const [isSwapping, setIsSwapping] = useState(false);
 
+  // Refs for scrolling mini calendars to current event date
+  const swapCalendarRef = useRef<HTMLDivElement>(null);
+  const datePickerCalendarRef = useRef<HTMLDivElement>(null);
+
   // Date picker mode state (for moving single event)
   const [isDatePickerMode, setIsDatePickerMode] = useState(false);
   const [datePickerFilters, setDatePickerFilters] = useState({ sameDivision: true, sameEventType: true });
   const [selectedDatePickerDate, setSelectedDatePickerDate] = useState<string | null>(null);
   const [datePickerTime, setDatePickerTime] = useState({ startTime: '', endTime: '' });
+
+  // Scroll mini calendar to current event date when entering swap/date picker mode
+  useEffect(() => {
+    if (isSwapMode && editingEvent && swapCalendarRef.current) {
+      // Small delay to ensure the calendar is rendered
+      setTimeout(() => {
+        const currentEventDay = swapCalendarRef.current?.querySelector(`[data-date="${editingEvent.date}"]`);
+        if (currentEventDay) {
+          currentEventDay.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
+  }, [isSwapMode, editingEvent]);
+
+  useEffect(() => {
+    if (isDatePickerMode && editingEvent && datePickerCalendarRef.current) {
+      // Small delay to ensure the calendar is rendered
+      setTimeout(() => {
+        const currentEventDay = datePickerCalendarRef.current?.querySelector(`[data-date="${editingEvent.date}"]`);
+        if (currentEventDay) {
+          currentEventDay.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+    }
+  }, [isDatePickerMode, editingEvent]);
 
   const handleEventClick = (event: ScheduledEvent) => {
     if (onEventUpdate) {
@@ -1571,7 +1600,7 @@ export default function CalendarView({
                   </div>
                 ) : (
                   /* Mini Calendar View */
-                  <div className={styles.swapMiniCalendar}>
+                  <div ref={swapCalendarRef} className={styles.swapMiniCalendar}>
                     {swapCandidates.length === 0 ? (
                       <div className={styles.noCandidates}>
                         No matching events found. Try unchecking the filters above.
@@ -1625,6 +1654,7 @@ export default function CalendarView({
                                         return (
                                           <div
                                             key={dateStr}
+                                            data-date={dateStr}
                                             className={`${styles.miniCalendarDay} ${
                                               candidates.length > 0 ? styles.hasSwapCandidates : ''
                                             } ${isCurrentEventDate ? styles.isCurrentEvent : ''} ${
@@ -1866,7 +1896,7 @@ export default function CalendarView({
                       </label>
                     </div>
 
-                    <div className={styles.swapMiniCalendar}>
+                    <div ref={datePickerCalendarRef} className={styles.swapMiniCalendar}>
                       {(() => {
                         const weeks: Date[][] = [];
                         const current = new Date(swapCalendarRange.start);
@@ -1915,6 +1945,7 @@ export default function CalendarView({
                                         return (
                                           <div
                                             key={dateStr}
+                                            data-date={dateStr}
                                             className={`${styles.miniCalendarDay} ${styles.datePickerDay} ${
                                               isSelected ? styles.isSelectedDate : ''
                                             } ${isOriginalDate ? styles.isOriginalDate : ''} ${
