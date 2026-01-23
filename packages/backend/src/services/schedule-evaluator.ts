@@ -49,6 +49,10 @@ import { listDivisionConfigsBySeasonId } from './division-configs.js';
 import { listSeasonFields } from './season-fields.js';
 import { listSeasonCages } from './season-cages.js';
 import { getSavedScheduleById, getSavedScheduleEvents } from './saved-schedules.js';
+import { listFieldAvailabilitiesForSeason } from './field-availabilities.js';
+import { listCageAvailabilitiesForSeason } from './cage-availabilities.js';
+import { listFieldDateOverridesForSeason } from './field-date-overrides.js';
+import { listCageDateOverridesForSeason } from './cage-date-overrides.js';
 
 /**
  * Internal evaluation function that runs all checks on provided events
@@ -61,7 +65,8 @@ function evaluateEvents(
   divisionConfigs: DivisionConfig[],
   seasonFields: SeasonField[],
   seasonCages: SeasonCage[],
-  season: Season
+  season: Season,
+  availabilityData?: AvailabilityData
 ): ScheduleEvaluationResult {
   // Create lookup maps
   const teamMap = new Map(teams.map((t) => [t.id, t]));
@@ -86,7 +91,8 @@ function evaluateEvents(
     configByDivision,
     fieldMap,
     cageMap,
-    season
+    season,
+    availabilityData
   );
   const gameDayPreferences = evaluateGameDayPreferences(
     events,
@@ -153,16 +159,40 @@ export async function evaluateSchedule(
     throw new Error('Season not found');
   }
 
-  const [events, teams, divisions, divisionConfigs, seasonFields, seasonCages] = await Promise.all([
+  const [
+    events,
+    teams,
+    divisions,
+    divisionConfigs,
+    seasonFields,
+    seasonCages,
+    fieldAvailabilities,
+    cageAvailabilities,
+    fieldOverrides,
+    cageOverrides,
+  ] = await Promise.all([
     listScheduledEvents(db, { seasonId }),
     listTeams(db, seasonId),
     listDivisions(db),
     listDivisionConfigsBySeasonId(db, seasonId),
     listSeasonFields(db, seasonId),
     listSeasonCages(db, seasonId),
+    listFieldAvailabilitiesForSeason(db, seasonId),
+    listCageAvailabilitiesForSeason(db, seasonId),
+    listFieldDateOverridesForSeason(db, seasonId),
+    listCageDateOverridesForSeason(db, seasonId),
   ]);
 
-  return evaluateEvents(events, teams, divisions, divisionConfigs, seasonFields, seasonCages, season);
+  return evaluateEvents(
+    events,
+    teams,
+    divisions,
+    divisionConfigs,
+    seasonFields,
+    seasonCages,
+    season,
+    { fieldAvailabilities, cageAvailabilities, fieldOverrides, cageOverrides }
+  );
 }
 
 /**
@@ -185,16 +215,40 @@ export async function evaluateSavedSchedule(
   }
 
   // Get saved events and other required data
-  const [events, teams, divisions, divisionConfigs, seasonFields, seasonCages] = await Promise.all([
+  const [
+    events,
+    teams,
+    divisions,
+    divisionConfigs,
+    seasonFields,
+    seasonCages,
+    fieldAvailabilities,
+    cageAvailabilities,
+    fieldOverrides,
+    cageOverrides,
+  ] = await Promise.all([
     getSavedScheduleEvents(db, savedScheduleId),
     listTeams(db, savedSchedule.seasonId),
     listDivisions(db),
     listDivisionConfigsBySeasonId(db, savedSchedule.seasonId),
     listSeasonFields(db, savedSchedule.seasonId),
     listSeasonCages(db, savedSchedule.seasonId),
+    listFieldAvailabilitiesForSeason(db, savedSchedule.seasonId),
+    listCageAvailabilitiesForSeason(db, savedSchedule.seasonId),
+    listFieldDateOverridesForSeason(db, savedSchedule.seasonId),
+    listCageDateOverridesForSeason(db, savedSchedule.seasonId),
   ]);
 
-  return evaluateEvents(events, teams, divisions, divisionConfigs, seasonFields, seasonCages, season);
+  return evaluateEvents(
+    events,
+    teams,
+    divisions,
+    divisionConfigs,
+    seasonFields,
+    seasonCages,
+    season,
+    { fieldAvailabilities, cageAvailabilities, fieldOverrides, cageOverrides }
+  );
 }
 
 /**
@@ -677,7 +731,7 @@ export function evaluateConstraintViolations(
         // Multiple field events (games/practices)
         violations.push({
           type: 'same_day_conflict',
-          severity: 'warning',
+          severity: 'error',
           teamId,
           teamName: team?.name,
           divisionId: team?.divisionId,
@@ -691,7 +745,7 @@ export function evaluateConstraintViolations(
         const conflictingEvents = [...games, ...cages];
         violations.push({
           type: 'same_day_conflict',
-          severity: 'warning',
+          severity: 'error',
           teamId,
           teamName: team?.name,
           divisionId: team?.divisionId,
@@ -704,7 +758,7 @@ export function evaluateConstraintViolations(
         // Multiple cage sessions
         violations.push({
           type: 'same_day_conflict',
-          severity: 'warning',
+          severity: 'error',
           teamId,
           teamName: team?.name,
           divisionId: team?.divisionId,

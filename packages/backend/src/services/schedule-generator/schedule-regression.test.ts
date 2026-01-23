@@ -657,7 +657,7 @@ describe('Schedule Generation Regression Tests', () => {
       expect(errors.length, `Found ${errors.length} constraint violation errors`).toBe(0);
     });
 
-    it('should have no same_day_conflict violations (warnings)', () => {
+    it('should have no same_day_conflict violations', () => {
       const allEvents = generator.getScheduledEvents() as ScheduledEvent[];
 
       const teamMap = new Map(teams.map(t => [t.id, t]));
