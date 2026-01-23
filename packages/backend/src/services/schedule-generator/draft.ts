@@ -727,9 +727,9 @@ export function generateCandidatesForTeamEvent(
       }
     }
 
-    // Use 60-minute intervals for practices/cages to reduce candidate count
-    // (30-min intervals generated too many candidates, slowing down scoring)
-    const interval = 60;
+    // Use 30-minute intervals to allow more flexible scheduling
+    const interval = 30;
+
     for (
       let candidateStart = effectiveStartMinutes;
       candidateStart + durationMinutes <= slotEndMinutes;
