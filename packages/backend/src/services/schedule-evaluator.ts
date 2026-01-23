@@ -612,7 +612,7 @@ function evaluateHomeAwayBalance(
 /**
  * Evaluate constraint violations
  */
-function evaluateConstraintViolations(
+export function evaluateConstraintViolations(
   events: ScheduledEvent[],
   teamMap: Map<string, Team>,
   divisionMap: Map<string, Division>,
@@ -643,15 +643,23 @@ function evaluateConstraintViolations(
   // Check same-day conflicts
   for (const [key, dayEvents] of eventsByTeamDate) {
     if (dayEvents.length > 1) {
-      // Allow field + cage on same day, but flag other combinations
+      const [teamId, date] = key.split('|');
+      const team = teamMap.get(teamId);
+      const division = team ? divisionMap.get(team.divisionId) : undefined;
+
+      // Categorize events
+      const games = dayEvents.filter((e) => e.eventType === 'game');
+      const cages = dayEvents.filter((e) => e.eventType === 'cage');
       const fieldEvents = dayEvents.filter((e) => e.fieldId);
-      const cageEvents = dayEvents.filter((e) => e.cageId && !e.fieldId);
+
+      // Flag conditions:
+      // 1. Multiple field events (games + practices)
+      // 2. Any game + any cage
+      // 3. Multiple cage events
+      // NOT flagged: practice + cage (allowed combination)
 
       if (fieldEvents.length > 1) {
-        const [teamId, date] = key.split('|');
-        const team = teamMap.get(teamId);
-        const division = team ? divisionMap.get(team.divisionId) : undefined;
-
+        // Multiple field events (games/practices)
         violations.push({
           type: 'same_day_conflict',
           severity: 'warning',
@@ -663,7 +671,35 @@ function evaluateConstraintViolations(
           description: `${fieldEvents.length} field events on same day`,
           eventIds: fieldEvents.map((e) => e.id),
         });
+      } else if (games.length > 0 && cages.length > 0) {
+        // Game + cage on same day
+        const conflictingEvents = [...games, ...cages];
+        violations.push({
+          type: 'same_day_conflict',
+          severity: 'warning',
+          teamId,
+          teamName: team?.name,
+          divisionId: team?.divisionId,
+          divisionName: division?.name,
+          date,
+          description: `Game and cage session on same day`,
+          eventIds: conflictingEvents.map((e) => e.id),
+        });
+      } else if (cages.length > 1) {
+        // Multiple cage sessions
+        violations.push({
+          type: 'same_day_conflict',
+          severity: 'warning',
+          teamId,
+          teamName: team?.name,
+          divisionId: team?.divisionId,
+          divisionName: division?.name,
+          date,
+          description: `${cages.length} cage sessions on same day`,
+          eventIds: cages.map((e) => e.id),
+        });
       }
+      // Practice + cage is allowed, no violation
     }
   }
 

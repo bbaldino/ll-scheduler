@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ScheduleGenerator } from './generator.js';
+import { evaluateConstraintViolations } from '../schedule-evaluator.js';
 import fixture from './__fixtures__/spring-2026-prod.json';
 import type {
   Season,
@@ -12,6 +13,7 @@ import type {
   CageAvailability,
   FieldDateOverride,
   CageDateOverride,
+  ScheduledEvent,
 } from '@ll-scheduler/shared';
 
 // Helper to convert DB row format to application types
@@ -612,6 +614,72 @@ describe('Schedule Generation Regression Tests', () => {
       }).join(', ');
 
       expect(conflicts, `Same-day conflicts: ${summary}`).toHaveLength(0);
+    });
+  });
+
+  describe('Constraint Violations', () => {
+    it('should have no constraint violation errors in generated schedule', () => {
+      const allEvents = generator.getScheduledEvents() as ScheduledEvent[];
+
+      // Build maps required by evaluateConstraintViolations
+      const teamMap = new Map(teams.map(t => [t.id, t]));
+      const divisionMap = new Map(divisions.map(d => [d.id, d]));
+      const configByDivision = new Map(divisionConfigs.map(c => [c.divisionId, c]));
+      const fieldMap = new Map(seasonFields.map(f => [f.fieldId, f]));
+      const cageMap = new Map(seasonCages.map(c => [c.cageId, c]));
+
+      const result = evaluateConstraintViolations(
+        allEvents,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season
+      );
+
+      // Log all violations for debugging
+      if (result.violations.length > 0) {
+        console.log('Constraint violations found:');
+        for (const v of result.violations) {
+          console.log(`  [${v.severity}] ${v.type}: ${v.description} (${v.teamName || 'N/A'}, ${v.date})`);
+        }
+      }
+
+      // Check for errors (critical violations)
+      const errors = result.violations.filter(v => v.severity === 'error');
+      expect(errors.length, `Found ${errors.length} constraint violation errors`).toBe(0);
+    });
+
+    it('should have no same_day_conflict violations (warnings)', () => {
+      const allEvents = generator.getScheduledEvents() as ScheduledEvent[];
+
+      const teamMap = new Map(teams.map(t => [t.id, t]));
+      const divisionMap = new Map(divisions.map(d => [d.id, d]));
+      const configByDivision = new Map(divisionConfigs.map(c => [c.divisionId, c]));
+      const fieldMap = new Map(seasonFields.map(f => [f.fieldId, f]));
+      const cageMap = new Map(seasonCages.map(c => [c.cageId, c]));
+
+      const result = evaluateConstraintViolations(
+        allEvents,
+        teamMap,
+        divisionMap,
+        configByDivision,
+        fieldMap,
+        cageMap,
+        season
+      );
+
+      const sameDayConflicts = result.violations.filter(v => v.type === 'same_day_conflict');
+
+      if (sameDayConflicts.length > 0) {
+        console.log('Same-day conflicts found:');
+        for (const v of sameDayConflicts) {
+          console.log(`  ${v.teamName}: ${v.description} on ${v.date}`);
+        }
+      }
+
+      expect(sameDayConflicts.length, `Found ${sameDayConflicts.length} same-day conflict violations`).toBe(0);
     });
   });
 

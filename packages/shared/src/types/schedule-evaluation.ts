@@ -79,6 +79,7 @@ export interface ConstraintViolationsReport {
 
 export type ConstraintViolationType =
   | 'same_day_conflict'
+  | 'team_time_conflict'
   | 'min_day_gap'
   | 'resource_conflict'
   | 'invalid_event_type_for_period';
