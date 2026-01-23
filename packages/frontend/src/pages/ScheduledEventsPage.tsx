@@ -411,6 +411,46 @@ export default function ScheduledEventsPage() {
     return divisions.find((d) => d.id === divisionId)?.name || 'Unknown';
   };
 
+  // Check for conflicting events when editing
+  // Returns events that overlap with the given slot (excluding the event being edited)
+  const findSlotConflicts = (
+    excludeEventId: string,
+    date: string,
+    startTime: string,
+    endTime: string,
+    fieldId?: string,
+    cageId?: string
+  ): ScheduledEvent[] => {
+    return events.filter((e) => {
+      // Don't conflict with self
+      if (e.id === excludeEventId) return false;
+      // Must be on the same date
+      if (e.date !== date) return false;
+      // Must use the same resource
+      const sameField = fieldId && e.fieldId === fieldId;
+      const sameCage = cageId && e.cageId === cageId;
+      if (!sameField && !sameCage) return false;
+      // Check time overlap
+      const overlaps = startTime < e.endTime && endTime > e.startTime;
+      return overlaps;
+    });
+  };
+
+  // Compute conflicts for the event being edited
+  const editConflicts = useMemo(() => {
+    if (!editingId) return [];
+    const currentEvent = events.find((e) => e.id === editingId);
+    if (!currentEvent) return [];
+
+    const date = editFormData.date || currentEvent.date;
+    const startTime = editFormData.startTime || currentEvent.startTime;
+    const endTime = editFormData.endTime || currentEvent.endTime;
+    const fieldId = editFormData.fieldId !== undefined ? editFormData.fieldId : currentEvent.fieldId;
+    const cageId = editFormData.cageId !== undefined ? editFormData.cageId : currentEvent.cageId;
+
+    return findSlotConflicts(editingId, date, startTime, endTime, fieldId || undefined, cageId || undefined);
+  }, [editingId, editFormData, events]);
+
   // Filter events by team/field/cage (API already filters by division/type)
   // Must be before early return to maintain hooks order
   const filteredEvents = useMemo(() => {
@@ -1133,6 +1173,30 @@ export default function ScheduledEventsPage() {
                                 ⇄ Swap Home/Away
                               </button>
                             </div>
+                          </div>
+                        )}
+                        {/* Conflict warning */}
+                        {editConflicts.length > 0 && (
+                          <div className={styles.conflictWarning}>
+                            <strong>Warning:</strong> This slot conflicts with {editConflicts.length} existing event{editConflicts.length > 1 ? 's' : ''}:
+                            <ul>
+                              {editConflicts.map((conflict) => (
+                                <li key={conflict.id}>
+                                  {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                                  {' - '}
+                                  {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
+                                  {conflict.eventType === 'game' && (
+                                    <> ({getTeamName(conflict.homeTeamId)} vs {getTeamName(conflict.awayTeamId)})</>
+                                  )}
+                                  {conflict.eventType === 'practice' && (
+                                    <> ({getTeamName(conflict.teamId)})</>
+                                  )}
+                                  {conflict.eventType === 'cage' && (
+                                    <> ({getTeamName(conflict.teamId)})</>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
                           </div>
                         )}
                         <div className={styles.formActions}>
