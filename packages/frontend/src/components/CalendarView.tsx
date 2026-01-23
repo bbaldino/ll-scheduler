@@ -215,7 +215,7 @@ export default function CalendarView({
     }
   };
 
-  // Check for conflicting events when editing
+  // Check for conflicting events when editing (resource conflicts)
   // Returns events that overlap with the given slot (excluding the event being edited)
   const findSlotConflicts = useCallback(
     (
@@ -243,12 +243,40 @@ export default function CalendarView({
     [events]
   );
 
+  // Check for team conflicts - events where the same team has another event on the same date
+  // Returns events where any of the specified teams are involved
+  const findTeamConflicts = useCallback(
+    (
+      excludeEventId: string,
+      date: string,
+      teamIds: string[] // All team IDs involved in the event being moved
+    ): ScheduledEvent[] => {
+      if (teamIds.length === 0) return [];
+      return events.filter((e) => {
+        // Don't conflict with self
+        if (e.id === excludeEventId) return false;
+        // Must be on the same date
+        if (e.date !== date) return false;
+        // Check if any of the teams are involved in this event
+        const eventTeamIds = [e.teamId, e.homeTeamId, e.awayTeamId].filter(Boolean) as string[];
+        return teamIds.some((tid) => eventTeamIds.includes(tid));
+      });
+    },
+    [events]
+  );
+
+  // Helper to get all team IDs involved in an event
+  const getEventTeamIds = (event: ScheduledEvent): string[] => {
+    return [event.teamId, event.homeTeamId, event.awayTeamId].filter(Boolean) as string[];
+  };
+
   // Compute conflicts for both events after swap (for confirmation dialog)
   const swapConflicts = useMemo(() => {
-    if (!editingEvent || !selectedSwapTarget) return { sourceConflicts: [], targetConflicts: [] };
+    if (!editingEvent || !selectedSwapTarget)
+      return { sourceResourceConflicts: [], sourceTeamConflicts: [], targetResourceConflicts: [], targetTeamConflicts: [] };
 
-    // Check conflicts for source event moving to target slot
-    const sourceConflicts = findSlotConflicts(
+    // Check resource conflicts for source event moving to target slot
+    const sourceResourceConflicts = findSlotConflicts(
       editingEvent.id,
       selectedSwapTarget.date,
       selectedSwapTarget.startTime,
@@ -257,8 +285,15 @@ export default function CalendarView({
       selectedSwapTarget.cageId || undefined
     ).filter((e) => e.id !== selectedSwapTarget.id);
 
-    // Check conflicts for target event moving to source slot
-    const targetConflicts = findSlotConflicts(
+    // Check team conflicts for source event moving to target date
+    const sourceTeamConflicts = findTeamConflicts(
+      editingEvent.id,
+      selectedSwapTarget.date,
+      getEventTeamIds(editingEvent)
+    ).filter((e) => e.id !== selectedSwapTarget.id);
+
+    // Check resource conflicts for target event moving to source slot
+    const targetResourceConflicts = findSlotConflicts(
       selectedSwapTarget.id,
       editingEvent.date,
       editingEvent.startTime,
@@ -267,8 +302,15 @@ export default function CalendarView({
       editingEvent.cageId || undefined
     ).filter((e) => e.id !== editingEvent.id);
 
-    return { sourceConflicts, targetConflicts };
-  }, [editingEvent, selectedSwapTarget, findSlotConflicts]);
+    // Check team conflicts for target event moving to source date
+    const targetTeamConflicts = findTeamConflicts(
+      selectedSwapTarget.id,
+      editingEvent.date,
+      getEventTeamIds(selectedSwapTarget)
+    ).filter((e) => e.id !== editingEvent.id);
+
+    return { sourceResourceConflicts, sourceTeamConflicts, targetResourceConflicts, targetTeamConflicts };
+  }, [editingEvent, selectedSwapTarget, findSlotConflicts, findTeamConflicts]);
 
   // Generate dates for recurring events
   const generateRecurringDates = (
@@ -456,7 +498,7 @@ export default function CalendarView({
 
   // Compute conflicts for the event being edited
   const editConflicts = useMemo(() => {
-    if (!editingEvent) return [];
+    if (!editingEvent) return { resourceConflicts: [], teamConflicts: [] };
 
     const date = editFormData.date || editingEvent.date;
     const startTime = editFormData.startTime || editingEvent.startTime;
@@ -464,8 +506,11 @@ export default function CalendarView({
     const fieldId = editFormData.fieldId !== undefined ? editFormData.fieldId : editingEvent.fieldId;
     const cageId = editFormData.cageId !== undefined ? editFormData.cageId : editingEvent.cageId;
 
-    return findSlotConflicts(editingEvent.id, date, startTime, endTime, fieldId || undefined, cageId || undefined);
-  }, [editingEvent, editFormData, findSlotConflicts]);
+    const resourceConflicts = findSlotConflicts(editingEvent.id, date, startTime, endTime, fieldId || undefined, cageId || undefined);
+    const teamConflicts = findTeamConflicts(editingEvent.id, date, getEventTeamIds(editingEvent));
+
+    return { resourceConflicts, teamConflicts };
+  }, [editingEvent, editFormData, findSlotConflicts, findTeamConflicts]);
 
   // Compute swap candidates based on filters
   const swapCandidates = useMemo(() => {
@@ -511,14 +556,14 @@ export default function CalendarView({
 
   // Compute conflicts for date picker selection
   const datePickerConflicts = useMemo(() => {
-    if (!editingEvent || !selectedDatePickerDate) return [];
+    if (!editingEvent || !selectedDatePickerDate) return { resourceConflicts: [], teamConflicts: [] };
 
     const startTime = datePickerTime.startTime || editingEvent.startTime;
     const endTime = datePickerTime.endTime || editingEvent.endTime;
     const fieldId = editFormData.fieldId !== undefined ? editFormData.fieldId : editingEvent.fieldId;
     const cageId = editFormData.cageId !== undefined ? editFormData.cageId : editingEvent.cageId;
 
-    return findSlotConflicts(
+    const resourceConflicts = findSlotConflicts(
       editingEvent.id,
       selectedDatePickerDate,
       startTime,
@@ -526,7 +571,10 @@ export default function CalendarView({
       fieldId || undefined,
       cageId || undefined
     );
-  }, [editingEvent, selectedDatePickerDate, datePickerTime, editFormData, findSlotConflicts]);
+    const teamConflicts = findTeamConflicts(editingEvent.id, selectedDatePickerDate, getEventTeamIds(editingEvent));
+
+    return { resourceConflicts, teamConflicts };
+  }, [editingEvent, selectedDatePickerDate, datePickerTime, editFormData, findSlotConflicts, findTeamConflicts]);
 
   // Get all events on the selected date picker date (unfiltered, for display)
   const allEventsOnSelectedDate = useMemo(() => {
@@ -1348,22 +1396,41 @@ export default function CalendarView({
                 </div>
 
                 {/* Conflict warnings */}
-                {(swapConflicts.sourceConflicts.length > 0 || swapConflicts.targetConflicts.length > 0) && (
+                {(swapConflicts.sourceResourceConflicts.length > 0 ||
+                  swapConflicts.sourceTeamConflicts.length > 0 ||
+                  swapConflicts.targetResourceConflicts.length > 0 ||
+                  swapConflicts.targetTeamConflicts.length > 0) && (
                   <div className={styles.conflictWarning}>
                     <strong>Warning:</strong> This swap will create conflicts:
                     <ul>
-                      {swapConflicts.sourceConflicts.map((conflict) => (
-                        <li key={`source-${conflict.id}`}>
-                          Source event will conflict with: {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                      {swapConflicts.sourceResourceConflicts.map((conflict) => (
+                        <li key={`source-resource-${conflict.id}`}>
+                          Source event: resource conflict with {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
                           {' - '}
                           {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
                         </li>
                       ))}
-                      {swapConflicts.targetConflicts.map((conflict) => (
-                        <li key={`target-${conflict.id}`}>
-                          Target event will conflict with: {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                      {swapConflicts.sourceTeamConflicts.map((conflict) => (
+                        <li key={`source-team-${conflict.id}`}>
+                          Source event: team already has {EVENT_TYPE_LABELS[conflict.eventType]} on {selectedSwapTarget?.date}
+                          {conflict.eventType === 'game'
+                            ? ` (${getTeamName(conflict.homeTeamId)} vs ${getTeamName(conflict.awayTeamId)})`
+                            : ` (${getTeamName(conflict.teamId)})`}
+                        </li>
+                      ))}
+                      {swapConflicts.targetResourceConflicts.map((conflict) => (
+                        <li key={`target-resource-${conflict.id}`}>
+                          Target event: resource conflict with {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
                           {' - '}
                           {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
+                        </li>
+                      ))}
+                      {swapConflicts.targetTeamConflicts.map((conflict) => (
+                        <li key={`target-team-${conflict.id}`}>
+                          Target event: team already has {EVENT_TYPE_LABELS[conflict.eventType]} on {editingEvent?.date}
+                          {conflict.eventType === 'game'
+                            ? ` (${getTeamName(conflict.homeTeamId)} vs ${getTeamName(conflict.awayTeamId)})`
+                            : ` (${getTeamName(conflict.teamId)})`}
                         </li>
                       ))}
                     </ul>
@@ -1678,13 +1745,13 @@ export default function CalendarView({
                     </div>
 
                     {/* Conflict warning */}
-                    {datePickerConflicts.length > 0 && (
+                    {(datePickerConflicts.resourceConflicts.length > 0 || datePickerConflicts.teamConflicts.length > 0) && (
                       <div className={styles.conflictWarning}>
-                        <strong>Warning:</strong> This slot conflicts with {datePickerConflicts.length} existing event{datePickerConflicts.length > 1 ? 's' : ''}:
+                        <strong>Warning:</strong> Conflicts detected:
                         <ul>
-                          {datePickerConflicts.map((conflict) => (
-                            <li key={conflict.id}>
-                              {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                          {datePickerConflicts.resourceConflicts.map((conflict) => (
+                            <li key={`resource-${conflict.id}`}>
+                              Resource conflict: {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
                               {' - '}
                               {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
                               {conflict.eventType === 'game' && (
@@ -1696,6 +1763,14 @@ export default function CalendarView({
                               {conflict.eventType === 'cage' && (
                                 <> ({getTeamName(conflict.teamId)})</>
                               )}
+                            </li>
+                          ))}
+                          {datePickerConflicts.teamConflicts.map((conflict) => (
+                            <li key={`team-${conflict.id}`}>
+                              Team conflict: {EVENT_TYPE_LABELS[conflict.eventType]} on same day
+                              {conflict.eventType === 'game'
+                                ? ` (${getTeamName(conflict.homeTeamId)} vs ${getTeamName(conflict.awayTeamId)})`
+                                : ` (${getTeamName(conflict.teamId)})`}
                             </li>
                           ))}
                         </ul>
@@ -2074,13 +2149,13 @@ export default function CalendarView({
                 )}
 
                 {/* Conflict warning */}
-                {editConflicts.length > 0 && (
+                {(editConflicts.resourceConflicts.length > 0 || editConflicts.teamConflicts.length > 0) && (
                   <div className={styles.conflictWarning}>
-                    <strong>Warning:</strong> This slot conflicts with {editConflicts.length} existing event{editConflicts.length > 1 ? 's' : ''}:
+                    <strong>Warning:</strong> Conflicts detected:
                     <ul>
-                      {editConflicts.map((conflict) => (
-                        <li key={conflict.id}>
-                          {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
+                      {editConflicts.resourceConflicts.map((conflict) => (
+                        <li key={`resource-${conflict.id}`}>
+                          Resource conflict: {getDivisionName(conflict.divisionId)} {EVENT_TYPE_LABELS[conflict.eventType]}
                           {' - '}
                           {formatTimeRange12Hour(conflict.startTime, conflict.endTime)}
                           {conflict.eventType === 'game' && (
@@ -2092,6 +2167,14 @@ export default function CalendarView({
                           {conflict.eventType === 'cage' && (
                             <> ({getTeamName(conflict.teamId)})</>
                           )}
+                        </li>
+                      ))}
+                      {editConflicts.teamConflicts.map((conflict) => (
+                        <li key={`team-${conflict.id}`}>
+                          Team conflict: {EVENT_TYPE_LABELS[conflict.eventType]} on same day
+                          {conflict.eventType === 'game'
+                            ? ` (${getTeamName(conflict.homeTeamId)} vs ${getTeamName(conflict.awayTeamId)})`
+                            : ` (${getTeamName(conflict.teamId)})`}
                         </li>
                       ))}
                     </ul>
