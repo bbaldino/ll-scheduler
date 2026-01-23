@@ -13,6 +13,20 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
+ * Generate a timestamp string for filenames (YYYYMMDD-HHMMSS)
+ */
+function getTimestamp(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+/**
  * GET /api/export/teamsnap
  * Export scheduled events in TeamSnap CSV format
  *
@@ -60,7 +74,7 @@ router.get('/teamsnap', async (c) => {
       filenameParts.push(sanitizeFilename(teamResult?.name || 'unknown'));
     }
 
-    const filename = filenameParts.join('-') + '.csv';
+    const filename = filenameParts.join('-') + '-' + getTimestamp() + '.csv';
 
     // Return as CSV file download
     return new Response(csv, {
@@ -103,7 +117,7 @@ router.get('/teamsnap/bulk', async (c) => {
       status: 200,
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="teamsnap-schedules.zip"`,
+        'Content-Disposition': `attachment; filename="teamsnap-schedules-${getTimestamp()}.zip"`,
       },
     });
   } catch (error) {
