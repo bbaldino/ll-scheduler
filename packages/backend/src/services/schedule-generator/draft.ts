@@ -713,10 +713,10 @@ export function generateCandidatesForTeamEvent(
     const slotEndMinutes = endH * 60 + endM;
     const durationMinutes = durationHours * 60;
 
-    // For practices on weekdays, adjust the effective start time to honor weekday practice start time
+    // For practices and cage sessions on weekdays, adjust the effective start time to honor weekday practice start time
     // This ensures we generate a candidate at the configured start time (e.g., 16:30) rather than
     // only at hour boundaries (16:00, 17:00, etc.)
-    if (eventType === 'practice' && slot.slot.dayOfWeek >= 1 && slot.slot.dayOfWeek <= 5) {
+    if ((eventType === 'practice' || eventType === 'cage') && slot.slot.dayOfWeek >= 1 && slot.slot.dayOfWeek <= 5) {
       const weekdayStartTime = getEffectiveWeekdayPracticeStartTime(teamState.divisionId, context);
       if (weekdayStartTime) {
         const [wkdayH, wkdayM] = weekdayStartTime.split(':').map(Number);
