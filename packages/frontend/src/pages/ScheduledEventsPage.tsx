@@ -4,6 +4,7 @@ import CalendarView from '../components/CalendarView';
 import ScheduleEvaluationReport from '../components/ScheduleEvaluationReport';
 import { SaveScheduleModal } from '../components/SaveScheduleModal';
 import { RestoreScheduleModal } from '../components/RestoreScheduleModal';
+import { ImportScheduleModal } from '../components/ImportScheduleModal';
 import ScheduleComparisonModal from '../components/ScheduleComparisonModal';
 import { formatTimeRange12Hour } from '../utils/timeFormat';
 import {
@@ -76,10 +77,11 @@ export default function ScheduledEventsPage() {
   const [evaluationResult, setEvaluationResult] = useState<ScheduleEvaluationResult | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
 
-  // Save/Restore/Compare modal state
+  // Save/Restore/Compare/Import modal state
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [showCompareModal, setShowCompareModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Available slots state
   const [showAvailableSlots, setShowAvailableSlots] = useState(false);
@@ -585,6 +587,7 @@ export default function ScheduledEventsPage() {
           <button onClick={() => setShowRestoreModal(true)} title="Load or manage saved schedules">Load</button>
           <button onClick={handleExportTeamSnap} title="Export filtered events to TeamSnap CSV format">Export CSV</button>
           <button onClick={handleExportTeamSnapBulk} title="Export all teams as separate CSVs in a ZIP file">Export ZIP</button>
+          <button onClick={() => setShowImportModal(true)} title="Import events from TeamSnap CSV format">Import CSV</button>
           {viewMode === 'list' && (
             <button onClick={() => setIsCreating(true)} title="Create a new event">Create</button>
           )}
@@ -1313,6 +1316,18 @@ export default function ScheduledEventsPage() {
         <ScheduleComparisonModal
           seasonId={currentSeason.id}
           onClose={() => setShowCompareModal(false)}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportScheduleModal
+          seasonId={currentSeason.id}
+          onClose={() => setShowImportModal(false)}
+          onImported={(result) => {
+            setShowImportModal(false);
+            loadEvents();
+            alert(`Import complete! Created ${result.createdCount} events.`);
+          }}
         />
       )}
     </div>
